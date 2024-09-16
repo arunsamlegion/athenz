@@ -1,4 +1,4 @@
-// Copyright 2017 Yahoo Holdings, Inc.
+// Copyright The Athenz Authors
 // Licensed under the terms of the Apache version 2.0 license. See LICENSE file for terms.
 
 package ztsroletoken
@@ -8,8 +8,8 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -53,12 +53,12 @@ type roleToken struct {
 }
 
 func getClientTLSConfig(certFile, keyFile string) (*tls.Config, error) {
-	certpem, err := ioutil.ReadFile(certFile)
+	certpem, err := os.ReadFile(certFile)
 	if err != nil {
 		return nil, err
 	}
 
-	keypem, err := ioutil.ReadFile(keyFile)
+	keypem, err := os.ReadFile(keyFile)
 	if err != nil {
 		return nil, err
 	}

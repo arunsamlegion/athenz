@@ -27,14 +27,9 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"github.com/AthenZ/athenz/clients/go/zts"
-	"github.com/AthenZ/athenz/libs/go/sia/access/config"
-	"github.com/dgrijalva/jwt-go"
-	"github.com/dimfeld/httptreemux"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	siafile "github.com/AthenZ/athenz/libs/go/sia/file"
+	"github.com/AthenZ/athenz/libs/go/sia/util"
 	"io"
-	"io/ioutil"
 	"log"
 	"math/big"
 	"net"
@@ -48,11 +43,25 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/AthenZ/athenz/libs/go/sia/aws/options"
+
+	"github.com/AthenZ/athenz/clients/go/zts"
+	"github.com/AthenZ/athenz/libs/go/sia/access/config"
+	"github.com/dimfeld/httptreemux"
+	"github.com/golang-jwt/jwt"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
+type ConfirmClaim struct {
+	SpiffeUris string `json:"proxy-principals#spiffe"`
+}
+
 type AccessTokenClaims struct {
-	Audience string   `json:"aud"`
-	Scopes   []string `json:"scp"`
+	Audience string       `json:"aud"`
+	Scopes   []string     `json:"scp"`
+	Confirm  ConfirmClaim `json:"cnf"`
 	jwt.StandardClaims
 }
 
@@ -84,47 +93,45 @@ func (t *testServer) baseUrl(version string) string {
 }
 
 func TestToBeRefreshed(t *testing.T) {
-	tokenDir, err := ioutil.TempDir("", "tokens")
-	require.Nilf(t, err, "should be able to create a temp directory")
-	//defer os.RemoveAll(tokenDir)
-
-	log.Printf("temp dir: %s", tokenDir)
+	tokenDir := t.TempDir()
+	currentUnixTime := time.Now().Unix()
+	log.Printf("temp dir: %s\n", tokenDir)
 	domain := "athenz.examples"
 	service := "httpd"
 
 	tokens := []config.AccessToken{
 		// case 1: token doesn't exist
-		config.AccessToken{
+		{
 			FileName: "writer",
 			Domain:   domain,
 			Service:  service,
 		},
 		// case 2: token exists, and not expired
-		config.AccessToken{
+		{
 			FileName: "reader",
 			Domain:   domain,
 			Service:  service,
 		},
 		// case 3: token exists, and age is old
-		config.AccessToken{
+		{
 			FileName: "reader-aged",
 			Domain:   domain,
 			Service:  service,
 		},
 		// case 4: non readable token
-		config.AccessToken{
+		{
 			FileName: "reader-fail1",
 			Domain:   domain,
 			Service:  service,
 		},
 		// case 5: readable token, unmarshallable
-		config.AccessToken{
+		{
 			FileName: "reader-fail2",
 			Domain:   domain,
 			Service:  service,
 		},
 		// case 6: readable token, marshallable, no expires_in field
-		config.AccessToken{
+		{
 			FileName: "reader-fail3",
 			Domain:   domain,
 			Service:  service,
@@ -132,44 +139,139 @@ func TestToBeRefreshed(t *testing.T) {
 	}
 
 	domainDir := filepath.Join(tokenDir, domain)
-	err = os.Mkdir(domainDir, 0755)
+	err := os.Mkdir(domainDir, 0755)
 	require.Nilf(t, err, fmt.Sprintf("should be able to create directory: %s", domainDir))
 
 	tpath := filepath.Join(tokenDir, domain, "reader")
-	log.Printf("Creating a token at: %s", tpath)
-	err = ioutil.WriteFile(tpath, token(3600), 0400)
+	log.Printf("Creating a token at: %s\n", tpath)
+	err = os.WriteFile(tpath, token(3600, currentUnixTime), 0400)
 	require.Nilf(t, err, fmt.Sprintf("should be able to create token: %s", tpath))
 
 	tpath = filepath.Join(tokenDir, domain, "reader-aged")
-	log.Printf("Creating a token at: %s", tpath)
-	err = ioutil.WriteFile(tpath, token(3600), 0400)
+	log.Printf("Creating a token at: %s\n", tpath)
+	err = os.WriteFile(tpath, token(360, currentUnixTime), 0400)
 	require.Nilf(t, err, fmt.Sprintf("should be able to create token: %s", tpath))
 	err = os.Chtimes(tpath, time.Now(), time.Now().Add(-time.Minute*90))
+	require.NoError(t, err, "error changing os time on file %q: %v", tpath, err)
 
 	tpath = filepath.Join(tokenDir, domain, "reader-fail1")
-	log.Printf("Creating a token at: %s", tpath)
-	err = ioutil.WriteFile(tpath, []byte("{}"), 0000)
+	log.Printf("Creating a token at: %s\n", tpath)
+	err = os.WriteFile(tpath, []byte("{}"), 0000)
 	require.Nilf(t, err, fmt.Sprintf("should be able to create token: %s", tpath))
 
 	tpath = filepath.Join(tokenDir, domain, "reader-fail2")
-	log.Printf("Creating a token at: %s", tpath)
-	err = ioutil.WriteFile(tpath, []byte("asdf"), 0400)
+	log.Printf("Creating a token at: %s\n", tpath)
+	err = os.WriteFile(tpath, []byte("asdf"), 0400)
 	require.Nilf(t, err, fmt.Sprintf("should be able to create token: %s", tpath))
 
 	tpath = filepath.Join(tokenDir, domain, "reader-fail3")
-	log.Printf("Creating a token at: %s", tpath)
-	err = ioutil.WriteFile(tpath, []byte(fmt.Sprintf("{%q: %q, %q: %q}", "access_token", "signed-string", "token_type", "Bearer")), 0400)
+	log.Printf("Creating a token at: %s\n", tpath)
+	err = os.WriteFile(tpath, []byte(fmt.Sprintf("{%q: %q, %q: %q}", "access_token", "signed-string", "token_type", "Bearer")), 0400)
 	require.Nilf(t, err, fmt.Sprintf("should be able to create token: %s", tpath))
+	opts := config.TokenOptions{
+		TokenDir: tokenDir,
+		Tokens:   tokens,
+	}
+	// Valid token was issued with 1 hour validity. We will set the current time to a bit less than half an hour in the future so it will still be valid
+	// (hasn't passed "half-life").
+	// "Aged" tokens (passed their "half-life" but hasn't expired) will require refresh
+	currentTime := time.Now().Add(time.Duration(28) * time.Minute)
+	toRefresh, errors := ToBeRefreshedBasedOnTime(&opts, currentTime)
+	assert.True(t, len(errors) == 3, fmt.Sprintf("there shoud be 3 errors in fetching ToBeRefreshedBasedOnTime tokend, err: %v", err))
+	log.Printf("errors so far: %+v\n", errors)
 
-	toRefresh, errors := ToBeRefreshed(tokenDir, tokens)
-	assert.True(t, len(errors) == 3, fmt.Sprintf("there shoud be errors in fetching ToBeRefreshed tokend, err: %v", err))
-	log.Printf("errors so far: %+v", errors)
-
-	log.Printf("toRefresh: %#v", toRefresh)
+	log.Printf("toRefresh: %#v\n", toRefresh)
 	assert.NotNil(t, toRefresh, "list of tokens to be refreshed should not be empty")
-	assert.True(t, len(toRefresh) == 2, "there should be one token to be refreshed")
+	assert.True(t, len(toRefresh) == 2, fmt.Sprintf("there should be 2 tokens to be refreshed not %d", len(toRefresh)))
 	assert.Equalf(t, toRefresh[0].FileName, "writer", fmt.Sprintf("first item: %+v should be %q", toRefresh[0], "writer"))
 	assert.Equalf(t, toRefresh[1].FileName, "reader-aged", fmt.Sprintf("second item: %+v should be %q", toRefresh[0], "reader-aged"))
+}
+
+func TestToBeRefreshedWithStoreOption(t *testing.T) {
+	tokenDir := t.TempDir()
+	currentUnixTime := time.Now().Unix()
+
+	log.Printf("temp dir: %s\n", tokenDir)
+	domain := "athenz.examples"
+	service := "httpd"
+
+	tokens := []config.AccessToken{
+		// token exists, and should not be refreshed
+		{
+			FileName: "reader-aged",
+			Domain:   domain,
+			Service:  service,
+		},
+	}
+
+	domainDir := filepath.Join(tokenDir, domain)
+	err := os.Mkdir(domainDir, 0755)
+	require.Nilf(t, err, fmt.Sprintf("should be able to create directory: %s", domainDir))
+
+	tpath := filepath.Join(tokenDir, domain, "reader-aged")
+	log.Printf("Creating a token at: %s\n", tpath)
+	err = os.WriteFile(tpath, token(360000, currentUnixTime), 0400)
+	require.Nilf(t, err, fmt.Sprintf("should be able to create token: %s", tpath))
+	err = os.Chtimes(tpath, time.Now(), time.Now().Add(-time.Minute*90))
+	require.NoError(t, err, "error changing os time on file %q: %v", tpath, err)
+	opts := config.TokenOptions{
+		TokenDir: tokenDir,
+		Tokens:   tokens,
+	}
+	currentTime := time.Now()
+	toRefresh, _ := ToBeRefreshedBasedOnTime(&opts, currentTime)
+	assert.True(t, len(toRefresh) == 0, fmt.Sprint("there should not be any tokens to refresh"))
+
+	// now set the store option
+	opts.StoreOptions = config.AccessTokenProp
+
+	toRefresh, _ = ToBeRefreshedBasedOnTime(&opts, currentTime)
+	assert.True(t, len(toRefresh) == 1, fmt.Sprint("reader-aged token should be refreshed"))
+}
+
+func TestTokenWithStoreOption(t *testing.T) {
+	siaDir, err := os.MkdirTemp("", "sia.")
+	require.Nil(t, err, "should be able to create temp folder for sia")
+
+	// Mock ZTS AccessTokens api
+	ztsRouter := httptreemux.New()
+	eckey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+
+	// Mock Access Tokens
+	ztsRouter.POST("/zts/v1/oauth2/token", func(w http.ResponseWriter, r *http.Request, params map[string]string) {
+		log.Println("Called /zts/v1/instance")
+		io.WriteString(w, makeAccessToken(r, eckey))
+	})
+
+	ztsServer := &testServer{}
+	ztsServer.start(ztsRouter)
+	defer ztsServer.stop()
+
+	tokenServices := []config.TokenService{
+		{Name: "httpd"},
+		{Name: "yamas"},
+	}
+	opts := &config.TokenOptions{
+		Domain:   "iaas.athens",
+		Services: tokenServices,
+		CertDir:  filepath.Join(siaDir, "certs"),
+		KeyDir:   filepath.Join(siaDir, "keys"),
+		TokenDir: filepath.Join(siaDir, "tokens"),
+		Tokens: []config.AccessToken{
+			{FileName: "token1", Service: "httpd", Domain: "athenz.demo", Roles: []string{"role1"}, User: username(t), Uid: uid(t), Gid: gid(t), Expiry: 7200},
+		},
+		ZtsUrl:       ztsServer.baseUrl("zts/v1"),
+		StoreOptions: config.AccessTokenProp,
+	}
+
+	log.Printf("Options fed are: %+v\n", opts)
+
+	makeSiaDirs(t, opts)
+	makeIdentity(t, opts)
+
+	_, errs := Fetch(opts)
+	assert.Lenf(t, errs, 0, "should be able to create access tokens, errs: %v", errs)
+	assertAccessTokenPropOnly(t, opts, true)
 }
 
 func TestTokenDirs(t *testing.T) {
@@ -183,12 +285,12 @@ func TestTokenDirs(t *testing.T) {
 		{"Base line",
 			"/tmp",
 			[]config.AccessToken{
-				config.AccessToken{Domain: "media.ops"},
-				config.AccessToken{Domain: "movies.ops"},
+				{Domain: "media.ops"},
+				{Domain: "movies.ops"},
 			},
 			[]string{"/tmp/media.ops", "/tmp/movies.ops"},
 		},
-		{"Empty root", "", []config.AccessToken{config.AccessToken{Domain: "media.ops"}}, []string{"media.ops"}},
+		{"Empty root", "", []config.AccessToken{{Domain: "media.ops"}}, []string{"media.ops"}},
 	}
 
 	for _, tc := range cases {
@@ -199,11 +301,10 @@ func TestTokenDirs(t *testing.T) {
 	}
 }
 
-// TestAccessTokensSuccess verifies that access tokens are not refreshed on subsequent retry if age of the token is not oldenough
+// TestAccessTokensSuccess verifies that access tokens are not refreshed on subsequent
+// retry if age of the token is not old enough
 func TestAccessTokensSuccess(t *testing.T) {
-	siaDir, err := ioutil.TempDir("", "sia.")
-	require.Nil(t, err, "should be able to create temp folder for sia")
-	//defer os.RemoveAll(hcaDir)
+	siaDir := t.TempDir()
 
 	// Mock ZTS AccessTokens api
 	ztsRouter := httptreemux.New()
@@ -211,7 +312,7 @@ func TestAccessTokensSuccess(t *testing.T) {
 
 	// Mock Access Tokens
 	ztsRouter.POST("/zts/v1/oauth2/token", func(w http.ResponseWriter, r *http.Request, params map[string]string) {
-		log.Printf("Called /zts/v1/instance")
+		log.Println("Called /zts/v1/instance")
 		io.WriteString(w, makeAccessToken(r, eckey))
 	})
 
@@ -219,53 +320,66 @@ func TestAccessTokensSuccess(t *testing.T) {
 	ztsServer.start(ztsRouter)
 	defer ztsServer.stop()
 
+	tokenServices := []config.TokenService{
+		{Name: "httpd"},
+		{Name: "yamas"},
+	}
 	opts := &config.TokenOptions{
 		Domain:   "iaas.athens",
-		Services: []string{"httpd", "yamas"},
+		Services: tokenServices,
 		CertDir:  filepath.Join(siaDir, "certs"),
 		KeyDir:   filepath.Join(siaDir, "keys"),
 		TokenDir: filepath.Join(siaDir, "tokens"),
 		Tokens: []config.AccessToken{
-			config.AccessToken{FileName: "token1", Service: "httpd", Domain: "athenz.demo", Roles: []string{"role1"}, User: username(t), Uid: uid(t), Gid: gid(t), Expiry: 7200},
-			config.AccessToken{FileName: "token2", Service: "httpd", Domain: "athenz.demo", Roles: []string{"role1", "role2"}, User: username(t), Uid: uid(t), Gid: gid(t), Expiry: 7200},
-			config.AccessToken{FileName: "token3", Service: "httpd", Domain: "athenz.demo", Roles: []string{"*"}, User: username(t), Uid: uid(t), Gid: gid(t), Expiry: 7200},
-			config.AccessToken{FileName: "token4", Service: "httpd", Domain: "athenz.demo", Roles: []string{"token4"}, User: username(t), Uid: uid(t), Gid: gid(t), Expiry: 7200},
-			config.AccessToken{FileName: "token1", Service: "httpd", Domain: "athenz.examples", Roles: []string{"token1"}, User: username(t), Uid: uid(t), Gid: gid(t), Expiry: 7200},
+			{FileName: "token1", Service: "httpd", Domain: "athenz.demo", Roles: []string{"role1"}, User: username(t), Uid: uid(t), Gid: gid(t), Expiry: 7200},
+			{FileName: "token2", Service: "httpd", Domain: "athenz.demo", Roles: []string{"role1", "role2"}, User: username(t), Uid: uid(t), Gid: gid(t), Expiry: 7200},
+			{FileName: "token3", Service: "httpd", Domain: "athenz.demo", Roles: []string{"*"}, User: username(t), Uid: uid(t), Gid: gid(t), Expiry: 7200},
+			{FileName: "token4", Service: "httpd", Domain: "athenz.demo", Roles: []string{"token4"}, User: username(t), Uid: uid(t), Gid: gid(t), Expiry: 7200},
+			{FileName: "token1", Service: "httpd", Domain: "athenz.examples", Roles: []string{"token1"}, User: username(t), Uid: uid(t), Gid: gid(t), Expiry: 7200, ProxyPrincipalSpiffeUris: "spiffe://athenz/sa/proxy"},
 		},
 		ZtsUrl: ztsServer.baseUrl("zts/v1"),
 	}
 
-	log.Printf("Options fed are: %+v", opts)
+	log.Printf("Options fed are: %+v\n", opts)
 
 	makeSiaDirs(t, opts)
 	makeIdentity(t, opts)
 
 	// 1) Normal Fetch Tokens
-	errs := Fetch(opts)
-	assert.Lenf(t, errs, 0, "should be able to create access tokens, errs: %v", err)
-	assertAccessTokens(t, opts)
+	opts.StoreOptions = config.ZtsResponse
+	refreshed, errs := Fetch(opts)
+	assert.Lenf(t, errs, 0, "should be able to create access tokens, errs: %v", errs)
+	assert.Lenf(t, refreshed, 5, "expected 5 refreshed access tokens but the number was %v: %v", len(refreshed), refreshed)
+	assertAccessTokens(t, opts, true)
 
-	// 2) Write token errors
+	// 2) Save tokens with quotes
+	opts.StoreOptions = config.AccessTokenProp
+	refreshed, errs = Fetch(opts)
+	assert.Lenf(t, errs, 0, "should be able to create access tokens, errs: %v", errs)
+	assert.Lenf(t, refreshed, 5, "expected 5 refreshed access tokens but the number was %v: %v", len(refreshed), refreshed)
+	assertAccessTokens(t, opts, true)
+
+	// 3) Save tokens without quotes
+	opts.StoreOptions = config.AccessTokenWithoutQuotesProp
+	refreshed, errs = Fetch(opts)
+	assert.Lenf(t, errs, 0, "should be able to create access tokens, errs: %v", errs)
+	assert.Lenf(t, refreshed, 5, "expected 5 refreshed access tokens but the number was %v: %v", len(refreshed), refreshed)
+	assertAccessTokens(t, opts, true)
+
+	// 4) Write token errors
 	// Set old time stamp on a token
 	tpath := filepath.Join(opts.TokenDir, "athenz.demo", "token1")
-	err = os.Chtimes(tpath, time.Now(), time.Now().Add(-90*time.Minute))
+	err := os.Chtimes(tpath, time.Now(), time.Now().Add(-90*time.Minute))
 	assert.NoErrorf(t, err, "unable to change time on: %s, err: %v", tpath, err)
 
-	// Set incorrect owner ship
-	dpath := filepath.Join(opts.TokenDir, "athenz.demo")
-	err = os.Chmod(dpath, 0500)
-	assert.NoErrorf(t, err, "should be able to change permissions on: %s, err: %v", dpath, err)
-
-	errs = Fetch(opts)
-	assert.Lenf(t, errs, 1, "should be one error related to token1, errs: %v", err)
-	log.Printf("errors; %+v", errs)
+	_, errs = Fetch(opts)
+	assert.Lenf(t, errs, 0, "should be able to fetch access tokens, errs: %v", errs)
+	log.Printf("tokens error: %v\n", errs)
 }
 
 // TestAccessTokensRerun verifies that access tokens are being fetched
 func TestAccessTokensRerun(t *testing.T) {
-	siaDir, err := ioutil.TempDir("", "sia.")
-	require.Nil(t, err, "should be able to create temp folder for sia")
-	//defer os.RemoveAll(hcaDir)
+	siaDir := t.TempDir()
 
 	// Mock ZTS AccessTokens api
 	ztsRouter := httptreemux.New()
@@ -273,7 +387,7 @@ func TestAccessTokensRerun(t *testing.T) {
 
 	// Mock Access Tokens
 	ztsRouter.POST("/zts/v1/oauth2/token", func(w http.ResponseWriter, r *http.Request, params map[string]string) {
-		log.Printf("Called /zts/v1/instance")
+		log.Println("Called /zts/v1/instance")
 		io.WriteString(w, makeAccessToken(r, eckey))
 	})
 
@@ -281,27 +395,32 @@ func TestAccessTokensRerun(t *testing.T) {
 	ztsServer.start(ztsRouter)
 	defer ztsServer.stop()
 
+	tokenServices := []config.TokenService{
+		{Name: "httpd"},
+		{Name: "yamas"},
+	}
+	tokenExpiryMins := 7200
 	opts := &config.TokenOptions{
 		Domain:   "iaas.athens",
-		Services: []string{"httpd", "yamas"},
+		Services: tokenServices,
 		CertDir:  filepath.Join(siaDir, "certs"),
 		KeyDir:   filepath.Join(siaDir, "keys"),
 		TokenDir: filepath.Join(siaDir, "tokens"),
 		Tokens: []config.AccessToken{
-			config.AccessToken{FileName: "token1", Service: "httpd", Domain: "athenz.demo", Roles: []string{"role1"}, User: username(t), Uid: uid(t), Gid: gid(t), Expiry: 7200},
+			{FileName: "token1", Service: "httpd", Domain: "athenz.demo", Roles: []string{"role1"}, User: username(t), Uid: uid(t), Gid: gid(t), Expiry: tokenExpiryMins},
 		},
 		ZtsUrl: ztsServer.baseUrl("zts/v1"),
 	}
 
-	log.Printf("Options fed are: %+v", opts)
+	log.Printf("Options fed are: %+v\n", opts)
 
 	makeSiaDirs(t, opts)
 	makeIdentity(t, opts)
 
 	// 1) Normal Fetch Tokens
-	errs := Fetch(opts)
-	assert.Lenf(t, errs, 0, "should be able to create access tokens, errs: %v", err)
-	assertAccessTokens(t, opts)
+	_, errs := Fetch(opts)
+	assert.Lenf(t, errs, 0, "should be able to create access tokens, errs: %v", errs)
+	assertAccessTokens(t, opts, true)
 
 	// Note the time stamp in 'before'
 	tpath := filepath.Join(opts.TokenDir, opts.Tokens[0].Domain, opts.Tokens[0].FileName)
@@ -311,36 +430,50 @@ func TestAccessTokensRerun(t *testing.T) {
 	time.Sleep(1 * time.Second)
 
 	// Fetch tokens, after 1 second, this should result in no real execution
-	errs = Fetch(opts)
+	_, errs = Fetch(opts)
 	assert.Lenf(t, errs, 0, "should be able to create access tokens, errs: %v", err)
-	assertAccessTokens(t, opts)
+	assertAccessTokens(t, opts, true)
 
 	// Verify the time stamp on the token
 	after, err := os.Stat(tpath)
 	assert.NoErrorf(t, err, "unable to stat, err: %v", err)
 	assert.Equalf(t, after.ModTime(), before.ModTime(), "before: %v, after: %v should be same", before, after)
 
-	// Sequence 2: Force an older time stamp, and then attempt a rerun, and the token should be refreshed
-	err = os.Chtimes(tpath, time.Now(), time.Now().Add(-90*time.Minute))
-	assert.NoErrorf(t, err, "unable to change time, err: %v", err)
+	// Sequence 2: repeat the command with a threshold set to the same value as expiry
+	// this should refresh all tokens
+	opts.ExpiryThreshold = tokenExpiryMins
+	_, errs = Fetch(opts)
+	assert.Lenf(t, errs, 0, "should be able to create access tokens, errs: %v", err)
+	assertAccessTokens(t, opts, true)
+
+	// Verify the time stamp on the token has changed
+	after, err = os.Stat(tpath)
+	assert.NoErrorf(t, err, "unable to stat, err: %v", err)
+	assert.NotEqualf(t, after.ModTime(), before.ModTime(), "before: %v, after: %v should be different", before, after)
+	opts.ExpiryThreshold = 0
+
+	// Sequence 3: Force an older time stamp, and then attempt a rerun, and the token should be refreshed
+	hourAgo := time.Now().Add(-65 * time.Minute).Unix()
+	accessTokenShorterValidity := makeAccessTokenImpl(3600, hourAgo, "athenz.demo", []string{"role1"}, "", eckey)
+	siafile.Update(tpath, []byte(accessTokenShorterValidity), uid(t), gid(t), 0440, nil)
 
 	before, err = os.Stat(tpath)
 	assert.NoErrorf(t, err, "unable to stat, err: %v", err)
 
-	errs = Fetch(opts)
+	time.Sleep(1 * time.Second)
+
+	_, errs = Fetch(opts)
 	assert.Lenf(t, errs, 0, "should be able to create access tokens, errs: %v", err)
-	assertAccessTokens(t, opts)
+	assertAccessTokens(t, opts, true)
 
 	after, err = os.Stat(tpath)
 	assert.NoErrorf(t, err, "unable to stat, err: %v", err)
-	assert.NotEqualf(t, after.ModTime(), before.ModTime(), "before: %v, after: %v should be different", before, after)
+	assert.NotEqualf(t, after.ModTime(), before.ModTime(), "before: %s, after: %s should be different", before.ModTime().String(), after.ModTime().String())
 }
 
 // TestAccessTokensUserAgent verifies that user agent is set in client calls
 func TestAccessTokensUserAgent(t *testing.T) {
-	siaDir, err := ioutil.TempDir("", "sia.")
-	require.Nil(t, err, "should be able to create temp folder for sia")
-	//defer os.RemoveAll(hcaDir)
+	siaDir := t.TempDir()
 
 	userAgent := "tokencli-1.0.0 colo-a"
 
@@ -350,8 +483,8 @@ func TestAccessTokensUserAgent(t *testing.T) {
 
 	// Mock Access Tokens
 	ztsRouter.POST("/zts/v1/oauth2/token", func(w http.ResponseWriter, r *http.Request, params map[string]string) {
-		log.Printf("Called /zts/v1/instance")
-		if r.Header.Get(USER_AGENT) != userAgent {
+		log.Println("Called /zts/v1/instance")
+		if r.Header.Get(UserAgent) != userAgent {
 			panic("User-Agent is not set")
 		}
 		io.WriteString(w, makeAccessToken(r, eckey))
@@ -361,35 +494,38 @@ func TestAccessTokensUserAgent(t *testing.T) {
 	ztsServer.start(ztsRouter)
 	defer ztsServer.stop()
 
+	tokenServices := []config.TokenService{
+		{Name: "httpd"},
+		{Name: "yamas"},
+	}
 	opts := &config.TokenOptions{
 		Domain:   "iaas.athens",
-		Services: []string{"httpd", "yamas"},
+		Services: tokenServices,
 		CertDir:  filepath.Join(siaDir, "certs"),
 		KeyDir:   filepath.Join(siaDir, "keys"),
 		TokenDir: filepath.Join(siaDir, "tokens"),
 		Tokens: []config.AccessToken{
-			config.AccessToken{FileName: "token1", Service: "httpd", Domain: "athenz.demo", Roles: []string{"role1"}, User: username(t), Uid: uid(t), Gid: gid(t), Expiry: 7200},
+			{FileName: "token1", Service: "httpd", Domain: "athenz.demo", Roles: []string{"role1"}, User: username(t), Uid: uid(t), Gid: gid(t), Expiry: 7200},
 		},
 		ZtsUrl:    ztsServer.baseUrl("zts/v1"),
 		UserAgent: userAgent,
 	}
 
-	log.Printf("Options fed are: %+v", opts)
+	log.Printf("Options fed are: %+v\n", opts)
 
 	makeSiaDirs(t, opts)
 	makeIdentity(t, opts)
 
 	// Normal Fetch Tokens
-	errs := Fetch(opts)
-	assert.Lenf(t, errs, 0, "should be able to create access tokens, errs: %v", err)
-	assertAccessTokens(t, opts)
+	_, errs := Fetch(opts)
+	assert.Lenf(t, errs, 0, "should be able to create access tokens, errs: %v", errs)
+	assertAccessTokens(t, opts, true)
 }
 
 // TestAccessTokensMixedTokenErrors verifies that access tokens fetchable for the good tokens
 func TestAccessTokensMixedTokenErrors(t *testing.T) {
-	siaDir, err := ioutil.TempDir("", "sia.")
-	require.Nil(t, err, "should be able to create temp folder for sia")
-	//defer os.RemoveAll(hcaDir)
+	siaDir := t.TempDir()
+	currentUnixTime := time.Now().Unix()
 
 	// Mock ZTS AccessTokens api
 	ztsRouter := httptreemux.New()
@@ -397,7 +533,7 @@ func TestAccessTokensMixedTokenErrors(t *testing.T) {
 
 	// Mock Access Tokens
 	ztsRouter.POST("/zts/v1/oauth2/token", func(w http.ResponseWriter, r *http.Request, params map[string]string) {
-		log.Printf("Called /zts/v1/instance")
+		log.Println("Called /zts/v1/instance")
 		io.WriteString(w, makeAccessToken(r, eckey))
 	})
 
@@ -405,42 +541,41 @@ func TestAccessTokensMixedTokenErrors(t *testing.T) {
 	ztsServer.start(ztsRouter)
 	defer ztsServer.stop()
 
+	tokenServices := []config.TokenService{
+		{Name: "httpd"},
+		{Name: "yamas"},
+	}
 	opts := &config.TokenOptions{
 		Domain:   "iaas.athens",
-		Services: []string{"httpd", "yamas"},
+		Services: tokenServices,
 		CertDir:  filepath.Join(siaDir, "certs"),
 		KeyDir:   filepath.Join(siaDir, "keys"),
 		TokenDir: filepath.Join(siaDir, "tokens"),
 		Tokens: []config.AccessToken{
-			config.AccessToken{FileName: "token1", Service: "httpd", Domain: "athenz.demo", Roles: []string{"role1"}, User: username(t), Uid: uid(t), Gid: gid(t), Expiry: 7200},
-			config.AccessToken{FileName: "token2", Service: "httpd", Domain: "athenz.demo", Roles: []string{"role1"}, User: username(t), Uid: uid(t), Gid: gid(t), Expiry: 7200},
+			{FileName: "token1", Service: "httpd", Domain: "athenz.demo", Roles: []string{"role1"}, User: username(t), Uid: uid(t), Gid: gid(t), Expiry: 7200},
+			{FileName: "token2", Service: "httpd", Domain: "athenz.demo", Roles: []string{"role1"}, User: username(t), Uid: uid(t), Gid: gid(t), Expiry: 7200},
 		},
 		ZtsUrl: ztsServer.baseUrl("zts/v1"),
 	}
 
-	log.Printf("Options fed are: %+v", opts)
+	log.Printf("Options fed are: %+v\n", opts)
 
 	makeSiaDirs(t, opts)
 	makeIdentity(t, opts)
 
 	// Fetch tokens, there should be no errors here
-	errs := Fetch(opts)
-	assert.Lenf(t, errs, 0, "should be able to create access tokens, errs: %v", err)
-	assertAccessTokens(t, opts)
+	_, errs := Fetch(opts)
+	assert.Lenf(t, errs, 0, "should be able to create access tokens, errs: %v", errs)
+	assertAccessTokens(t, opts, true)
 
 	// Force an older time stamp on token1
 	tpath := filepath.Join(opts.TokenDir, opts.Tokens[0].Domain, opts.Tokens[0].FileName)
-	err = os.Chtimes(tpath, time.Now(), time.Now().Add(-90*time.Minute))
-	assert.NoErrorf(t, err, "unable to change time, err: %v", err)
+	accessTokenShorterValidity := makeAccessTokenImpl(0, currentUnixTime, "athenz.demo", []string{"role1"}, "", eckey)
+	siafile.Update(tpath, []byte(accessTokenShorterValidity), uid(t), gid(t), 0440, nil)
 
-	// Force a bad token at token2
-	tpath = filepath.Join(opts.TokenDir, "athenz.demo", "token2")
-	err = os.Chmod(tpath, 0000)
-	require.Nilf(t, err, fmt.Sprintf("should be able to modify token2: %s", tpath))
-
-	errs = Fetch(opts)
-	assert.Lenf(t, errs, 1, "should be one error related to token2, err: %v", errs)
-	log.Printf("tokens error: %v", errs)
+	_, errs = Fetch(opts)
+	assert.Lenf(t, errs, 0, "should be able to fetch access tokens, errs: %v", errs)
+	log.Printf("tokens error: %v\n", errs)
 
 	// Make sure token1 is updated
 	tpath = filepath.Join(opts.TokenDir, "athenz.demo", "token1")
@@ -451,9 +586,8 @@ func TestAccessTokensMixedTokenErrors(t *testing.T) {
 
 // TestAccessTokensApiErrors verifies that ZTS api errors are handled correctly
 func TestAccessTokensApiErrors(t *testing.T) {
-	siaDir, err := ioutil.TempDir("", "sia.")
-	require.Nil(t, err, "should be able to create temp folder for sia")
-	//defer os.RemoveAll(hcaDir)
+	siaDir := t.TempDir()
+	currentUnixTime := time.Now().Unix()
 
 	// Mock ZTS AccessTokens api
 	ztsRouter := httptreemux.New()
@@ -462,7 +596,7 @@ func TestAccessTokensApiErrors(t *testing.T) {
 	// Mock Access Tokens
 	c := 0
 	ztsRouter.POST("/zts/v1/oauth2/token", func(w http.ResponseWriter, r *http.Request, params map[string]string) {
-		log.Printf("Called /zts/v1/token")
+		log.Println("Called /zts/v1/token")
 		// Success the first time, api error second time, json error the third time
 		switch c {
 		case 0:
@@ -472,7 +606,7 @@ func TestAccessTokensApiErrors(t *testing.T) {
 		case 1:
 		default:
 			w.WriteHeader(http.StatusInternalServerError)
-			io.WriteString(w, string("{}"))
+			io.WriteString(w, "{}")
 		}
 		c = c + 1
 	})
@@ -481,38 +615,42 @@ func TestAccessTokensApiErrors(t *testing.T) {
 	ztsServer.start(ztsRouter)
 	defer ztsServer.stop()
 
+	tokenServices := []config.TokenService{
+		{Name: "httpd"},
+		{Name: "yamas"},
+	}
 	opts := &config.TokenOptions{
 		Domain:   "iaas.athens",
-		Services: []string{"httpd", "yamas"},
+		Services: tokenServices,
 		CertDir:  filepath.Join(siaDir, "certs"),
 		KeyDir:   filepath.Join(siaDir, "keys"),
 		TokenDir: filepath.Join(siaDir, "tokens"),
 		Tokens: []config.AccessToken{
-			config.AccessToken{FileName: "token1", Service: "httpd", Domain: "athenz.demo", Roles: []string{"role1"}, User: username(t), Uid: uid(t), Gid: gid(t), Expiry: 7200},
+			{FileName: "token1", Service: "httpd", Domain: "athenz.demo", Roles: []string{"role1"}, User: username(t), Uid: uid(t), Gid: gid(t), Expiry: 7200},
 		},
 		ZtsUrl: ztsServer.baseUrl("zts/v1"),
 	}
 
-	log.Printf("Options fed are: %+v", opts)
+	log.Printf("Options fed are: %+v\n", opts)
 
 	makeSiaDirs(t, opts)
 	makeIdentity(t, opts)
 
 	// Fetch tokens, there should be no errors here
-	errs := Fetch(opts)
-	assert.Lenf(t, errs, 0, "should be able to create access tokens, errs: %v", err)
-	assertAccessTokens(t, opts)
+	_, errs := Fetch(opts)
+	assert.Lenf(t, errs, 0, "should be able to create access tokens, errs: %v", errs)
+	assertAccessTokens(t, opts, true)
 
 	// Handling ZTS 500s
 	tpath := filepath.Join(opts.TokenDir, opts.Tokens[0].Domain, opts.Tokens[0].FileName)
-	err = os.Chtimes(tpath, time.Now(), time.Now().Add(-90*time.Minute))
-	assert.NoErrorf(t, err, "unable to change time, err: %v", err)
+	accessTokenShorterValidity := makeAccessTokenImpl(0, currentUnixTime, "athenz.demo", []string{"role1"}, "", eckey)
+	siafile.Update(tpath, []byte(accessTokenShorterValidity), uid(t), gid(t), 0440, nil)
 	before, err := os.Stat(tpath)
 	assert.NoErrorf(t, err, "should be able to stat file: %s, err: %v", tpath, err)
 
-	errs = Fetch(opts)
+	_, errs = Fetch(opts)
 	assert.Lenf(t, errs, 1, "should be one error related to token1, err: %v", errs)
-	log.Printf("tokens error: %v", err)
+	log.Printf("tokens error: %v\n", err)
 
 	// Make sure token1 is not updated, since ZTS is giving an api error
 	after, err := os.Stat(tpath)
@@ -520,9 +658,9 @@ func TestAccessTokensApiErrors(t *testing.T) {
 	assert.Equalf(t, before.ModTime(), after.ModTime(), "token1 should not be updated when ZTS gives an error, before: %v, after: %v", before, after)
 
 	// Handling ZTS returning bad content
-	errs = Fetch(opts)
+	_, errs = Fetch(opts)
 	assert.Lenf(t, errs, 1, "should be one error related to token1, err: %v", errs)
-	log.Printf("tokens error: %v", err)
+	log.Printf("tokens error: %v\n", err)
 
 	// Make sure token1 is not updated, since ZTS is giving an api error
 	after, err = os.Stat(tpath)
@@ -532,52 +670,112 @@ func TestAccessTokensApiErrors(t *testing.T) {
 
 // TestAccessTokensEmpty verifies that no execution is done if no access tokens are configured
 func TestAccessTokensEmpty(t *testing.T) {
-	errs := Fetch(&config.TokenOptions{})
+	_, errs := Fetch(&config.TokenOptions{})
 	assert.Lenf(t, errs, 0, "when there are not access tokens, there should be no error, err: %v", errs)
 }
 
 // TestAccessTokensBadCerts verifies that an error is returned when no certs are found
 func TestAccessTokensBadCerts(t *testing.T) {
-	siaDir, err := ioutil.TempDir("", "sia.")
-	require.Nil(t, err, "should be able to create temp folder for sia")
-	//defer os.RemoveAll(hcaDir)
+	siaDir := t.TempDir()
 
+	tokenServices := []config.TokenService{
+		{Name: "httpd"},
+		{Name: "yamas"},
+	}
 	opts := &config.TokenOptions{
 		Domain:   "iaas.athens",
-		Services: []string{"httpd", "yamas"},
+		Services: tokenServices,
 		CertDir:  filepath.Join(siaDir, "certs"),
 		KeyDir:   filepath.Join(siaDir, "keys"),
 		TokenDir: filepath.Join(siaDir, "tokens"),
 		Tokens: []config.AccessToken{
-			config.AccessToken{FileName: "token1", Service: "httpd", Domain: "athenz.demo", Roles: []string{"role1"}, User: username(t), Uid: uid(t), Gid: gid(t), Expiry: 7200},
+			{FileName: "token1", Service: "httpd", Domain: "athenz.demo", Roles: []string{"role1"}, User: username(t), Uid: uid(t), Gid: gid(t), Expiry: 7200},
 		},
 		ZtsUrl: "http://testurl.invalid",
 	}
 
-	log.Printf("Options fed are: %+v", opts)
+	log.Printf("Options fed are: %+v\n", opts)
 
 	makeSiaDirs(t, opts)
 
 	// Fetch Tokens should return errors, since identity svc certs are not present
-	errs := Fetch(opts)
+	_, errs := Fetch(opts)
 	assert.Lenf(t, errs, 3, "there should be 2 errors, errs: %+v", errs)
-	log.Printf("Errors: %+v", errs)
+	log.Printf("Errors: %+v\n", errs)
 }
 
-func token(expiry int) []byte {
-	expiry32 := int32(expiry)
-	tokenResponse := zts.AccessTokenResponse{
-		Access_token: "signed string",
-		Expires_in:   &expiry32,
-		Token_type:   "Bearer",
-	}
+func TestNewTokenOptions(t *testing.T) {
+	cfg, configAccount, _ := options.InitFileConfig("data/sia_config.with-access-tokens", "http://localhost:80", false, "us-west-2", "")
+	cfg.DropPrivileges = false
+	siaDir := "/tmp"
 
-	bytes, err := json.Marshal(tokenResponse)
-	if err != nil {
-		panic(err)
-	}
+	opts, err := options.NewOptions(cfg, configAccount, nil, siaDir, "1.0.0", false, "us-west-2")
+	require.Nilf(t, err, "error should not be thrown, error: %v", err)
 
-	return bytes
+	// when nobody or other account is not presented, 'id -u nobody' returns 4294967294
+	// we should initiate gid/uid
+	fixGidUid(opts.AccessTokens)
+
+	// Mock ZTS AccessTokens api
+	ztsRouter := httptreemux.New()
+	eckey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+
+	// Mock Access Tokens
+	ztsRouter.POST("/zts/v1/oauth2/token", func(w http.ResponseWriter, r *http.Request, params map[string]string) {
+		log.Println("Called /zts/v1/instance")
+		io.WriteString(w, makeAccessToken(r, eckey))
+	})
+
+	ztsServer := &testServer{}
+	ztsServer.start(ztsRouter)
+	defer ztsServer.stop()
+
+	defer os.RemoveAll(siaDir + "/certs")
+	defer os.RemoveAll(siaDir + "/keys")
+	defer os.RemoveAll(siaDir + "/tokens")
+
+	tokenOpts, err := NewTokenOptions(opts, ztsServer.baseUrl("zts/v1"), "mock-ua")
+	require.Nilf(t, err, "error should not be thrown, error: %v", err)
+
+	makeIdentity(t, tokenOpts)
+
+	_, errs := Fetch(tokenOpts)
+	assert.Lenf(t, errs, 0, "should be able to create access tokens, errs: %v", errs)
+	assertAccessTokens(t, tokenOpts, false)
+}
+
+func TestTokenRefreshOption(t *testing.T) {
+	ztsServer := &testServer{}
+	cfg, configAccount, _ := options.InitFileConfig("data/sia_config.with-access-tokens", "http://localhost:80", false, "us-west-2", "")
+	siaDir := "/tmp"
+
+	opts, err := options.NewOptions(cfg, configAccount, nil, siaDir, "1.0.0", false, "us-west-2")
+	require.NoError(t, err, "error creating new options: %v", err)
+	tokenOpts, err := NewTokenOptions(opts, ztsServer.baseUrl("zts/v1"), "mock-ua")
+	require.Nilf(t, err, "error should not be thrown, error: %v", err)
+	dur, _ := time.ParseDuration(DefaultRefreshDuration)
+	assert.Equal(t, float64(90), dur.Minutes(), "token refresh should be default")
+
+	_ = os.Setenv(TokenRefreshPeriodProp, "1ms")
+	tokenOpts, err = NewTokenOptions(opts, ztsServer.baseUrl("zts/v1"), "mock-ua")
+	require.Nilf(t, err, "error should not be thrown, error: %v", err)
+	assert.Equal(t, int64(1), tokenOpts.TokenRefresh.Milliseconds(), "token refresh should not be specified")
+	_ = os.Unsetenv(TokenRefreshPeriodProp)
+}
+
+func fixGidUid(tokens []config.AccessToken) {
+	for i, token := range tokens {
+		if token.Gid >= 0xf0000000 || token.Uid >= 0xf0000000 {
+			tokens[i].Gid = 0
+			tokens[i].Uid = 0
+		}
+	}
+}
+
+func token(expiry int, issuedAt int64) []byte {
+	eckey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	accessToken := makeAccessTokenImpl(expiry, issuedAt, "athenz.demo", []string{"role1"}, "", eckey)
+	return []byte(accessToken)
 }
 
 func makeSiaDirs(t *testing.T, opts *config.TokenOptions) {
@@ -585,7 +783,7 @@ func makeSiaDirs(t *testing.T, opts *config.TokenOptions) {
 	dirs = append(dirs, TokenDirs(opts.TokenDir, opts.Tokens)...)
 	for _, d := range dirs {
 		if e := os.MkdirAll(d, 0755); e != nil {
-			log.Printf("unable to create folder: %s, err: %v", d, e)
+			log.Printf("unable to create folder: %s, err: %v\n", d, e)
 			t.FailNow()
 		}
 	}
@@ -605,7 +803,7 @@ func makeAccessToken(r *http.Request, key crypto.PrivateKey) string {
 		}
 
 		domain := parts[0]
-		roles := []string{}
+		roles := make([]string, 0)
 
 		if len(parts) == 1 {
 			// only domain specified, mint some roles
@@ -626,24 +824,31 @@ func makeAccessToken(r *http.Request, key crypto.PrivateKey) string {
 		return domain, roles
 	}
 
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		panic(err)
 	}
 
-	log.Printf("Body: %q", string(body))
+	log.Printf("Body: %q\n", string(body))
 	values, err := url.ParseQuery(string(body))
 	if err != nil {
 		panic(err)
 	}
 
-	log.Printf("Scopes: %+v", values.Get("scope"))
+	log.Printf("Scopes: %+v\n", values.Get("scope"))
 	audience, roles := audScopes(values.Get("scope"))
 
 	expiry, err := strconv.Atoi(values.Get("expires_in"))
 	if err != nil {
 		panic(err)
 	}
+
+	spiffeUris := values.Get("proxy_principal_spiffe_uris")
+	currentUnixTime := time.Now().Unix()
+	return makeAccessTokenImpl(expiry, currentUnixTime, audience, roles, spiffeUris, key)
+}
+
+func makeAccessTokenImpl(expiry int, issuedAt int64, audience string, roles []string, spiffeUris string, key crypto.PrivateKey) string {
 
 	claims := &AccessTokenClaims{
 		Audience: audience,
@@ -652,8 +857,14 @@ func makeAccessToken(r *http.Request, key crypto.PrivateKey) string {
 			ExpiresAt: time.Now().Add(time.Duration(expiry) * time.Second).Unix(),
 			Issuer:    "athenz",
 			Subject:   "principal.test",
-			IssuedAt:  time.Now().Unix(),
+			IssuedAt:  issuedAt,
 		},
+	}
+
+	if spiffeUris != "" {
+		claims.Confirm = ConfirmClaim{
+			SpiffeUris: spiffeUris,
+		}
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
@@ -713,7 +924,7 @@ func makeIdentity(t *testing.T, opts *config.TokenOptions) {
 			t.Fatalf("Failed to create certificate: %v", err)
 		}
 
-		certOut, err := os.Create(filepath.Join(opts.CertDir, fmt.Sprintf("%s.%s.cert.pem", opts.Domain, svc)))
+		certOut, err := os.Create(util.GetSvcCertFileName(opts.CertDir, svc.CertFilename, opts.Domain, svc.Name))
 		if err != nil {
 			t.Fatalf("Failed to open cert.pem for writing: %v", err)
 		}
@@ -724,7 +935,7 @@ func makeIdentity(t *testing.T, opts *config.TokenOptions) {
 			t.Fatalf("Error closing cert.pem: %v", err)
 		}
 
-		keyOut, err := os.OpenFile(filepath.Join(opts.KeyDir, fmt.Sprintf("%s.%s.key.pem", opts.Domain, svc)), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+		keyOut, err := os.OpenFile(util.GetSvcKeyFileName(opts.KeyDir, svc.KeyFilename, opts.Domain, svc.Name), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 		if err != nil {
 			t.Fatalf("Failed to open key.pem for writing: %v", err)
 		}
@@ -741,8 +952,8 @@ func makeIdentity(t *testing.T, opts *config.TokenOptions) {
 	}
 }
 
-// assertAccessTokens verifies the token files as per the information in options.AccessTokens
-func assertAccessTokens(t *testing.T, opts *config.TokenOptions) {
+// assertAccessTokenPropOnly verifies the token file exist with valid contnet
+func assertAccessTokenPropOnly(t *testing.T, opts *config.TokenOptions, assertGidUid bool) {
 	a := assert.New(t)
 
 	for _, t := range opts.Tokens {
@@ -752,21 +963,72 @@ func assertAccessTokens(t *testing.T, opts *config.TokenOptions) {
 
 		a.Equal(os.FileMode(0440), f.Mode())
 
-		if statt, ok := f.Sys().(*syscall.Stat_t); ok {
-			a.Equal(statt.Uid, uint32(t.Uid))
-			a.Equal(statt.Gid, uint32(t.Gid))
+		if assertGidUid {
+			if statt, ok := f.Sys().(*syscall.Stat_t); ok {
+				a.Equal(statt.Uid, uint32(t.Uid))
+				a.Equal(statt.Gid, uint32(t.Gid))
+			}
 		}
 
-		// Todo: parse the token and verify the scopes and expiry
-		bytes, err := ioutil.ReadFile(fname)
+		bytes, err := os.ReadFile(fname)
+		a.Nilf(err, "should be able to read the file, %q", fname)
+		a.NotEmpty(bytes, "token file should not be empty")
+	}
+}
+
+// assertAccessTokens verifies the token files as per the information in options.AccessTokens
+func assertAccessTokens(test *testing.T, opts *config.TokenOptions, assertGidUid bool) {
+	a := assert.New(test)
+
+	for _, t := range opts.Tokens {
+		fname := filepath.Join(opts.TokenDir, t.Domain, t.FileName)
+		f, err := os.Stat(fname)
+		a.Nil(err)
+
+		a.Equal(os.FileMode(0440), f.Mode())
+
+		if assertGidUid {
+			if statt, ok := f.Sys().(*syscall.Stat_t); ok {
+				a.Equal(statt.Uid, uint32(t.Uid))
+				a.Equal(statt.Gid, uint32(t.Gid))
+			}
+		}
+
+		bytes, err := os.ReadFile(fname)
 		a.Nilf(err, "should be able to read the file, %q", fname)
 
-		token := zts.AccessTokenResponse{}
-		err = json.Unmarshal(bytes, &token)
-		a.Nilf(err, "should be able to parse the token bytes into AccessTokenResponse type, bytes: %q", string(bytes))
+		if opts.StoreOptions == config.ZtsResponse {
+			token := zts.AccessTokenResponse{}
+			err = json.Unmarshal(bytes, &token)
+			a.Nilf(err, "should be able to parse the token bytes into AccessTokenResponse type, bytes: %q", string(bytes))
 
-		a.Equal(int32(t.Expiry), *token.Expires_in)
+			a.Equal(int32(t.Expiry), *token.Expires_in)
+		} else {
+			var claims jwt.MapClaims
+			// default behavior is access token in quotes
+			if opts.StoreOptions == config.AccessTokenProp {
+				a.Equal(bytes[0], byte('"'))
+				a.Equal(bytes[len(bytes)-1], byte('"'))
+				claims = assertParseJwt(a, bytes[1:len(bytes)-1])
+			} else {
+				claims = assertParseJwt(a, bytes)
+			}
+			if t.ProxyPrincipalSpiffeUris != "" {
+				a.NotNil(claims["cnf"])
+				cnf := claims["cnf"].(map[string]interface{})
+				a.Equal(cnf["proxy-principals#spiffe"], t.ProxyPrincipalSpiffeUris)
+			}
+		}
 	}
+}
+
+func assertParseJwt(a *assert.Assertions, token []byte) jwt.MapClaims {
+	parser := new(jwt.Parser)
+	claims := jwt.MapClaims{}
+	t, _, err := parser.ParseUnverified(string(token), claims)
+	a.Nil(err)
+	a.NotNil(t)
+	return claims
 }
 
 // uid returns current user's uid

@@ -26,7 +26,7 @@ public class SSLUtils {
     private static final Logger LOGGER = LoggerFactory.getLogger(SSLUtils.class);
 
     public static class ClientSSLContextBuilder {
-        private String sslProtocol;
+        private final String sslProtocol;
         private PrivateKeyStore privateKeyStore;
         private char[] keyStorePassword;
         private char[] keyManagerPassword;
@@ -39,6 +39,9 @@ public class SSLUtils {
         private String keyManagerPasswordAppName;
         private String trustStorePasswordAppName;
         private String certAlias;
+        private String keyStorePasswordKeygroupName;
+        private String keyManagerPasswordKeygroupName;
+        private String trustStorePasswordKeygroupName;
         
         public ClientSSLContextBuilder(final String sslProtocol) {
             this.sslProtocol = sslProtocol;
@@ -103,6 +106,21 @@ public class SSLUtils {
             this.certAlias = certAlias;
             return this;
         }
+
+        public ClientSSLContextBuilder keyStorePasswordKeygroupName(final String keyStorePasswordKeygroupName) {
+            this.keyStorePasswordKeygroupName = keyStorePasswordKeygroupName;
+            return this;
+        }
+
+        public ClientSSLContextBuilder keyManagerPasswordKeygroupName(final String keyManagerPasswordKeygroupName) {
+            this.keyManagerPasswordKeygroupName = keyManagerPasswordKeygroupName;
+            return this;
+        }
+
+        public ClientSSLContextBuilder trustStorePasswordKeygroupName(final String trustStorePasswordKeygroupName) {
+            this.trustStorePasswordKeygroupName = trustStorePasswordKeygroupName;
+            return this;
+        }
         
         public SSLContext build() {
             SSLContext context;
@@ -120,18 +138,15 @@ public class SSLUtils {
             try {
                 if (keyStorePath != null) {
                     LOGGER.info("createSSLContextObject: using SSL KeyStore path: {}", keyStorePath);
-                    keyStore = loadStore(keyStorePath, keyStoreType, getPassword(keyStorePassword, privateKeyStore, keyStorePasswordAppName));
+                    keyStore = loadStore(keyStorePath, keyStoreType, getPassword(keyStorePassword, privateKeyStore, keyStorePasswordAppName, keyStorePasswordKeygroupName));
                     kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-                    if (keyManagerPassword == null) {
-                        throw new IllegalArgumentException("Missing key manager password for the key store: " + keyStorePath);
-                    }
-                    keyManagerPassword = getPassword(keyManagerPassword, privateKeyStore, keyManagerPasswordAppName);
+                    keyManagerPassword = getPassword(keyManagerPassword, privateKeyStore, keyManagerPasswordAppName, keyManagerPasswordKeygroupName);
                     kmf.init(keyStore, keyStorePassword);
                     keyManagers = getAliasedKeyManagers(kmf.getKeyManagers(), certAlias);
                 }
                 if (trustStorePath != null) {
                     LOGGER.info("createSSLContextObject: using SSL TrustStore path: {}", trustStorePath);
-                    trustStore = loadStore(trustStorePath, trustStoreType, getPassword(trustStorePassword, privateKeyStore, trustStorePasswordAppName));
+                    trustStore = loadStore(trustStorePath, trustStoreType, getPassword(trustStorePassword, privateKeyStore, trustStorePasswordAppName, trustStorePasswordKeygroupName));
                     tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
                     tmf.init(trustStore);
                     trustManagers = tmf.getTrustManagers();
@@ -146,10 +161,10 @@ public class SSLUtils {
             return context;
         }
         
-        private static char[] getPassword(char[] password, final PrivateKeyStore privateKeyStore, String appName) {
+        private static char[] getPassword(char[] password, final PrivateKeyStore privateKeyStore, String appName, String keygroupName) {
             if (password != null) {
                 if (null != privateKeyStore) {
-                    password = privateKeyStore.getApplicationSecret(appName, String.valueOf(password)).toCharArray();
+                    password = privateKeyStore.getSecret(appName, keygroupName, String.valueOf(password));
                 }
             }
             return password;
@@ -166,7 +181,7 @@ public class SSLUtils {
             return keystore;
         }
         
-        private static KeyManager[] getAliasedKeyManagers(KeyManager[] managers, String alias) {
+        static KeyManager[] getAliasedKeyManagers(KeyManager[] managers, String alias) {
             if (managers != null) {
                 if (alias != null) {
                     for (int idx = 0; idx < managers.length; idx++) {
@@ -257,10 +272,10 @@ public class SSLUtils {
     public static PrivateKeyStore loadServicePrivateKey(String pkeyFactoryClass) {
         PrivateKeyStoreFactory pkeyFactory;
         try {
-            pkeyFactory = (PrivateKeyStoreFactory) Class.forName(pkeyFactoryClass).newInstance();
-        } catch (InstantiationException | IllegalAccessException | ClassNotFoundException e) {
-            LOGGER.error("Invalid PrivateKeyStoreFactory class: {} error: {}", pkeyFactoryClass, e.getMessage());
-            throw new IllegalArgumentException("Invalid private key store");
+            pkeyFactory = (PrivateKeyStoreFactory) Class.forName(pkeyFactoryClass).getDeclaredConstructor().newInstance();
+        } catch (Exception ex) {
+            LOGGER.error("Invalid PrivateKeyStoreFactory class: {}", pkeyFactoryClass, ex);
+            throw new IllegalArgumentException("Invalid private key store", ex);
         }
         return pkeyFactory.create();
     }

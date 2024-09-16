@@ -30,12 +30,10 @@ const TableHeadStyled = styled.th`
     border-bottom: 2px solid #d5d5d5;
     color: #9a9a9a;
     font-weight: 600;
-    font-size: 0.8rem;
     padding-bottom: 5px;
     vertical-align: top;
     text-transform: uppercase;
     padding: 5px 0 5px 15px;
-    word-break: break-all;
 `;
 
 const TableHeadStyledGroupName = styled.th`
@@ -43,18 +41,15 @@ const TableHeadStyledGroupName = styled.th`
     border-bottom: 2px solid #d5d5d5;
     color: #9a9a9a;
     font-weight: 600;
-    font-size: 0.8rem;
     padding-bottom: 5px;
     vertical-align: top;
     text-transform: uppercase;
     padding: 5px 0 5px 25px;
-    word-break: break-all;
 `;
 
 export default class InstanceTable extends React.Component {
     constructor(props) {
         super(props);
-        this.api = props.api;
 
         this.state = {
             instances: props.instances || [],
@@ -85,10 +80,11 @@ export default class InstanceTable extends React.Component {
                         details={item}
                         idx={i}
                         domain={domain}
-                        color={color}
-                        api={this.api}
-                        key={item.uuid}
+                        service={this.props.service}
                         onUpdateSuccess={this.props.onSubmit}
+                        color={color}
+                        key={item.uuid}
+                        timeZone={this.props.timeZone}
                         _csrf={this.props._csrf}
                         category={this.props.category}
                     />
@@ -98,13 +94,17 @@ export default class InstanceTable extends React.Component {
 
         return (
             <StyleTable key='instance-table' data-testid='instancetable'>
-                <colgroup>
-                    <col style={{ width: 20 + '%' }} />
-                    <col style={{ width: 20 + '%' }} />
-                    <col style={{ width: 20 + '%' }} />
-                    <col style={{ width: 20 + '%' }} />
-                    <col style={{ width: 20 + '%' }} />
-                </colgroup>
+                {this.props.category === 'dynamic' && (
+                    <colgroup>
+                        <col style={{ width: 14 + '%' }} />
+                        <col style={{ width: 20 + '%' }} />
+                        <col style={{ width: 14 + '%' }} />
+                        <col style={{ width: 20 + '%' }} />
+                        <col style={{ width: 14 + '%' }} />
+                        <col style={{ width: 14 + '%' }} />
+                        <col style={{ width: 4 + '%' }} />
+                    </colgroup>
+                )}
                 {this.props.category === 'dynamic' && (
                     <thead>
                         <tr>
@@ -118,13 +118,27 @@ export default class InstanceTable extends React.Component {
                                 Provider
                             </TableHeadStyledGroupName>
                             <TableHeadStyledGroupName align={'left'}>
+                                ID
+                            </TableHeadStyledGroupName>
+                            <TableHeadStyledGroupName align={'left'}>
                                 Expires On
                             </TableHeadStyledGroupName>
                             <TableHeadStyledGroupName align={'left'}>
                                 Last Certificate Refresh
                             </TableHeadStyledGroupName>
+                            <TableHeadStyledGroupName align={'left'}>
+                                Delete
+                            </TableHeadStyledGroupName>
                         </tr>
                     </thead>
+                )}
+                {this.props.category === 'static' && (
+                    <colgroup>
+                        <col style={{ width: 32 + '%' }} />
+                        <col style={{ width: 31 + '%' }} />
+                        <col style={{ width: 31 + '%' }} />
+                        <col style={{ width: 6 + '%' }} />
+                    </colgroup>
                 )}
                 {this.props.category === 'static' && (
                     <thead>
@@ -132,8 +146,15 @@ export default class InstanceTable extends React.Component {
                             <TableHeadStyledGroupName align={'left'}>
                                 Instance
                             </TableHeadStyledGroupName>
-                            <TableHeadStyled>Type</TableHeadStyled>
-                            <TableHeadStyled>Date Added</TableHeadStyled>
+                            <TableHeadStyledGroupName align={'left'}>
+                                Type
+                            </TableHeadStyledGroupName>
+                            <TableHeadStyledGroupName align={'left'}>
+                                Date Added
+                            </TableHeadStyledGroupName>
+                            <TableHeadStyledGroupName align={'left'}>
+                                Delete
+                            </TableHeadStyledGroupName>
                         </tr>
                     </thead>
                 )}

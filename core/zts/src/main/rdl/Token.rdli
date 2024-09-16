@@ -1,4 +1,4 @@
-// Copyright 2016 Yahoo Inc.
+// Copyright The Athenz Authors
 // Licensed under the terms of the Apache version 2.0 license. See LICENSE file for terms.
 
 include "Names.tdl";
@@ -34,6 +34,7 @@ resource RoleToken GET "/domain/{domainName}/token?role={role}&minExpiryTime={mi
         ResourceError FORBIDDEN;
         ResourceError NOT_FOUND;
         ResourceError UNAUTHORIZED;
+        ResourceError TOO_MANY_REQUESTS;
     }
 }
 
@@ -51,6 +52,7 @@ resource RoleToken POST "/domain/{domainName}/role/{roleName}/token" {
         ResourceError FORBIDDEN;
         ResourceError NOT_FOUND;
         ResourceError UNAUTHORIZED;
+        ResourceError TOO_MANY_REQUESTS;
     }
 }
 
@@ -70,11 +72,8 @@ resource Access GET "/access/domain/{domainName}/role/{roleName}/principal/{prin
         ResourceError FORBIDDEN;
         ResourceError UNAUTHORIZED;
         ResourceError NOT_FOUND;
+        ResourceError TOO_MANY_REQUESTS;
     }
-}
-
-type RoleAccess Struct {
-    Array<EntityName> roles;
 }
 
 resource RoleAccess GET "/access/domain/{domainName}/principal/{principal}" {
@@ -86,5 +85,6 @@ resource RoleAccess GET "/access/domain/{domainName}/principal/{principal}" {
         ResourceError BAD_REQUEST;
         ResourceError UNAUTHORIZED;
         ResourceError NOT_FOUND;
+        ResourceError TOO_MANY_REQUESTS;
     }
 }

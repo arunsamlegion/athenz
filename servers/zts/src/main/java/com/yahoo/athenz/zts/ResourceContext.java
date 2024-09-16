@@ -3,17 +3,24 @@
 //
 package com.yahoo.athenz.zts;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import com.yahoo.athenz.common.messaging.DomainChangeMessage;
+
+import jakarta.servlet.ServletContext;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.util.List;
 
 //
 // ResourceContext
 //
 public interface ResourceContext {
+    ServletContext servletContext();
     HttpServletRequest request();
     HttpServletResponse response();
     String getApiName();
     String getHttpMethod();
     void authenticate();
     void authorize(String action, String resource, String trustedDomain);
+    void addDomainChangeMessage(DomainChangeMessage domainChangeMsg);
+    List<DomainChangeMessage> getDomainChangeMessages();
 }

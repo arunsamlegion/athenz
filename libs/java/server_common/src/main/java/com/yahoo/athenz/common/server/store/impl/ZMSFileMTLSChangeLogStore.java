@@ -1,5 +1,5 @@
 /*
- *  Copyright 2020 Verizon Media
+ *  Copyright The Athenz Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -20,10 +20,8 @@ import com.oath.auth.KeyRefresher;
 import com.oath.auth.KeyRefresherException;
 import com.oath.auth.Utils;
 import com.yahoo.athenz.common.server.store.ChangeLogStore;
-import com.yahoo.athenz.zms.SignedDomain;
-import com.yahoo.athenz.zms.SignedDomains;
-import com.yahoo.athenz.zms.ZMSClient;
-import com.yahoo.athenz.zms.ZMSClientException;
+import com.yahoo.athenz.zms.*;
+import org.eclipse.jetty.util.StringUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,10 +41,17 @@ public class ZMSFileMTLSChangeLogStore implements ChangeLogStore {
     public ZMSFileMTLSChangeLogStore(String rootDirectory, final String keyPath, final String certPath,
                                      final String trustStorePath, final String trustStorePassword)
             throws InterruptedException, KeyRefresherException, IOException {
+        this(rootDirectory, keyPath, certPath, trustStorePath, trustStorePassword.toCharArray());
+    }
+
+    public ZMSFileMTLSChangeLogStore(String rootDirectory, final String keyPath, final String certPath,
+                                     final String trustStorePath, final char[] trustStorePassword)
+            throws InterruptedException, KeyRefresherException, IOException {
 
         // check to see if we need to override the ZMS url from the config file
 
-        final String zmsUrl = System.getProperty(ZTS_PROP_ZMS_URL_OVERRIDE);
+        final String overrideUrl = System.getProperty(ZTS_PROP_ZMS_URL_OVERRIDE);
+        final String zmsUrl = (StringUtil.isEmpty(overrideUrl)) ? null : overrideUrl;
 
         // setup our mtls client first to make sure our settings are correct
 
@@ -75,10 +80,26 @@ public class ZMSFileMTLSChangeLogStore implements ChangeLogStore {
     }
 
     @Override
+    public JWSDomain getLocalJWSDomain(String domainName) {
+        return changeLogStoreCommon.getLocalJWSDomain(domainName);
+    }
+
+    @Override
     public SignedDomain getServerSignedDomain(String domainName) {
 
         try {
             return changeLogStoreCommon.getServerSignedDomain(zmsClient, domainName);
+        } catch (ZMSClientException ex) {
+            LOGGER.error("Error when fetching {} data from ZMS: {}", domainName, ex.getMessage());
+            return null;
+        }
+    }
+
+    @Override
+    public JWSDomain getServerJWSDomain(String domainName) {
+
+        try {
+            return changeLogStoreCommon.getServerJWSDomain(zmsClient, domainName);
         } catch (ZMSClientException ex) {
             LOGGER.error("Error when fetching {} data from ZMS: {}", domainName, ex.getMessage());
             return null;
@@ -96,8 +117,18 @@ public class ZMSFileMTLSChangeLogStore implements ChangeLogStore {
     }
 
     @Override
+    public void saveLocalDomain(String domainName, JWSDomain jwsDomain) {
+        changeLogStoreCommon.saveLocalDomain(domainName, jwsDomain);
+    }
+
+    @Override
     public List<String> getLocalDomainList() {
         return changeLogStoreCommon.getLocalDomainList();
+    }
+
+    @Override
+    public Map<String, DomainAttributes> getLocalDomainAttributeList() {
+        return changeLogStoreCommon.getLocalDomainAttributeList();
     }
 
     @Override
@@ -145,6 +176,17 @@ public class ZMSFileMTLSChangeLogStore implements ChangeLogStore {
 
         try {
             return changeLogStoreCommon.getUpdatedSignedDomains(zmsClient, lastModTimeBuffer);
+        } catch (ZMSClientException ex) {
+            LOGGER.error("Error when refreshing data from ZMS: {}", ex.getMessage());
+            return null;
+        }
+    }
+
+    @Override
+    public List<JWSDomain> getUpdatedJWSDomains(StringBuilder lastModTimeBuffer) {
+
+        try {
+            return changeLogStoreCommon.getUpdatedJWSDomains(zmsClient, lastModTimeBuffer);
         } catch (ZMSClientException ex) {
             LOGGER.error("Error when refreshing data from ZMS: {}", ex.getMessage());
             return null;

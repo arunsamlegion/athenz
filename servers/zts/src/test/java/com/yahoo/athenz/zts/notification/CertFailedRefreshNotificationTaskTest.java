@@ -1,5 +1,5 @@
 /*
- *  Copyright 2020 Verizon Media
+ *  Copyright The Athenz Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import com.yahoo.athenz.common.server.notification.Notification;
 import com.yahoo.athenz.common.server.cert.X509CertRecord;
 import com.yahoo.athenz.common.server.notification.NotificationEmail;
 import com.yahoo.athenz.common.server.notification.NotificationMetric;
+import com.yahoo.athenz.common.server.notification.NotificationToEmailConverterCommon;
 import com.yahoo.athenz.zms.DomainData;
 import com.yahoo.athenz.zms.TagValueList;
 import com.yahoo.athenz.zts.ZTSTestUtils;
@@ -30,6 +31,7 @@ import com.yahoo.rdl.Timestamp;
 import org.mockito.Mockito;
 import org.testng.Assert;
 import org.testng.annotations.BeforeClass;
+import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
 import java.util.*;
@@ -45,6 +47,7 @@ import static org.testng.AssertJUnit.assertEquals;
 
 public class CertFailedRefreshNotificationTaskTest {
     private InstanceCertManager instanceCertManager;
+    private NotificationToEmailConverterCommon notificationToEmailConverterCommon;
     private DataStore dataStore;
     private HostnameResolver hostnameResolver;
     private final String userDomainPrefix = "user.";
@@ -151,6 +154,13 @@ public class CertFailedRefreshNotificationTaskTest {
         instanceCertManager = Mockito.mock(InstanceCertManager.class);
         dataStore = Mockito.mock(DataStore.class);
         hostnameResolver = Mockito.mock(HostnameResolver.class);
+        notificationToEmailConverterCommon = new NotificationToEmailConverterCommon(null);
+    }
+
+    @BeforeMethod
+    public void resetDatastore() {
+        Mockito.reset(dataStore);
+        Mockito.reset(hostnameResolver);
     }
 
     @Test
@@ -172,7 +182,8 @@ public class CertFailedRefreshNotificationTaskTest {
                 hostnameResolver,
                 userDomainPrefix,
                 serverName,
-                httpsPort);
+                httpsPort,
+                notificationToEmailConverterCommon);
 
         List<Notification> notifications = certFailedRefreshNotificationTask.getNotifications();
         assertEquals(0, notifications.size());
@@ -221,7 +232,8 @@ public class CertFailedRefreshNotificationTaskTest {
                 hostnameResolver,
                 userDomainPrefix,
                 serverName,
-                httpsPort);
+                httpsPort,
+                notificationToEmailConverterCommon);
 
         List<Notification> notifications = certFailedRefreshNotificationTask.getNotifications();
         assertEquals(6, notifications.size());
@@ -280,7 +292,8 @@ public class CertFailedRefreshNotificationTaskTest {
                 hostnameResolver,
                 userDomainPrefix,
                 serverName,
-                httpsPort);
+                httpsPort,
+                notificationToEmailConverterCommon);
 
         List<Notification> notifications = certFailedRefreshNotificationTask.getNotifications();
         assertEquals(3, notifications.size());
@@ -313,7 +326,8 @@ public class CertFailedRefreshNotificationTaskTest {
                 hostnameResolver,
                 userDomainPrefix,
                 serverName,
-                httpsPort);
+                httpsPort,
+                notificationToEmailConverterCommon);
 
         List<Notification> notifications = certFailedRefreshNotificationTask.getNotifications();
         assertEquals(new ArrayList<>(), notifications);
@@ -341,7 +355,8 @@ public class CertFailedRefreshNotificationTaskTest {
                 hostnameResolver,
                 userDomainPrefix,
                 serverName,
-                httpsPort);
+                httpsPort,
+                notificationToEmailConverterCommon);
 
         List<Notification> notifications = certFailedRefreshNotificationTask.getNotifications();
         assertEquals(new ArrayList<>(), notifications);
@@ -376,7 +391,8 @@ public class CertFailedRefreshNotificationTaskTest {
                 hostnameResolver,
                 userDomainPrefix,
                 serverName,
-                httpsPort);
+                httpsPort,
+                notificationToEmailConverterCommon);
 
         List<Notification> notifications = certFailedRefreshNotificationTask.getNotifications();
         assertEquals(3, notifications.size());
@@ -412,7 +428,8 @@ public class CertFailedRefreshNotificationTaskTest {
                 hostnameResolver,
                 userDomainPrefix,
                 serverName,
-                httpsPort);
+                httpsPort,
+                notificationToEmailConverterCommon);
 
         List<Notification> notifications = certFailedRefreshNotificationTask.getNotifications();
         assertEquals(new ArrayList<>(), notifications);
@@ -475,7 +492,8 @@ public class CertFailedRefreshNotificationTaskTest {
                 hostnameResolver,
                 userDomainPrefix,
                 serverName,
-                httpsPort);
+                httpsPort,
+                notificationToEmailConverterCommon);
 
         List<Notification> notifications = certFailedRefreshNotificationTask.getNotifications();
         assertEquals(5, notifications.size());
@@ -518,7 +536,8 @@ public class CertFailedRefreshNotificationTaskTest {
                 hostnameResolver,
                 userDomainPrefix,
                 serverName,
-                httpsPort);
+                httpsPort,
+                notificationToEmailConverterCommon);
 
         List<Notification> notifications = certFailedRefreshNotificationTask.getNotifications();
         assertEquals(new ArrayList<>(), notifications);
@@ -537,7 +556,8 @@ public class CertFailedRefreshNotificationTaskTest {
                 hostnameResolver,
                 userDomainPrefix,
                 serverName,
-                httpsPort);
+                httpsPort,
+                notificationToEmailConverterCommon);
         List<Notification> notifications = certFailedRefreshNotificationTask.getNotifications();
         assertEquals(new ArrayList<>(), notifications);
     }
@@ -571,7 +591,8 @@ public class CertFailedRefreshNotificationTaskTest {
                 hostnameResolver,
                 userDomainPrefix,
                 serverName,
-                httpsPort);
+                httpsPort,
+                notificationToEmailConverterCommon);
 
         List<Notification> notifications = certFailedRefreshNotificationTask.getNotifications();
         assertEquals(6, notifications.size());
@@ -608,7 +629,8 @@ public class CertFailedRefreshNotificationTaskTest {
                 hostnameResolver,
                 userDomainPrefix,
                 serverName,
-                httpsPort);
+                httpsPort,
+                notificationToEmailConverterCommon);
 
         String description = certFailedRefreshNotificationTask.getDescription();
         assertEquals("certificate failed refresh notification", description);
@@ -629,10 +651,10 @@ public class CertFailedRefreshNotificationTaskTest {
                         "bad;instanceID0;Sun Mar 15 15:08:07 IST 2020;;hostBad|" + // bad entry with missing provider
                         "service0;provider;instanceID0;Sun Mar 15 15:08:07 IST 2020;;secondHostName0");
 
-        Notification notification = new Notification();
+        Notification notification = new Notification(Notification.Type.CERT_FAILED_REFRESH);
         notification.setDetails(details);
         CertFailedRefreshNotificationTask.CertFailedRefreshNotificationToEmailConverter converter =
-                new CertFailedRefreshNotificationTask.CertFailedRefreshNotificationToEmailConverter(serverName, httpsPort);
+                new CertFailedRefreshNotificationTask.CertFailedRefreshNotificationToEmailConverter(serverName, httpsPort, new NotificationToEmailConverterCommon(null));
         NotificationEmail notificationAsEmail = converter.getNotificationAsEmail(notification);
 
         String body = notificationAsEmail.getBody();
@@ -661,9 +683,9 @@ public class CertFailedRefreshNotificationTaskTest {
         details.put(NOTIFICATION_DETAILS_UNREFRESHED_CERTS,
                 "service1;provider1;instanceid1;Sun Mar 15 15:08:07 IST 2020;;hostName1");
 
-        Notification notification = new Notification();
+        Notification notification = new Notification(Notification.Type.CERT_FAILED_REFRESH);
         notification.setDetails(details);
-        CertFailedRefreshNotificationTask.CertFailedRefreshNotificationToEmailConverter converter = new CertFailedRefreshNotificationTask.CertFailedRefreshNotificationToEmailConverter(serverName, httpsPort);
+        CertFailedRefreshNotificationTask.CertFailedRefreshNotificationToEmailConverter converter = new CertFailedRefreshNotificationTask.CertFailedRefreshNotificationToEmailConverter(serverName, httpsPort, new NotificationToEmailConverterCommon(null));
         NotificationEmail notificationAsEmail = converter.getNotificationAsEmail(notification);
 
         String body = notificationAsEmail.getBody();
@@ -678,8 +700,8 @@ public class CertFailedRefreshNotificationTaskTest {
 
     @Test
     public void getEmailSubject() {
-        Notification notification = new Notification();
-        CertFailedRefreshNotificationTask.CertFailedRefreshNotificationToEmailConverter converter = new CertFailedRefreshNotificationTask.CertFailedRefreshNotificationToEmailConverter(serverName, httpsPort);
+        Notification notification = new Notification(Notification.Type.CERT_FAILED_REFRESH);
+        CertFailedRefreshNotificationTask.CertFailedRefreshNotificationToEmailConverter converter = new CertFailedRefreshNotificationTask.CertFailedRefreshNotificationToEmailConverter(serverName, httpsPort, notificationToEmailConverterCommon);
         NotificationEmail notificationAsEmail = converter.getNotificationAsEmail(notification);
         String subject = notificationAsEmail.getSubject();
         Assert.assertEquals(subject, "Athenz Unrefreshed Certificates Notification");
@@ -694,10 +716,10 @@ public class CertFailedRefreshNotificationTaskTest {
         Map<String, String> details = new HashMap<>();
         details.put("domain", "dom1");
         details.put(NOTIFICATION_DETAILS_UNREFRESHED_CERTS,
-                        "service0;provider0;instanceID0;" + fiveDaysAgo.toString() + ";" + twentyFiveDaysFromNow + ";hostName1|" +
-                        "service1;provider1;instanceID1;" + fiveDaysAgo.toString() + ";" + twentyFiveDaysFromNow + ";hostName2");
+                        "service0;provider0;instanceID0;" + fiveDaysAgo + ";" + twentyFiveDaysFromNow + ";hostName1|" +
+                        "service1;provider1;instanceID1;" + fiveDaysAgo + ";" + twentyFiveDaysFromNow + ";hostName2");
 
-        Notification notification = new Notification();
+        Notification notification = new Notification(Notification.Type.CERT_FAILED_REFRESH);
         notification.setDetails(details);
 
         CertFailedRefreshNotificationTask.CertFailedRefreshNotificationToMetricConverter converter = new CertFailedRefreshNotificationTask.CertFailedRefreshNotificationToMetricConverter();

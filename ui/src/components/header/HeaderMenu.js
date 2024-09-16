@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,19 @@ import styled from '@emotion/styled';
 import Menu from '../denali/Menu/Menu';
 import Icon from '../denali/icons/Icon';
 import { colors } from '../denali/styles';
-import { useRouter } from 'next/router';
+import { withRouter } from 'next/router';
+import PageUtils from '../utils/PageUtils';
+import { connect } from 'react-redux';
+import { getUserPendingMembers } from '../../redux/thunks/user';
+import {
+    selectHeaderDetails,
+    selectPendingMembersList,
+} from '../../redux/selectors/domains';
+import { getReviewRoles } from '../../redux/thunks/roles';
+import { selectUserReviewRoles } from '../../redux/selectors/roles';
+import { getReviewGroups } from '../../redux/thunks/groups';
+import { selectUserReviewGroups } from '../../redux/selectors/groups';
+import API from '../../api';
 
 const HeaderMenuDiv = styled.div`
     display: flex;
@@ -80,68 +92,125 @@ const HeaderMenuUserDiv = styled.div`
     margin-left: 15px;
 `;
 
-const HeaderMenu = (props) => {
-    let icon = 'notification';
-    const router = useRouter();
-    if (props.pending) {
-        if (Object.keys(props.pending).length !== 0) {
-            icon = 'notification-solid';
-        }
-    }
-    let menuItems =
-        props.headerDetails &&
-        props.headerDetails.headerLinks.map((headerLink, idx) => {
-            return (
-                <MenuItemDiv key={idx}>
-                    <StyledAnchorDiv
-                        data-testid='menu'
-                        onClick={() =>
-                            window.open(headerLink.url, headerLink.target)
-                        }
-                    >
-                        {headerLink.title}
-                    </StyledAnchorDiv>
-                </MenuItemDiv>
-            );
-        });
-    return (
-        <HeaderMenuDiv data-testid='header-menu'>
-            <Icon
-                icon={icon}
-                isLink
-                onClick={() =>
-                    router.push('/workflow', '/workflow', {
-                        getInitialProps: true,
-                    })
-                }
-                size={'25px'}
-                color={colors.white}
-            />
+const NotificationIconRedDotContainer = styled.div`
+    position: relative;
+    width: 0;
+    height: 0;
+`;
 
-            <HeaderMenuUserDiv>
-                <Menu
-                    placement='bottom-end'
-                    trigger={({ getTriggerProps, triggerRef }) => (
-                        <Icon
-                            icon={'help-circle'}
-                            {...getTriggerProps({ innerRef: triggerRef })}
-                            isLink
-                            size={'25px'}
-                            color={colors.white}
-                        />
-                    )}
-                    triggerOn='click'
-                >
-                    <MenuDiv>{menuItems}</MenuDiv>
-                </Menu>
-            </HeaderMenuUserDiv>
-            {props.headerDetails && props.headerDetails.userId && (
+const ReviewNotificationSpan = styled.span`
+    position: absolute;
+    top: -5px;
+    right: 0px;
+    width: 15px;
+    height: 15px;
+    background-color: red;
+    border-radius: 50px;
+`;
+
+class HeaderMenu extends React.Component {
+    constructor(props) {
+        super(props);
+        this.api = API();
+        this.state = {
+            roleGroupReviewFeatureFlag: false,
+        };
+    }
+
+    onClickFunction(route) {
+        this.props.router.push(route, route);
+    }
+
+    componentDidMount() {
+        this.props.getUserPendingMembers();
+        this.props.getReviewRoles();
+        this.props.getReviewGroups();
+        this.api.getPageFeatureFlag('roleGroupReview').then((data) => {
+            if (data) {
+                this.setState({
+                    roleGroupReviewFeatureFlag:
+                        data['roleGroupReviewFeatureFlag'],
+                });
+            }
+        });
+    }
+
+    shouldAlertUser() {
+        let props = this.props;
+        let reviewRolesHasLength = Object.keys(props.reviewRoles).length > 0;
+        let reviewGroupsHasLength = Object.keys(props.reviewGroups).length > 0;
+        let reviewPendingMembersHasLength =
+            Object.keys(props.pending).length > 0;
+        // TODO clean up feature flag after full feature implemented and deployed to prod
+        return (
+            this.state.roleGroupReviewFeatureFlag &&
+            (reviewRolesHasLength ||
+                reviewGroupsHasLength ||
+                reviewPendingMembersHasLength)
+        );
+    }
+
+    notificationsExist() {
+        let props = this.props;
+        return props.pending || props.reviewRoles || props.reviewGroups;
+    }
+
+    render() {
+        let props = this.props;
+        let reviewNotificationRedDot = '';
+        let icon = 'notification';
+        let clickIcon = this.onClickFunction.bind(
+            this,
+            PageUtils.workflowAdminPage()
+        );
+        if (this.notificationsExist()) {
+            let reviewPendingMembersHasLength =
+                Object.keys(props.pending).length > 0;
+            if (this.shouldAlertUser()) {
+                icon = 'notification-solid';
+                reviewNotificationRedDot = <ReviewNotificationSpan />;
+            }
+            if (reviewPendingMembersHasLength) {
+                icon = 'notification-solid';
+            }
+        }
+        let menuItems =
+            props.headerDetails &&
+            props.headerDetails.headerLinks &&
+            props.headerDetails.headerLinks.map((headerLink, idx) => {
+                return (
+                    <MenuItemDiv key={idx}>
+                        <StyledAnchorDiv
+                            data-testid='menu'
+                            onClick={() =>
+                                window.open(headerLink.url, headerLink.target)
+                            }
+                        >
+                            {headerLink.title}
+                        </StyledAnchorDiv>
+                    </MenuItemDiv>
+                );
+            });
+        return (
+            <HeaderMenuDiv data-testid='header-menu'>
+                <Icon
+                    id='notifications-icon'
+                    icon={icon}
+                    isLink
+                    onClick={clickIcon}
+                    size={'25px'}
+                    color={colors.white}
+                />
+                <NotificationIconRedDotContainer>
+                    {reviewNotificationRedDot}
+                </NotificationIconRedDotContainer>
+
                 <HeaderMenuUserDiv>
                     <Menu
                         placement='bottom-end'
                         trigger={({ getTriggerProps, triggerRef }) => (
                             <Icon
-                                icon={'user-profile-circle'}
+                                icon={'help-circle'}
                                 {...getTriggerProps({ innerRef: triggerRef })}
                                 isLink
                                 size={'25px'}
@@ -150,44 +219,87 @@ const HeaderMenu = (props) => {
                         )}
                         triggerOn='click'
                     >
-                        <UserDropDownDiv>
-                            <UserDetailsDiv>
-                                <UserHeaderDiv>
-                                    {props.headerDetails.userId}
-                                </UserHeaderDiv>
-                                <UserEmailDiv>
-                                    {props.headerDetails.userData.userMail}
-                                </UserEmailDiv>
-                                <UserStreetLinkDiv>
-                                    <StyledAnchorDiv
-                                        data-testid='user-link'
-                                        onClick={() =>
-                                            window.open(
-                                                props.headerDetails.userData
-                                                    .userLink.url,
-                                                props.headerDetails.userData
-                                                    .userLink.target
-                                            )
-                                        }
-                                    >
-                                        {
-                                            props.headerDetails.userData
-                                                .userLink.title
-                                        }
-                                    </StyledAnchorDiv>
-                                </UserStreetLinkDiv>
-                            </UserDetailsDiv>
-                            <UserImageDiv>
-                                <StyledImg
-                                    src={props.headerDetails.userData.userIcon}
-                                />
-                            </UserImageDiv>
-                        </UserDropDownDiv>
+                        <MenuDiv>{menuItems}</MenuDiv>
                     </Menu>
                 </HeaderMenuUserDiv>
-            )}
-        </HeaderMenuDiv>
-    );
+                {props.headerDetails && props.headerDetails.userId && (
+                    <HeaderMenuUserDiv>
+                        <Menu
+                            placement='bottom-end'
+                            trigger={({ getTriggerProps, triggerRef }) => (
+                                <Icon
+                                    icon={'user-profile-circle'}
+                                    {...getTriggerProps({
+                                        innerRef: triggerRef,
+                                    })}
+                                    isLink
+                                    size={'25px'}
+                                    color={colors.white}
+                                />
+                            )}
+                            triggerOn='click'
+                        >
+                            <UserDropDownDiv>
+                                <UserDetailsDiv>
+                                    <UserHeaderDiv>
+                                        {props.headerDetails.userId}
+                                    </UserHeaderDiv>
+                                    <UserEmailDiv>
+                                        {props.headerDetails.userData.userMail}
+                                    </UserEmailDiv>
+                                    <UserStreetLinkDiv>
+                                        <StyledAnchorDiv
+                                            data-testid='user-link'
+                                            onClick={() =>
+                                                window.open(
+                                                    props.headerDetails.userData
+                                                        .userLink.url,
+                                                    props.headerDetails.userData
+                                                        .userLink.target
+                                                )
+                                            }
+                                        >
+                                            {
+                                                props.headerDetails.userData
+                                                    .userLink.title
+                                            }
+                                        </StyledAnchorDiv>
+                                    </UserStreetLinkDiv>
+                                </UserDetailsDiv>
+                                <UserImageDiv>
+                                    <StyledImg
+                                        src={
+                                            props.headerDetails.userData
+                                                .userIcon
+                                        }
+                                    />
+                                </UserImageDiv>
+                            </UserDropDownDiv>
+                        </Menu>
+                    </HeaderMenuUserDiv>
+                )}
+            </HeaderMenuDiv>
+        );
+    }
+}
+
+const mapStateToProps = (state, props) => {
+    return {
+        ...props,
+        headerDetails: selectHeaderDetails(state),
+        pending: selectPendingMembersList(state, null, 'admin'),
+        reviewRoles: selectUserReviewRoles(state),
+        reviewGroups: selectUserReviewGroups(state),
+    };
 };
 
-export default HeaderMenu;
+const mapDispatchToProps = (dispatch) => ({
+    getUserPendingMembers: () => dispatch(getUserPendingMembers()),
+    getReviewRoles: () => dispatch(getReviewRoles()),
+    getReviewGroups: () => dispatch(getReviewGroups()),
+});
+
+export default connect(
+    mapStateToProps,
+    mapDispatchToProps
+)(withRouter(HeaderMenu));

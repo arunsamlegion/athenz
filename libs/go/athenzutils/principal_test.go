@@ -1,4 +1,4 @@
-// Copyright 2018 Oath, Inc.
+// Copyright The Athenz Authors
 // Licensed under the terms of the Apache version 2.0 license. See LICENSE file for terms.
 
 package athenzutils
@@ -46,6 +46,33 @@ func TestExtractServicePrincipalInValid(test *testing.T) {
 			principal, err := ExtractServicePrincipal(*x509Cert)
 			if err == nil {
 				test.Errorf("no error from invalid file %s: %s", tt.certFile, principal)
+			}
+		})
+	}
+}
+
+func TestParsePrincipal(test *testing.T) {
+
+	tests := []struct {
+		name      string
+		principal string
+		domain    string
+		service   string
+	}{
+		{"empty-string", "", "", ""},
+		{"missing-dot", "john-doe", "", ""},
+		{"start-dot", ".john-doe", "", ""},
+		{"end-dot", "john-doe.", "", ""},
+		{"valid-top-level-domain", "user.john-doe", "user", "john-doe"},
+		{"valid-sub-domain", "home.john-doe.api", "home.john-doe", "api"},
+		{"single-letter-domain", "a.api", "a", "api"},
+		{"single-letter-service", "athenz.a", "athenz", "a"},
+	}
+	for _, tt := range tests {
+		test.Run(tt.name, func(t *testing.T) {
+			domain, service, _ := ParsePrincipal(tt.principal)
+			if domain != tt.domain && service != tt.service {
+				test.Errorf("incorrect parsing of principal: %s (%s/%s)", tt.principal, tt.domain, tt.service)
 			}
 		})
 	}

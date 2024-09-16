@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,6 +34,8 @@ public final class AuthorityConsts {
     public static final String ATHENZ_PROP_RESTRICTED_OU = "athenz.crypto.restricted_ou";
 
     public static final String ZTS_CERT_PRINCIPAL_URI    = "athenz://principal/";
+
+    public static final String AUTH_PROP_MILLIS_BETWEEN_ZTS_CALLS = "athenz.auth.millis_between_zts_calls";
 
     // prevent object creation
     private AuthorityConsts() {

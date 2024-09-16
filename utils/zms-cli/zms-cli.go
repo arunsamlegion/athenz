@@ -9,9 +9,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/ardielle/ardielle-go/rdl"
-	"gopkg.in/yaml.v2"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -20,6 +17,9 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/ardielle/ardielle-go/rdl"
+	"gopkg.in/yaml.v2"
 
 	"golang.org/x/crypto/ssh/terminal"
 	"golang.org/x/net/proxy"
@@ -83,7 +83,7 @@ func isFreshFile(filename string, maxAge float64) bool {
 func getCachedNToken() string {
 	ntokenFile := os.Getenv("HOME") + "/.ntoken"
 	if isFreshFile(ntokenFile, 45) {
-		data, err := ioutil.ReadFile(ntokenFile)
+		data, err := os.ReadFile(ntokenFile)
 		if err == nil {
 			return strings.TrimSpace(string(data))
 		}
@@ -121,20 +121,21 @@ func getAuthNToken(identity, authorizedServices, zmsUrl string, tr *http.Transpo
 	var authHeader = "Authorization"
 	var authCreds = "Basic " + str
 	zmsClient := zms.ZMSClient{
-		URL:         zmsUrl,
-		Transport:   tr,
-		CredsHeader: &authHeader,
-		CredsToken:  &authCreds,
-		Timeout:     0,
+		URL:          zmsUrl,
+		Transport:    tr,
+		CredsHeaders: make(map[string]string),
+		Timeout:      0,
 	}
+
+	zmsClient.AddCredentials(authHeader, authCreds)
 	tok, err := zmsClient.GetUserToken(zms.SimpleName(user), authorizedServices, nil)
 	if err != nil {
-		return "", fmt.Errorf("Cannot get user token for user: %s error: %v", user, err)
+		return "", fmt.Errorf("cannot get user token for user: %s error: %v", user, err)
 	}
 	if tok.Token != "" {
 		ntokenFile := os.Getenv("HOME") + "/.ntoken"
 		data := []byte(tok.Token)
-		ioutil.WriteFile(ntokenFile, data, 0600)
+		os.WriteFile(ntokenFile, data, 0600)
 	}
 	return string(tok.Token), nil
 }
@@ -148,12 +149,15 @@ func usage() string {
 	buf.WriteString("   -c cacert_file      CA Certificate file path\n")
 	buf.WriteString("   -cert x509_cert     Athenz X.509 Certificate file for authentication\n")
 	buf.WriteString("   -d domain           The domain used for every command that takes a domain argument\n")
+	buf.WriteString("   -e skip_errors      Skip errors during import domain operation\n")
 	buf.WriteString("   -f ntoken_file      Principal Authority NToken file used for authentication\n")
 	buf.WriteString("   -i identity         User identity to authenticate as if NToken file is not specified\n")
 	buf.WriteString("                       (default=" + defaultIdentity() + ")\n")
 	buf.WriteString("   -k                  Disable peer verification of SSL certificates.\n")
 	buf.WriteString("   -key x509_key       Athenz X.509 Key file for authentication\n")
 	buf.WriteString("   -o output_format    Output format - json or yaml (default=yaml)\n")
+	buf.WriteString("   -overwrite          Overwrites without checking for existence\n")
+	buf.WriteString("   -r resource_owner   Resource Owner for the object being updated\n")
 	buf.WriteString("   -s host:port        The SOCKS5 proxy to route requests through\n")
 	buf.WriteString("   -v                  Verbose mode. Full resource names are included in output (default=false)\n")
 	buf.WriteString("   -x                  For user token output, exclude the header name (default=false)\n")
@@ -167,7 +171,7 @@ func usage() string {
 }
 
 func loadNtokenFromFile(fileName string) (string, error) {
-	buf, err := ioutil.ReadFile(fileName)
+	buf, err := os.ReadFile(fileName)
 	if err != nil {
 		return "", err
 	}
@@ -197,12 +201,15 @@ func main() {
 	pSocks := flag.String("s", defaultSocksProxy(), "The SOCKS5 proxy to route requests through, i.e. 127.0.0.1:1080")
 	pSkipVerify := flag.Bool("k", false, "Disable peer verification of SSL certificates")
 	pOutputFormat := flag.String("o", "manualYaml", "Output format - json or yaml")
+	pOverwrite := flag.Bool("overwrite", false, "Overwrites without checking for existence")
 	pDebug := flag.Bool("debug", defaultDebug(), "debug mode (for authentication, mainly)")
 	pAuditRef := flag.String("a", "", "Audit Reference Token if auditing is enabled for the domain")
 	pExcludeHeader := flag.Bool("x", false, "Exclude header in user-token output")
 	pX509KeyFile := flag.String("key", "", "x.509 private key file for authentication")
 	pX509CertFile := flag.String("cert", "", "x.509 certificate key file for authentication")
 	pShowVersion := flag.Bool("version", false, "Show version")
+	pSkipErrors := flag.Bool("e", true, "Skip all errors during import domain operation")
+	pResourceOwner := flag.String("r", "", "Resource Owner for the object being updated")
 
 	flag.Usage = func() {
 		fmt.Println(usage())
@@ -270,10 +277,13 @@ func main() {
 		Debug:            *pDebug,
 		AddSelf:          *pAddSelf,
 		OutputFormat:     *pOutputFormat,
+		Overwrite:        *pOverwrite,
+		SkipErrors:       *pSkipErrors,
+		ResourceOwner:    *pResourceOwner,
 	}
 
 	if *pX509KeyFile != "" && *pX509CertFile != "" {
-		err := cli.SetX509CertClient(*pX509KeyFile, *pX509CertFile, *pCACert, *pSocks, false, *pSkipVerify)
+		err := zmscli.SetX509CertClient(&cli, *pX509KeyFile, *pX509CertFile, *pCACert, *pSocks, false, *pSkipVerify)
 		if err != nil {
 			log.Fatalf("Unable to set ZMS x.509 Client: %v\n", err)
 		}
@@ -307,7 +317,7 @@ func main() {
 			}
 		}
 		var authHeader = "Athenz-Principal-Auth"
-		cli.SetClient(tr, &authHeader, &ntoken)
+		zmscli.SetClient(&cli, tr, &authHeader, &ntoken)
 
 		if len(args) > 0 && args[0] == "get-user-token" {
 			if len(args) == 2 {
@@ -333,29 +343,29 @@ func main() {
 			}
 		}
 		switch cli.OutputFormat {
-			case zmscli.JSONOutputFormat:
-				jsonOutput, errJson := json.MarshalIndent(err, "", "    ")
-				if errJson != nil {
-					fmt.Println("failed to produce JSON output: ", errJson)
-				}
-				output := string(jsonOutput)
-				fmt.Println(output)
-			case zmscli.YAMLOutputFormat:
-				yamlOutput, errYaml := yaml.Marshal(err)
-				if errYaml != nil {
-					fmt.Println("failed to produce YAML output: ", errYaml)
-				}
-				output := string(yamlOutput)
-				fmt.Println(output)
-			case zmscli.DefaultOutputFormat:
-				yamlOutput, errYaml := yaml.Marshal(err)
-				if errYaml != nil {
-					fmt.Println("failed to produce YAML output: ", errYaml)
-				}
-				output := string(yamlOutput)
-				fmt.Println(output)
-			default:
-				fmt.Println("***", err)
+		case zmscli.JSONOutputFormat:
+			jsonOutput, errJson := json.MarshalIndent(err, "", "    ")
+			if errJson != nil {
+				fmt.Println("failed to produce JSON output: ", errJson)
+			}
+			output := string(jsonOutput)
+			fmt.Println(output)
+		case zmscli.YAMLOutputFormat:
+			yamlOutput, errYaml := yaml.Marshal(err)
+			if errYaml != nil {
+				fmt.Println("failed to produce YAML output: ", errYaml)
+			}
+			output := string(yamlOutput)
+			fmt.Println(output)
+		case zmscli.DefaultOutputFormat:
+			yamlOutput, errYaml := yaml.Marshal(err)
+			if errYaml != nil {
+				fmt.Println("failed to produce YAML output: ", errYaml)
+			}
+			output := string(yamlOutput)
+			fmt.Println(output)
+		default:
+			fmt.Println("***", err)
 		}
 		os.Exit(1)
 	} else if msg != nil {
@@ -376,7 +386,7 @@ func getHttpTransport(socksProxy, caCertFile *string, skipVerify bool) *http.Tra
 	if caCertFile != nil || skipVerify {
 		config := &tls.Config{}
 		if caCertFile != nil {
-			capem, err := ioutil.ReadFile(*caCertFile)
+			capem, err := os.ReadFile(*caCertFile)
 			if err != nil {
 				log.Fatalf("Unable to read CA Certificate file %s, error: %v", *caCertFile, err)
 			}

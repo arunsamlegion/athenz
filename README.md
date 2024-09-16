@@ -6,6 +6,7 @@
 [![Publish Status][publish-status-image]][status-url]
 [![SourceSpy Dashboard](https://sourcespy.com/shield.svg)](https://sourcespy.com/github/athenzathenz/)
 [![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/4681/badge)](https://bestpractices.coreinfrastructure.org/projects/4681)
+[![Licenses](https://app.fossa.io/api/projects/git%2Bhttps%3A%2F%2Fgithub.com%2FAthenZ%2Fathenz.svg?type=shield)](https://app.fossa.io/projects/git%2Bhttps%3A%2F%2Fgithub.com%2FAthenZ%2Fathenz?ref=badge_shield)
 
 [status-image]: https://cd.screwdriver.cd/pipelines/6606/badge
 [publish-status-image]: https://cd.screwdriver.cd/pipelines/6606/publish/badge
@@ -46,7 +47,7 @@ application client, and an application service.
 
 Since Athenz service authentication is based on
 [X.509 certificates](https://en.wikipedia.org/wiki/X.509), it is
-important that you have a good understanding what X.509 certificates are
+important that you have a good understanding of what X.509 certificates are
 and how they're used to establish secure connections in Internet protocols
 such as [TLS](https://en.wikipedia.org/wiki/Transport_Layer_Security).
 
@@ -70,14 +71,10 @@ credentials for configured AWS IAM roles.
 ## Install
 
 * [Development Environment](docs/dev_environment.md)
-* Local/Development Environment Setup
+* Local/Development/Production Environment Setup
     * [ZMS Server](docs/setup_zms.md)
     * [ZTS Server](docs/setup_zts.md)
     * [UI Server](docs/setup_ui.md)
-* Production Environment Setup
-    * [ZMS Server](docs/setup_zms_prod.md)
-    * [ZTS Server](docs/setup_zts_prod.md)
-    * [UI Server](docs/setup_ui_prod.md)
 * AWS Production Environment Setup
     * [Introduction](docs/aws_athenz_setup.md)
 
@@ -100,6 +97,7 @@ credentials for configured AWS IAM roles.
     * [Private Key Store](docs/private_key_store.md)
     * [Certificate Signer](docs/cert_signer.md)
     * [Service Identity X.509 Certificate Support Requirements - Copper Argos](docs/copper_argos_dev.md)
+    * [OIDC Authentication Provider Support for AWS EKS](docs/oidc_aws_eks.md)
 * User Guide
     * [ZMS Client Utility](docs/zms_client.md)
     * [ZPU Utility](docs/setup_zpu.md)

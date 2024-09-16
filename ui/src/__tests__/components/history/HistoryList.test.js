@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,14 +14,14 @@
  * limitations under the License.
  */
 import React from 'react';
-import { render } from '@testing-library/react';
 import HistoryList from '../../../components/history/HistoryList';
+import { renderWithRedux } from '../../../tests_utils/ComponentsTestUtils';
 
 describe('HistoryList', () => {
     it('should render', () => {
-        const startDate = '2021-01-20 07:51';
-        const endDate = '2021-01-20 07:55';
-        const { getByTestId } = render(
+        const startDate = '2024-01-20 07:51';
+        const endDate = '2024-01-20 07:55';
+        const { getByTestId } = renderWithRedux(
             <HistoryList startDate={startDate} endDate={endDate} />
         );
         const historyList = getByTestId('history-list');

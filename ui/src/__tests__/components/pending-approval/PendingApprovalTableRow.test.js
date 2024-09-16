@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 import React from 'react';
 import { render } from '@testing-library/react';
 import PendingApprovalTableRow from '../../../components/pending-approval/PendingApprovalTableRow';
+import { PENDING_STATE_ENUM } from '../../../components/constants/constants';
 
 describe('PendingApprovalTable', () => {
     it('should render', () => {
@@ -25,6 +26,7 @@ describe('PendingApprovalTable', () => {
         const roleName = 'c';
         const checked = false;
         const userComment = 'd';
+        const timeZone = 'UTC';
 
         const { getByTestId } = render(
             <table>
@@ -38,6 +40,8 @@ describe('PendingApprovalTable', () => {
                         userComment={userComment}
                         pendingDecision={() => {}}
                         auditRefMissing={false}
+                        pendingState={PENDING_STATE_ENUM.ADD}
+                        timeZone={timeZone}
                     />
                 </tbody>
             </table>

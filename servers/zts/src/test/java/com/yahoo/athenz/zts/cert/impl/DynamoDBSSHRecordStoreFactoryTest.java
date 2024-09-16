@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -115,8 +115,8 @@ public class DynamoDBSSHRecordStoreFactoryTest {
         System.setProperty(ZTS_PROP_DYNAMODB_ZTS_URL, "test.ztsurl");
         System.setProperty(ZTS_PROP_DYNAMODB_TRUSTSTORE_APPNAME, "test.appname");
         PrivateKeyStore keyStore = Mockito.mock(PrivateKeyStore.class);
-        when(keyStore.getApplicationSecret(Mockito.eq("test.appname"), Mockito.eq("test.truststore.password")))
-                .thenReturn("decryptedPassword");
+        when(keyStore.getSecret(Mockito.eq("test.appname"), Mockito.eq(null), Mockito.eq("test.truststore.password")))
+                .thenReturn("decryptedPassword".toCharArray());
 
         DynamoDBSSHRecordStoreFactory factory = new DynamoDBSSHRecordStoreFactory();
         ZTSClientNotificationSenderImpl ztsClientNotificationSender = Mockito.mock(ZTSClientNotificationSenderImpl.class);

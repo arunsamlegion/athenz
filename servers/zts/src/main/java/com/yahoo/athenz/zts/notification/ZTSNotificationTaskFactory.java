@@ -1,5 +1,5 @@
 /*
- *  Copyright 2020 Verizon Media
+ *  Copyright The Athenz Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.yahoo.athenz.zts.notification;
 import com.yahoo.athenz.common.server.dns.HostnameResolver;
 import com.yahoo.athenz.common.server.notification.NotificationTask;
 import com.yahoo.athenz.common.server.notification.NotificationTaskFactory;
+import com.yahoo.athenz.common.server.notification.NotificationToEmailConverterCommon;
 import com.yahoo.athenz.zts.cert.InstanceCertManager;
 import com.yahoo.athenz.zts.store.DataStore;
 
@@ -32,19 +33,22 @@ public class ZTSNotificationTaskFactory implements NotificationTaskFactory {
     private final String userDomainPrefix;
     private final String serverName;
     private final int httpsPort;
+    private final NotificationToEmailConverterCommon notificationToEmailConverterCommon;
 
     public ZTSNotificationTaskFactory(InstanceCertManager instanceCertManager,
                                       DataStore dataStore,
                                       HostnameResolver hostnameResolver,
                                       String userDomainPrefix,
                                       String serverName,
-                                      int httpsPort) {
+                                      int httpsPort,
+                                      NotificationToEmailConverterCommon notificationToEmailConverterCommon) {
         this.httpsPort = httpsPort;
         this.instanceCertManager = instanceCertManager;
         this.dataStore = dataStore;
         this.hostnameResolver = hostnameResolver;
         this.userDomainPrefix = userDomainPrefix;
         this.serverName = serverName;
+        this.notificationToEmailConverterCommon = notificationToEmailConverterCommon;
     }
 
     @Override
@@ -55,6 +59,7 @@ public class ZTSNotificationTaskFactory implements NotificationTaskFactory {
                 hostnameResolver,
                 userDomainPrefix,
                 serverName,
-                httpsPort));
+                httpsPort,
+                notificationToEmailConverterCommon));
     }
 }

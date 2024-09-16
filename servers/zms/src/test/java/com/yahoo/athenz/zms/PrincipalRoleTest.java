@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,9 +27,11 @@ public class PrincipalRoleTest {
         prRole.setRoleName("role");
         prRole.setDomainName("domain");
         prRole.setDomainUserAuthorityFilter("authority");
+        prRole.setDomainMemberExpiryDays(10);
 
-        assertEquals("role", prRole.getRoleName());
-        assertEquals("domain", prRole.getDomainName());
-        assertEquals("authority", prRole.getDomainUserAuthorityFilter());
+        assertEquals(prRole.getRoleName(), "role");
+        assertEquals(prRole.getDomainName(), "domain");
+        assertEquals(prRole.getDomainUserAuthorityFilter(), "authority");
+        assertEquals(prRole.getDomainMemberExpiryDays(), 10);
     }
 }

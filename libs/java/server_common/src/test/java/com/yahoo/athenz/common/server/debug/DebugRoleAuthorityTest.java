@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,9 +19,7 @@ import java.util.List;
 
 import org.testng.annotations.Test;
 
-import com.yahoo.athenz.auth.Authority;
 import com.yahoo.athenz.auth.Principal;
-import com.yahoo.athenz.common.server.debug.DebugRoleAuthority;
 
 import static org.testng.Assert.*;
 
@@ -29,12 +27,12 @@ public class DebugRoleAuthorityTest {
 
     @Test
     public void testRoleAuthority() {
-        
-        Authority roleAuthority = new com.yahoo.athenz.common.server.debug.DebugRoleAuthority();
+
+        DebugRoleAuthority roleAuthority = new com.yahoo.athenz.common.server.debug.DebugRoleAuthority();
         assertNotNull(roleAuthority);
         
         roleAuthority.initialize();
-        ((DebugRoleAuthority) roleAuthority).setKeyStore(null);
+        roleAuthority.setKeyStore(null);
         
         assertNull(roleAuthority.getDomain());
         assertEquals(roleAuthority.getHeader(), "Athenz-Role-Auth");

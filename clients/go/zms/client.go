@@ -24,22 +24,21 @@ var _ = rdl.BaseTypeAny
 var _ = ioutil.NopCloser
 
 type ZMSClient struct {
-	URL         string
-	Transport   http.RoundTripper
-	CredsHeader *string
-	CredsToken  *string
-	Timeout     time.Duration
+	URL             string
+	Transport       http.RoundTripper
+	CredsHeaders    map[string]string
+	Timeout         time.Duration
+	DisableRedirect bool
 }
 
 // NewClient creates and returns a new HTTP client object for the ZMS service
 func NewClient(url string, transport http.RoundTripper) ZMSClient {
-	return ZMSClient{url, transport, nil, nil, 0}
+	return ZMSClient{url, transport, make(map[string]string), 0, false}
 }
 
 // AddCredentials adds the credentials to the client for subsequent requests.
 func (client *ZMSClient) AddCredentials(header string, token string) {
-	client.CredsHeader = &header
-	client.CredsToken = &token
+	client.CredsHeaders[header] = token
 }
 
 func (client ZMSClient) getClient() *http.Client {
@@ -49,6 +48,11 @@ func (client ZMSClient) getClient() *http.Client {
 	} else {
 		c = &http.Client{}
 	}
+	if client.DisableRedirect {
+		c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
+	}
 	if client.Timeout > 0 {
 		c.Timeout = client.Timeout
 	}
@@ -56,11 +60,14 @@ func (client ZMSClient) getClient() *http.Client {
 }
 
 func (client ZMSClient) addAuthHeader(req *http.Request) {
-	if client.CredsHeader != nil && client.CredsToken != nil {
-		if strings.HasPrefix(*client.CredsHeader, "Cookie.") {
-			req.Header.Add("Cookie", (*client.CredsHeader)[7:]+"="+*client.CredsToken)
+	if len(client.CredsHeaders) == 0 {
+		return
+	}
+	for key, value := range client.CredsHeaders {
+		if strings.HasPrefix(key, "Cookie.") {
+			req.Header.Add("Cookie", (key)[7:]+"="+value)
 		} else {
-			req.Header.Add(*client.CredsHeader, *client.CredsToken)
+			req.Header.Add(key, value)
 		}
 	}
 }
@@ -302,7 +309,7 @@ func (client ZMSClient) GetDomain(domain DomainName) (*Domain, error) {
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -317,12 +324,12 @@ func (client ZMSClient) GetDomain(domain DomainName) (*Domain, error) {
 	}
 }
 
-func (client ZMSClient) GetDomainList(limit *int32, skip string, prefix string, depth *int32, account string, productId *int32, roleMember ResourceName, roleName ResourceName, subscription string, tagKey CompoundName, tagValue CompoundName, businessService string, modifiedSince string) (*DomainList, error) {
+func (client ZMSClient) GetDomainList(limit *int32, skip string, prefix string, depth *int32, account string, productNumber *int32, roleMember ResourceName, roleName ResourceName, subscription string, project string, tagKey TagKey, tagValue TagCompoundValue, businessService string, productId string, modifiedSince string) (*DomainList, error) {
 	var data *DomainList
 	headers := map[string]string{
 		"If-Modified-Since": modifiedSince,
 	}
-	url := client.URL + "/domain" + encodeParams(encodeOptionalInt32Param("limit", limit), encodeStringParam("skip", string(skip), ""), encodeStringParam("prefix", string(prefix), ""), encodeOptionalInt32Param("depth", depth), encodeStringParam("account", string(account), ""), encodeOptionalInt32Param("ypmid", productId), encodeStringParam("member", string(roleMember), ""), encodeStringParam("role", string(roleName), ""), encodeStringParam("azure", string(subscription), ""), encodeStringParam("tagKey", string(tagKey), ""), encodeStringParam("tagValue", string(tagValue), ""), encodeStringParam("businessService", string(businessService), ""))
+	url := client.URL + "/domain" + encodeParams(encodeOptionalInt32Param("limit", limit), encodeStringParam("skip", string(skip), ""), encodeStringParam("prefix", string(prefix), ""), encodeOptionalInt32Param("depth", depth), encodeStringParam("account", string(account), ""), encodeOptionalInt32Param("ypmid", productNumber), encodeStringParam("member", string(roleMember), ""), encodeStringParam("role", string(roleName), ""), encodeStringParam("azure", string(subscription), ""), encodeStringParam("gcp", string(project), ""), encodeStringParam("tagKey", string(tagKey), ""), encodeStringParam("tagValue", string(tagValue), ""), encodeStringParam("businessService", string(businessService), ""), encodeStringParam("productId", string(productId), ""))
 	resp, err := client.httpGet(url, headers)
 	if err != nil {
 		return data, err
@@ -337,7 +344,7 @@ func (client ZMSClient) GetDomainList(limit *int32, skip string, prefix string, 
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -352,10 +359,11 @@ func (client ZMSClient) GetDomainList(limit *int32, skip string, prefix string, 
 	}
 }
 
-func (client ZMSClient) PostTopLevelDomain(auditRef string, detail *TopLevelDomain) (*Domain, error) {
+func (client ZMSClient) PostTopLevelDomain(auditRef string, resourceOwner string, detail *TopLevelDomain) (*Domain, error) {
 	var data *Domain
 	headers := map[string]string{
-		"Y-Audit-Ref": auditRef,
+		"Athenz-Resource-Owner": resourceOwner,
+		"Y-Audit-Ref":           auditRef,
 	}
 	url := client.URL + "/domain"
 	contentBytes, err := json.Marshal(detail)
@@ -376,7 +384,7 @@ func (client ZMSClient) PostTopLevelDomain(auditRef string, detail *TopLevelDoma
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -391,10 +399,11 @@ func (client ZMSClient) PostTopLevelDomain(auditRef string, detail *TopLevelDoma
 	}
 }
 
-func (client ZMSClient) PostSubDomain(parent DomainName, auditRef string, detail *SubDomain) (*Domain, error) {
+func (client ZMSClient) PostSubDomain(parent DomainName, auditRef string, resourceOwner string, detail *SubDomain) (*Domain, error) {
 	var data *Domain
 	headers := map[string]string{
-		"Y-Audit-Ref": auditRef,
+		"Athenz-Resource-Owner": resourceOwner,
+		"Y-Audit-Ref":           auditRef,
 	}
 	url := client.URL + "/subdomain/" + fmt.Sprint(parent)
 	contentBytes, err := json.Marshal(detail)
@@ -415,7 +424,7 @@ func (client ZMSClient) PostSubDomain(parent DomainName, auditRef string, detail
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -430,10 +439,11 @@ func (client ZMSClient) PostSubDomain(parent DomainName, auditRef string, detail
 	}
 }
 
-func (client ZMSClient) PostUserDomain(name SimpleName, auditRef string, detail *UserDomain) (*Domain, error) {
+func (client ZMSClient) PostUserDomain(name SimpleName, auditRef string, resourceOwner string, detail *UserDomain) (*Domain, error) {
 	var data *Domain
 	headers := map[string]string{
-		"Y-Audit-Ref": auditRef,
+		"Athenz-Resource-Owner": resourceOwner,
+		"Y-Audit-Ref":           auditRef,
 	}
 	url := client.URL + "/userdomain/" + fmt.Sprint(name)
 	contentBytes, err := json.Marshal(detail)
@@ -454,7 +464,7 @@ func (client ZMSClient) PostUserDomain(name SimpleName, auditRef string, detail 
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -469,9 +479,10 @@ func (client ZMSClient) PostUserDomain(name SimpleName, auditRef string, detail 
 	}
 }
 
-func (client ZMSClient) DeleteTopLevelDomain(name SimpleName, auditRef string) error {
+func (client ZMSClient) DeleteTopLevelDomain(name SimpleName, auditRef string, resourceOwner string) error {
 	headers := map[string]string{
-		"Y-Audit-Ref": auditRef,
+		"Athenz-Resource-Owner": resourceOwner,
+		"Y-Audit-Ref":           auditRef,
 	}
 	url := client.URL + "/domain/" + fmt.Sprint(name)
 	resp, err := client.httpDelete(url, headers)
@@ -484,7 +495,7 @@ func (client ZMSClient) DeleteTopLevelDomain(name SimpleName, auditRef string) e
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -499,9 +510,10 @@ func (client ZMSClient) DeleteTopLevelDomain(name SimpleName, auditRef string) e
 	}
 }
 
-func (client ZMSClient) DeleteSubDomain(parent DomainName, name SimpleName, auditRef string) error {
+func (client ZMSClient) DeleteSubDomain(parent DomainName, name SimpleName, auditRef string, resourceOwner string) error {
 	headers := map[string]string{
-		"Y-Audit-Ref": auditRef,
+		"Athenz-Resource-Owner": resourceOwner,
+		"Y-Audit-Ref":           auditRef,
 	}
 	url := client.URL + "/subdomain/" + fmt.Sprint(parent) + "/" + fmt.Sprint(name)
 	resp, err := client.httpDelete(url, headers)
@@ -514,7 +526,7 @@ func (client ZMSClient) DeleteSubDomain(parent DomainName, name SimpleName, audi
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -529,9 +541,10 @@ func (client ZMSClient) DeleteSubDomain(parent DomainName, name SimpleName, audi
 	}
 }
 
-func (client ZMSClient) DeleteUserDomain(name SimpleName, auditRef string) error {
+func (client ZMSClient) DeleteUserDomain(name SimpleName, auditRef string, resourceOwner string) error {
 	headers := map[string]string{
-		"Y-Audit-Ref": auditRef,
+		"Athenz-Resource-Owner": resourceOwner,
+		"Y-Audit-Ref":           auditRef,
 	}
 	url := client.URL + "/userdomain/" + fmt.Sprint(name)
 	resp, err := client.httpDelete(url, headers)
@@ -544,7 +557,7 @@ func (client ZMSClient) DeleteUserDomain(name SimpleName, auditRef string) error
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -559,9 +572,10 @@ func (client ZMSClient) DeleteUserDomain(name SimpleName, auditRef string) error
 	}
 }
 
-func (client ZMSClient) PutDomainMeta(name DomainName, auditRef string, detail *DomainMeta) error {
+func (client ZMSClient) PutDomainMeta(name DomainName, auditRef string, resourceOwner string, detail *DomainMeta) error {
 	headers := map[string]string{
-		"Y-Audit-Ref": auditRef,
+		"Athenz-Resource-Owner": resourceOwner,
+		"Y-Audit-Ref":           auditRef,
 	}
 	url := client.URL + "/domain/" + fmt.Sprint(name) + "/meta"
 	contentBytes, err := json.Marshal(detail)
@@ -578,7 +592,7 @@ func (client ZMSClient) PutDomainMeta(name DomainName, auditRef string, detail *
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -612,7 +626,7 @@ func (client ZMSClient) PutDomainSystemMeta(name DomainName, attribute SimpleNam
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -646,7 +660,7 @@ func (client ZMSClient) PutDomainTemplate(name DomainName, auditRef string, doma
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -680,7 +694,7 @@ func (client ZMSClient) PutDomainTemplateExt(name DomainName, template SimpleNam
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -712,7 +726,7 @@ func (client ZMSClient) GetDomainTemplateList(name DomainName) (*DomainTemplateL
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -742,7 +756,7 @@ func (client ZMSClient) DeleteDomainTemplate(name DomainName, template SimpleNam
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -774,7 +788,7 @@ func (client ZMSClient) GetDomainMetaStoreValidValuesList(attributeName string, 
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -786,6 +800,110 @@ func (client ZMSClient) GetDomainMetaStoreValidValuesList(attributeName string, 
 			errobj.Message = string(contentBytes)
 		}
 		return data, errobj
+	}
+}
+
+func (client ZMSClient) GetAuthHistoryDependencies(domainName DomainName) (*AuthHistoryDependencies, error) {
+	var data *AuthHistoryDependencies
+	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/history/auth"
+	resp, err := client.httpGet(url, nil)
+	if err != nil {
+		return data, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 200:
+		err = json.NewDecoder(resp.Body).Decode(&data)
+		if err != nil {
+			return data, err
+		}
+		return data, nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return data, err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return data, errobj
+	}
+}
+
+func (client ZMSClient) DeleteExpiredMembers(purgeResources *int32, auditRef string, returnObj *bool) (*ExpiredMembers, error) {
+	var data *ExpiredMembers
+	headers := map[string]string{
+		"Athenz-Return-Object": strconv.FormatBool(*returnObj),
+		"Y-Audit-Ref":          auditRef,
+	}
+	url := client.URL + "/expired-members" + encodeParams(encodeOptionalInt32Param("purgeResources", purgeResources))
+	resp, err := client.httpDelete(url, headers)
+	if err != nil {
+		return data, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 204, 200:
+		if 204 != resp.StatusCode {
+			err = json.NewDecoder(resp.Body).Decode(&data)
+			if err != nil {
+				return data, err
+			}
+		}
+		return data, nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return data, err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return data, errobj
+	}
+}
+
+func (client ZMSClient) PutResourceDomainOwnership(domainName DomainName, auditRef string, resourceOwnership *ResourceDomainOwnership) error {
+	headers := map[string]string{
+		"Y-Audit-Ref": auditRef,
+	}
+	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/ownership"
+	contentBytes, err := json.Marshal(resourceOwnership)
+	if err != nil {
+		return err
+	}
+	resp, err := client.httpPut(url, headers, contentBytes)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 204:
+		return nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return errobj
 	}
 }
 
@@ -806,7 +924,7 @@ func (client ZMSClient) GetDomainDataCheck(domainName DomainName) (*DomainDataCh
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -840,7 +958,7 @@ func (client ZMSClient) PutEntity(domainName DomainName, entityName EntityName, 
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -872,7 +990,7 @@ func (client ZMSClient) GetEntity(domainName DomainName, entityName EntityName) 
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -902,7 +1020,7 @@ func (client ZMSClient) DeleteEntity(domainName DomainName, entityName EntityNam
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -934,7 +1052,7 @@ func (client ZMSClient) GetEntityList(domainName DomainName) (*EntityList, error
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -966,7 +1084,7 @@ func (client ZMSClient) GetRoleList(domainName DomainName, limit *int32, skip st
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -981,7 +1099,7 @@ func (client ZMSClient) GetRoleList(domainName DomainName, limit *int32, skip st
 	}
 }
 
-func (client ZMSClient) GetRoles(domainName DomainName, members *bool, tagKey CompoundName, tagValue CompoundName) (*Roles, error) {
+func (client ZMSClient) GetRoles(domainName DomainName, members *bool, tagKey TagKey, tagValue TagCompoundValue) (*Roles, error) {
 	var data *Roles
 	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/roles" + encodeParams(encodeOptionalBoolParam("members", members), encodeStringParam("tagKey", string(tagKey), ""), encodeStringParam("tagValue", string(tagValue), ""))
 	resp, err := client.httpGet(url, nil)
@@ -998,7 +1116,7 @@ func (client ZMSClient) GetRoles(domainName DomainName, members *bool, tagKey Co
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -1030,7 +1148,7 @@ func (client ZMSClient) GetRole(domainName DomainName, roleName EntityName, audi
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -1045,28 +1163,37 @@ func (client ZMSClient) GetRole(domainName DomainName, roleName EntityName, audi
 	}
 }
 
-func (client ZMSClient) PutRole(domainName DomainName, roleName EntityName, auditRef string, role *Role) error {
+func (client ZMSClient) PutRole(domainName DomainName, roleName EntityName, auditRef string, returnObj *bool, resourceOwner string, role *Role) (*Role, error) {
+	var data *Role
 	headers := map[string]string{
-		"Y-Audit-Ref": auditRef,
+		"Athenz-Resource-Owner": resourceOwner,
+		"Athenz-Return-Object":  strconv.FormatBool(*returnObj),
+		"Y-Audit-Ref":           auditRef,
 	}
 	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/role/" + fmt.Sprint(roleName)
 	contentBytes, err := json.Marshal(role)
 	if err != nil {
-		return err
+		return data, err
 	}
 	resp, err := client.httpPut(url, headers, contentBytes)
 	if err != nil {
-		return err
+		return data, err
 	}
 	defer resp.Body.Close()
 	switch resp.StatusCode {
-	case 204:
-		return nil
+	case 204, 200:
+		if 204 != resp.StatusCode {
+			err = json.NewDecoder(resp.Body).Decode(&data)
+			if err != nil {
+				return data, err
+			}
+		}
+		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
-			return err
+			return data, err
 		}
 		json.Unmarshal(contentBytes, &errobj)
 		if errobj.Code == 0 {
@@ -1075,13 +1202,14 @@ func (client ZMSClient) PutRole(domainName DomainName, roleName EntityName, audi
 		if errobj.Message == "" {
 			errobj.Message = string(contentBytes)
 		}
-		return errobj
+		return data, errobj
 	}
 }
 
-func (client ZMSClient) DeleteRole(domainName DomainName, roleName EntityName, auditRef string) error {
+func (client ZMSClient) DeleteRole(domainName DomainName, roleName EntityName, auditRef string, resourceOwner string) error {
 	headers := map[string]string{
-		"Y-Audit-Ref": auditRef,
+		"Athenz-Resource-Owner": resourceOwner,
+		"Y-Audit-Ref":           auditRef,
 	}
 	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/role/" + fmt.Sprint(roleName)
 	resp, err := client.httpDelete(url, headers)
@@ -1094,7 +1222,7 @@ func (client ZMSClient) DeleteRole(domainName DomainName, roleName EntityName, a
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -1126,7 +1254,7 @@ func (client ZMSClient) GetMembership(domainName DomainName, roleName EntityName
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -1158,7 +1286,7 @@ func (client ZMSClient) GetOverdueReview(domainName DomainName) (*DomainRoleMemb
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -1190,7 +1318,7 @@ func (client ZMSClient) GetDomainRoleMembers(domainName DomainName) (*DomainRole
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -1205,9 +1333,9 @@ func (client ZMSClient) GetDomainRoleMembers(domainName DomainName) (*DomainRole
 	}
 }
 
-func (client ZMSClient) GetPrincipalRoles(principal ResourceName, domainName DomainName) (*DomainRoleMember, error) {
+func (client ZMSClient) GetPrincipalRoles(principal ResourceName, domainName DomainName, expand *bool) (*DomainRoleMember, error) {
 	var data *DomainRoleMember
-	url := client.URL + "/role" + encodeParams(encodeStringParam("principal", string(principal), ""), encodeStringParam("domain", string(domainName), ""))
+	url := client.URL + "/role" + encodeParams(encodeStringParam("principal", string(principal), ""), encodeStringParam("domain", string(domainName), ""), encodeOptionalBoolParam("expand", expand))
 	resp, err := client.httpGet(url, nil)
 	if err != nil {
 		return data, err
@@ -1222,7 +1350,7 @@ func (client ZMSClient) GetPrincipalRoles(principal ResourceName, domainName Dom
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -1237,28 +1365,37 @@ func (client ZMSClient) GetPrincipalRoles(principal ResourceName, domainName Dom
 	}
 }
 
-func (client ZMSClient) PutMembership(domainName DomainName, roleName EntityName, memberName MemberName, auditRef string, membership *Membership) error {
+func (client ZMSClient) PutMembership(domainName DomainName, roleName EntityName, memberName MemberName, auditRef string, returnObj *bool, resourceOwner string, membership *Membership) (*Membership, error) {
+	var data *Membership
 	headers := map[string]string{
-		"Y-Audit-Ref": auditRef,
+		"Athenz-Resource-Owner": resourceOwner,
+		"Athenz-Return-Object":  strconv.FormatBool(*returnObj),
+		"Y-Audit-Ref":           auditRef,
 	}
 	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/role/" + fmt.Sprint(roleName) + "/member/" + fmt.Sprint(memberName)
 	contentBytes, err := json.Marshal(membership)
 	if err != nil {
-		return err
+		return data, err
 	}
 	resp, err := client.httpPut(url, headers, contentBytes)
 	if err != nil {
-		return err
+		return data, err
 	}
 	defer resp.Body.Close()
 	switch resp.StatusCode {
-	case 204:
-		return nil
+	case 204, 200:
+		if 204 != resp.StatusCode {
+			err = json.NewDecoder(resp.Body).Decode(&data)
+			if err != nil {
+				return data, err
+			}
+		}
+		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
-			return err
+			return data, err
 		}
 		json.Unmarshal(contentBytes, &errobj)
 		if errobj.Code == 0 {
@@ -1267,13 +1404,14 @@ func (client ZMSClient) PutMembership(domainName DomainName, roleName EntityName
 		if errobj.Message == "" {
 			errobj.Message = string(contentBytes)
 		}
-		return errobj
+		return data, errobj
 	}
 }
 
-func (client ZMSClient) DeleteMembership(domainName DomainName, roleName EntityName, memberName MemberName, auditRef string) error {
+func (client ZMSClient) DeleteMembership(domainName DomainName, roleName EntityName, memberName MemberName, auditRef string, resourceOwner string) error {
 	headers := map[string]string{
-		"Y-Audit-Ref": auditRef,
+		"Athenz-Resource-Owner": resourceOwner,
+		"Y-Audit-Ref":           auditRef,
 	}
 	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/role/" + fmt.Sprint(roleName) + "/member/" + fmt.Sprint(memberName)
 	resp, err := client.httpDelete(url, headers)
@@ -1286,7 +1424,7 @@ func (client ZMSClient) DeleteMembership(domainName DomainName, roleName EntityN
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -1316,7 +1454,7 @@ func (client ZMSClient) DeletePendingMembership(domainName DomainName, roleName 
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -1350,7 +1488,7 @@ func (client ZMSClient) PutDefaultAdmins(domainName DomainName, auditRef string,
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -1384,7 +1522,7 @@ func (client ZMSClient) PutRoleSystemMeta(domainName DomainName, roleName Entity
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -1399,9 +1537,10 @@ func (client ZMSClient) PutRoleSystemMeta(domainName DomainName, roleName Entity
 	}
 }
 
-func (client ZMSClient) PutRoleMeta(domainName DomainName, roleName EntityName, auditRef string, detail *RoleMeta) error {
+func (client ZMSClient) PutRoleMeta(domainName DomainName, roleName EntityName, auditRef string, resourceOwner string, detail *RoleMeta) error {
 	headers := map[string]string{
-		"Y-Audit-Ref": auditRef,
+		"Athenz-Resource-Owner": resourceOwner,
+		"Y-Audit-Ref":           auditRef,
 	}
 	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/role/" + fmt.Sprint(roleName) + "/meta"
 	contentBytes, err := json.Marshal(detail)
@@ -1418,7 +1557,7 @@ func (client ZMSClient) PutRoleMeta(domainName DomainName, roleName EntityName, 
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -1452,7 +1591,7 @@ func (client ZMSClient) PutMembershipDecision(domainName DomainName, roleName En
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -1467,12 +1606,55 @@ func (client ZMSClient) PutMembershipDecision(domainName DomainName, roleName En
 	}
 }
 
-func (client ZMSClient) PutRoleReview(domainName DomainName, roleName EntityName, auditRef string, role *Role) error {
+func (client ZMSClient) PutRoleReview(domainName DomainName, roleName EntityName, auditRef string, returnObj *bool, resourceOwner string, role *Role) (*Role, error) {
+	var data *Role
 	headers := map[string]string{
-		"Y-Audit-Ref": auditRef,
+		"Athenz-Resource-Owner": resourceOwner,
+		"Athenz-Return-Object":  strconv.FormatBool(*returnObj),
+		"Y-Audit-Ref":           auditRef,
 	}
 	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/role/" + fmt.Sprint(roleName) + "/review"
 	contentBytes, err := json.Marshal(role)
+	if err != nil {
+		return data, err
+	}
+	resp, err := client.httpPut(url, headers, contentBytes)
+	if err != nil {
+		return data, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 204, 200:
+		if 204 != resp.StatusCode {
+			err = json.NewDecoder(resp.Body).Decode(&data)
+			if err != nil {
+				return data, err
+			}
+		}
+		return data, nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return data, err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return data, errobj
+	}
+}
+
+func (client ZMSClient) PutResourceRoleOwnership(domainName DomainName, roleName EntityName, auditRef string, resourceOwnership *ResourceRoleOwnership) error {
+	headers := map[string]string{
+		"Y-Audit-Ref": auditRef,
+	}
+	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/role/" + fmt.Sprint(roleName) + "/ownership"
+	contentBytes, err := json.Marshal(resourceOwnership)
 	if err != nil {
 		return err
 	}
@@ -1486,7 +1668,7 @@ func (client ZMSClient) PutRoleReview(domainName DomainName, roleName EntityName
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -1501,9 +1683,9 @@ func (client ZMSClient) PutRoleReview(domainName DomainName, roleName EntityName
 	}
 }
 
-func (client ZMSClient) GetGroups(domainName DomainName, members *bool) (*Groups, error) {
+func (client ZMSClient) GetGroups(domainName DomainName, members *bool, tagKey TagKey, tagValue TagCompoundValue) (*Groups, error) {
 	var data *Groups
-	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/groups" + encodeParams(encodeOptionalBoolParam("members", members))
+	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/groups" + encodeParams(encodeOptionalBoolParam("members", members), encodeStringParam("tagKey", string(tagKey), ""), encodeStringParam("tagValue", string(tagValue), ""))
 	resp, err := client.httpGet(url, nil)
 	if err != nil {
 		return data, err
@@ -1518,7 +1700,7 @@ func (client ZMSClient) GetGroups(domainName DomainName, members *bool) (*Groups
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -1550,7 +1732,7 @@ func (client ZMSClient) GetGroup(domainName DomainName, groupName EntityName, au
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -1565,28 +1747,37 @@ func (client ZMSClient) GetGroup(domainName DomainName, groupName EntityName, au
 	}
 }
 
-func (client ZMSClient) PutGroup(domainName DomainName, groupName EntityName, auditRef string, group *Group) error {
+func (client ZMSClient) PutGroup(domainName DomainName, groupName EntityName, auditRef string, returnObj *bool, resourceOwner string, group *Group) (*Group, error) {
+	var data *Group
 	headers := map[string]string{
-		"Y-Audit-Ref": auditRef,
+		"Athenz-Resource-Owner": resourceOwner,
+		"Athenz-Return-Object":  strconv.FormatBool(*returnObj),
+		"Y-Audit-Ref":           auditRef,
 	}
 	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/group/" + fmt.Sprint(groupName)
 	contentBytes, err := json.Marshal(group)
 	if err != nil {
-		return err
+		return data, err
 	}
 	resp, err := client.httpPut(url, headers, contentBytes)
 	if err != nil {
-		return err
+		return data, err
 	}
 	defer resp.Body.Close()
 	switch resp.StatusCode {
-	case 204:
-		return nil
+	case 204, 200:
+		if 204 != resp.StatusCode {
+			err = json.NewDecoder(resp.Body).Decode(&data)
+			if err != nil {
+				return data, err
+			}
+		}
+		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
-			return err
+			return data, err
 		}
 		json.Unmarshal(contentBytes, &errobj)
 		if errobj.Code == 0 {
@@ -1595,13 +1786,14 @@ func (client ZMSClient) PutGroup(domainName DomainName, groupName EntityName, au
 		if errobj.Message == "" {
 			errobj.Message = string(contentBytes)
 		}
-		return errobj
+		return data, errobj
 	}
 }
 
-func (client ZMSClient) DeleteGroup(domainName DomainName, groupName EntityName, auditRef string) error {
+func (client ZMSClient) DeleteGroup(domainName DomainName, groupName EntityName, auditRef string, resourceOwner string) error {
 	headers := map[string]string{
-		"Y-Audit-Ref": auditRef,
+		"Athenz-Resource-Owner": resourceOwner,
+		"Y-Audit-Ref":           auditRef,
 	}
 	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/group/" + fmt.Sprint(groupName)
 	resp, err := client.httpDelete(url, headers)
@@ -1614,7 +1806,7 @@ func (client ZMSClient) DeleteGroup(domainName DomainName, groupName EntityName,
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -1646,7 +1838,7 @@ func (client ZMSClient) GetGroupMembership(domainName DomainName, groupName Enti
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -1678,7 +1870,7 @@ func (client ZMSClient) GetPrincipalGroups(principal EntityName, domainName Doma
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -1693,28 +1885,37 @@ func (client ZMSClient) GetPrincipalGroups(principal EntityName, domainName Doma
 	}
 }
 
-func (client ZMSClient) PutGroupMembership(domainName DomainName, groupName EntityName, memberName GroupMemberName, auditRef string, membership *GroupMembership) error {
+func (client ZMSClient) PutGroupMembership(domainName DomainName, groupName EntityName, memberName GroupMemberName, auditRef string, returnObj *bool, resourceOwner string, membership *GroupMembership) (*GroupMembership, error) {
+	var data *GroupMembership
 	headers := map[string]string{
-		"Y-Audit-Ref": auditRef,
+		"Athenz-Resource-Owner": resourceOwner,
+		"Athenz-Return-Object":  strconv.FormatBool(*returnObj),
+		"Y-Audit-Ref":           auditRef,
 	}
 	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/group/" + fmt.Sprint(groupName) + "/member/" + fmt.Sprint(memberName)
 	contentBytes, err := json.Marshal(membership)
 	if err != nil {
-		return err
+		return data, err
 	}
 	resp, err := client.httpPut(url, headers, contentBytes)
 	if err != nil {
-		return err
+		return data, err
 	}
 	defer resp.Body.Close()
 	switch resp.StatusCode {
-	case 204:
-		return nil
+	case 204, 200:
+		if 204 != resp.StatusCode {
+			err = json.NewDecoder(resp.Body).Decode(&data)
+			if err != nil {
+				return data, err
+			}
+		}
+		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
-			return err
+			return data, err
 		}
 		json.Unmarshal(contentBytes, &errobj)
 		if errobj.Code == 0 {
@@ -1723,13 +1924,14 @@ func (client ZMSClient) PutGroupMembership(domainName DomainName, groupName Enti
 		if errobj.Message == "" {
 			errobj.Message = string(contentBytes)
 		}
-		return errobj
+		return data, errobj
 	}
 }
 
-func (client ZMSClient) DeleteGroupMembership(domainName DomainName, groupName EntityName, memberName GroupMemberName, auditRef string) error {
+func (client ZMSClient) DeleteGroupMembership(domainName DomainName, groupName EntityName, memberName GroupMemberName, auditRef string, resourceOwner string) error {
 	headers := map[string]string{
-		"Y-Audit-Ref": auditRef,
+		"Athenz-Resource-Owner": resourceOwner,
+		"Y-Audit-Ref":           auditRef,
 	}
 	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/group/" + fmt.Sprint(groupName) + "/member/" + fmt.Sprint(memberName)
 	resp, err := client.httpDelete(url, headers)
@@ -1742,7 +1944,7 @@ func (client ZMSClient) DeleteGroupMembership(domainName DomainName, groupName E
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -1772,7 +1974,7 @@ func (client ZMSClient) DeletePendingGroupMembership(domainName DomainName, grou
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -1806,7 +2008,7 @@ func (client ZMSClient) PutGroupSystemMeta(domainName DomainName, groupName Enti
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -1821,9 +2023,10 @@ func (client ZMSClient) PutGroupSystemMeta(domainName DomainName, groupName Enti
 	}
 }
 
-func (client ZMSClient) PutGroupMeta(domainName DomainName, groupName EntityName, auditRef string, detail *GroupMeta) error {
+func (client ZMSClient) PutGroupMeta(domainName DomainName, groupName EntityName, auditRef string, resourceOwner string, detail *GroupMeta) error {
 	headers := map[string]string{
-		"Y-Audit-Ref": auditRef,
+		"Athenz-Resource-Owner": resourceOwner,
+		"Y-Audit-Ref":           auditRef,
 	}
 	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/group/" + fmt.Sprint(groupName) + "/meta"
 	contentBytes, err := json.Marshal(detail)
@@ -1840,7 +2043,7 @@ func (client ZMSClient) PutGroupMeta(domainName DomainName, groupName EntityName
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -1874,7 +2077,7 @@ func (client ZMSClient) PutGroupMembershipDecision(domainName DomainName, groupN
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -1889,28 +2092,37 @@ func (client ZMSClient) PutGroupMembershipDecision(domainName DomainName, groupN
 	}
 }
 
-func (client ZMSClient) PutGroupReview(domainName DomainName, groupName EntityName, auditRef string, group *Group) error {
+func (client ZMSClient) PutGroupReview(domainName DomainName, groupName EntityName, auditRef string, returnObj *bool, resourceOwner string, group *Group) (*Group, error) {
+	var data *Group
 	headers := map[string]string{
-		"Y-Audit-Ref": auditRef,
+		"Athenz-Resource-Owner": resourceOwner,
+		"Athenz-Return-Object":  strconv.FormatBool(*returnObj),
+		"Y-Audit-Ref":           auditRef,
 	}
 	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/group/" + fmt.Sprint(groupName) + "/review"
 	contentBytes, err := json.Marshal(group)
 	if err != nil {
-		return err
+		return data, err
 	}
 	resp, err := client.httpPut(url, headers, contentBytes)
 	if err != nil {
-		return err
+		return data, err
 	}
 	defer resp.Body.Close()
 	switch resp.StatusCode {
-	case 204:
-		return nil
+	case 204, 200:
+		if 204 != resp.StatusCode {
+			err = json.NewDecoder(resp.Body).Decode(&data)
+			if err != nil {
+				return data, err
+			}
+		}
+		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
-			return err
+			return data, err
 		}
 		json.Unmarshal(contentBytes, &errobj)
 		if errobj.Code == 0 {
@@ -1919,13 +2131,13 @@ func (client ZMSClient) PutGroupReview(domainName DomainName, groupName EntityNa
 		if errobj.Message == "" {
 			errobj.Message = string(contentBytes)
 		}
-		return errobj
+		return data, errobj
 	}
 }
 
-func (client ZMSClient) GetPendingDomainGroupMembersList(principal EntityName) (*DomainGroupMembership, error) {
+func (client ZMSClient) GetPendingDomainGroupMembersList(principal EntityName, domainName string) (*DomainGroupMembership, error) {
 	var data *DomainGroupMembership
-	url := client.URL + "/pending_group_members" + encodeParams(encodeStringParam("principal", string(principal), ""))
+	url := client.URL + "/pending_group_members" + encodeParams(encodeStringParam("principal", string(principal), ""), encodeStringParam("domain", string(domainName), ""))
 	resp, err := client.httpGet(url, nil)
 	if err != nil {
 		return data, err
@@ -1940,7 +2152,73 @@ func (client ZMSClient) GetPendingDomainGroupMembersList(principal EntityName) (
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return data, err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return data, errobj
+	}
+}
+
+func (client ZMSClient) PutResourceGroupOwnership(domainName DomainName, groupName EntityName, auditRef string, resourceOwnership *ResourceGroupOwnership) error {
+	headers := map[string]string{
+		"Y-Audit-Ref": auditRef,
+	}
+	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/group/" + fmt.Sprint(groupName) + "/ownership"
+	contentBytes, err := json.Marshal(resourceOwnership)
+	if err != nil {
+		return err
+	}
+	resp, err := client.httpPut(url, headers, contentBytes)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 204:
+		return nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return errobj
+	}
+}
+
+func (client ZMSClient) GetDomainGroupMembers(domainName DomainName) (*DomainGroupMembers, error) {
+	var data *DomainGroupMembers
+	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/group/member"
+	resp, err := client.httpGet(url, nil)
+	if err != nil {
+		return data, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 200:
+		err = json.NewDecoder(resp.Body).Decode(&data)
+		if err != nil {
+			return data, err
+		}
+		return data, nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -1972,7 +2250,7 @@ func (client ZMSClient) GetPolicyList(domainName DomainName, limit *int32, skip 
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -1987,9 +2265,9 @@ func (client ZMSClient) GetPolicyList(domainName DomainName, limit *int32, skip 
 	}
 }
 
-func (client ZMSClient) GetPolicies(domainName DomainName, assertions *bool) (*Policies, error) {
+func (client ZMSClient) GetPolicies(domainName DomainName, assertions *bool, includeNonActive *bool, tagKey TagKey, tagValue TagCompoundValue) (*Policies, error) {
 	var data *Policies
-	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/policies" + encodeParams(encodeOptionalBoolParam("assertions", assertions))
+	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/policies" + encodeParams(encodeOptionalBoolParam("assertions", assertions), encodeOptionalBoolParam("includeNonActive", includeNonActive), encodeStringParam("tagKey", string(tagKey), ""), encodeStringParam("tagValue", string(tagValue), ""))
 	resp, err := client.httpGet(url, nil)
 	if err != nil {
 		return data, err
@@ -2004,7 +2282,7 @@ func (client ZMSClient) GetPolicies(domainName DomainName, assertions *bool) (*P
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -2036,7 +2314,7 @@ func (client ZMSClient) GetPolicy(domainName DomainName, policyName EntityName) 
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -2051,28 +2329,37 @@ func (client ZMSClient) GetPolicy(domainName DomainName, policyName EntityName) 
 	}
 }
 
-func (client ZMSClient) PutPolicy(domainName DomainName, policyName EntityName, auditRef string, policy *Policy) error {
+func (client ZMSClient) PutPolicy(domainName DomainName, policyName EntityName, auditRef string, returnObj *bool, resourceOwner string, policy *Policy) (*Policy, error) {
+	var data *Policy
 	headers := map[string]string{
-		"Y-Audit-Ref": auditRef,
+		"Athenz-Resource-Owner": resourceOwner,
+		"Athenz-Return-Object":  strconv.FormatBool(*returnObj),
+		"Y-Audit-Ref":           auditRef,
 	}
 	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/policy/" + fmt.Sprint(policyName)
 	contentBytes, err := json.Marshal(policy)
 	if err != nil {
-		return err
+		return data, err
 	}
 	resp, err := client.httpPut(url, headers, contentBytes)
 	if err != nil {
-		return err
+		return data, err
 	}
 	defer resp.Body.Close()
 	switch resp.StatusCode {
-	case 204:
-		return nil
+	case 204, 200:
+		if 204 != resp.StatusCode {
+			err = json.NewDecoder(resp.Body).Decode(&data)
+			if err != nil {
+				return data, err
+			}
+		}
+		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
-			return err
+			return data, err
 		}
 		json.Unmarshal(contentBytes, &errobj)
 		if errobj.Code == 0 {
@@ -2081,13 +2368,14 @@ func (client ZMSClient) PutPolicy(domainName DomainName, policyName EntityName, 
 		if errobj.Message == "" {
 			errobj.Message = string(contentBytes)
 		}
-		return errobj
+		return data, errobj
 	}
 }
 
-func (client ZMSClient) DeletePolicy(domainName DomainName, policyName EntityName, auditRef string) error {
+func (client ZMSClient) DeletePolicy(domainName DomainName, policyName EntityName, auditRef string, resourceOwner string) error {
 	headers := map[string]string{
-		"Y-Audit-Ref": auditRef,
+		"Athenz-Resource-Owner": resourceOwner,
+		"Y-Audit-Ref":           auditRef,
 	}
 	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/policy/" + fmt.Sprint(policyName)
 	resp, err := client.httpDelete(url, headers)
@@ -2100,7 +2388,7 @@ func (client ZMSClient) DeletePolicy(domainName DomainName, policyName EntityNam
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -2132,7 +2420,7 @@ func (client ZMSClient) GetAssertion(domainName DomainName, policyName EntityNam
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -2147,10 +2435,11 @@ func (client ZMSClient) GetAssertion(domainName DomainName, policyName EntityNam
 	}
 }
 
-func (client ZMSClient) PutAssertion(domainName DomainName, policyName EntityName, auditRef string, assertion *Assertion) (*Assertion, error) {
+func (client ZMSClient) PutAssertion(domainName DomainName, policyName EntityName, auditRef string, resourceOwner string, assertion *Assertion) (*Assertion, error) {
 	var data *Assertion
 	headers := map[string]string{
-		"Y-Audit-Ref": auditRef,
+		"Athenz-Resource-Owner": resourceOwner,
+		"Y-Audit-Ref":           auditRef,
 	}
 	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/policy/" + fmt.Sprint(policyName) + "/assertion"
 	contentBytes, err := json.Marshal(assertion)
@@ -2171,7 +2460,7 @@ func (client ZMSClient) PutAssertion(domainName DomainName, policyName EntityNam
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -2186,9 +2475,50 @@ func (client ZMSClient) PutAssertion(domainName DomainName, policyName EntityNam
 	}
 }
 
-func (client ZMSClient) DeleteAssertion(domainName DomainName, policyName EntityName, assertionId int64, auditRef string) error {
+func (client ZMSClient) PutAssertionPolicyVersion(domainName DomainName, policyName EntityName, version SimpleName, auditRef string, resourceOwner string, assertion *Assertion) (*Assertion, error) {
+	var data *Assertion
 	headers := map[string]string{
-		"Y-Audit-Ref": auditRef,
+		"Athenz-Resource-Owner": resourceOwner,
+		"Y-Audit-Ref":           auditRef,
+	}
+	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/policy/" + fmt.Sprint(policyName) + "/version/" + fmt.Sprint(version) + "/assertion"
+	contentBytes, err := json.Marshal(assertion)
+	if err != nil {
+		return data, err
+	}
+	resp, err := client.httpPut(url, headers, contentBytes)
+	if err != nil {
+		return data, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 200:
+		err = json.NewDecoder(resp.Body).Decode(&data)
+		if err != nil {
+			return data, err
+		}
+		return data, nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return data, err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return data, errobj
+	}
+}
+
+func (client ZMSClient) DeleteAssertion(domainName DomainName, policyName EntityName, assertionId int64, auditRef string, resourceOwner string) error {
+	headers := map[string]string{
+		"Athenz-Resource-Owner": resourceOwner,
+		"Y-Audit-Ref":           auditRef,
 	}
 	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/policy/" + fmt.Sprint(policyName) + "/assertion/" + fmt.Sprint(assertionId)
 	resp, err := client.httpDelete(url, headers)
@@ -2201,7 +2531,7 @@ func (client ZMSClient) DeleteAssertion(domainName DomainName, policyName Entity
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -2216,10 +2546,42 @@ func (client ZMSClient) DeleteAssertion(domainName DomainName, policyName Entity
 	}
 }
 
-func (client ZMSClient) PutAssertionConditions(domainName DomainName, policyName EntityName, assertionId int64, auditRef string, assertionConditions *AssertionConditions) (*AssertionConditions, error) {
+func (client ZMSClient) DeleteAssertionPolicyVersion(domainName DomainName, policyName EntityName, version SimpleName, assertionId int64, auditRef string, resourceOwner string) error {
+	headers := map[string]string{
+		"Athenz-Resource-Owner": resourceOwner,
+		"Y-Audit-Ref":           auditRef,
+	}
+	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/policy/" + fmt.Sprint(policyName) + "/version/" + fmt.Sprint(version) + "/assertion/" + fmt.Sprint(assertionId)
+	resp, err := client.httpDelete(url, headers)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 204:
+		return nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return errobj
+	}
+}
+
+func (client ZMSClient) PutAssertionConditions(domainName DomainName, policyName EntityName, assertionId int64, auditRef string, resourceOwner string, assertionConditions *AssertionConditions) (*AssertionConditions, error) {
 	var data *AssertionConditions
 	headers := map[string]string{
-		"Y-Audit-Ref": auditRef,
+		"Athenz-Resource-Owner": resourceOwner,
+		"Y-Audit-Ref":           auditRef,
 	}
 	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/policy/" + fmt.Sprint(policyName) + "/assertion/" + fmt.Sprint(assertionId) + "/conditions"
 	contentBytes, err := json.Marshal(assertionConditions)
@@ -2240,7 +2602,7 @@ func (client ZMSClient) PutAssertionConditions(domainName DomainName, policyName
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -2255,10 +2617,11 @@ func (client ZMSClient) PutAssertionConditions(domainName DomainName, policyName
 	}
 }
 
-func (client ZMSClient) PutAssertionCondition(domainName DomainName, policyName EntityName, assertionId int64, auditRef string, assertionCondition *AssertionCondition) (*AssertionCondition, error) {
+func (client ZMSClient) PutAssertionCondition(domainName DomainName, policyName EntityName, assertionId int64, auditRef string, resourceOwner string, assertionCondition *AssertionCondition) (*AssertionCondition, error) {
 	var data *AssertionCondition
 	headers := map[string]string{
-		"Y-Audit-Ref": auditRef,
+		"Athenz-Resource-Owner": resourceOwner,
+		"Y-Audit-Ref":           auditRef,
 	}
 	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/policy/" + fmt.Sprint(policyName) + "/assertion/" + fmt.Sprint(assertionId) + "/condition"
 	contentBytes, err := json.Marshal(assertionCondition)
@@ -2279,7 +2642,7 @@ func (client ZMSClient) PutAssertionCondition(domainName DomainName, policyName 
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -2294,9 +2657,10 @@ func (client ZMSClient) PutAssertionCondition(domainName DomainName, policyName 
 	}
 }
 
-func (client ZMSClient) DeleteAssertionConditions(domainName DomainName, policyName EntityName, assertionId int64, auditRef string) error {
+func (client ZMSClient) DeleteAssertionConditions(domainName DomainName, policyName EntityName, assertionId int64, auditRef string, resourceOwner string) error {
 	headers := map[string]string{
-		"Y-Audit-Ref": auditRef,
+		"Athenz-Resource-Owner": resourceOwner,
+		"Y-Audit-Ref":           auditRef,
 	}
 	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/policy/" + fmt.Sprint(policyName) + "/assertion/" + fmt.Sprint(assertionId) + "/conditions"
 	resp, err := client.httpDelete(url, headers)
@@ -2309,7 +2673,7 @@ func (client ZMSClient) DeleteAssertionConditions(domainName DomainName, policyN
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -2324,9 +2688,10 @@ func (client ZMSClient) DeleteAssertionConditions(domainName DomainName, policyN
 	}
 }
 
-func (client ZMSClient) DeleteAssertionCondition(domainName DomainName, policyName EntityName, assertionId int64, conditionId int32, auditRef string) error {
+func (client ZMSClient) DeleteAssertionCondition(domainName DomainName, policyName EntityName, assertionId int64, conditionId int32, auditRef string, resourceOwner string) error {
 	headers := map[string]string{
-		"Y-Audit-Ref": auditRef,
+		"Athenz-Resource-Owner": resourceOwner,
+		"Y-Audit-Ref":           auditRef,
 	}
 	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/policy/" + fmt.Sprint(policyName) + "/assertion/" + fmt.Sprint(assertionId) + "/condition/" + fmt.Sprint(conditionId)
 	resp, err := client.httpDelete(url, headers)
@@ -2339,7 +2704,7 @@ func (client ZMSClient) DeleteAssertionCondition(domainName DomainName, policyNa
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -2354,12 +2719,120 @@ func (client ZMSClient) DeleteAssertionCondition(domainName DomainName, policyNa
 	}
 }
 
-func (client ZMSClient) PutServiceIdentity(domain DomainName, service SimpleName, auditRef string, detail *ServiceIdentity) error {
-	headers := map[string]string{
-		"Y-Audit-Ref": auditRef,
+func (client ZMSClient) GetPolicyVersionList(domainName DomainName, policyName EntityName) (*PolicyList, error) {
+	var data *PolicyList
+	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/policy/" + fmt.Sprint(policyName) + "/version"
+	resp, err := client.httpGet(url, nil)
+	if err != nil {
+		return data, err
 	}
-	url := client.URL + "/domain/" + fmt.Sprint(domain) + "/service/" + fmt.Sprint(service)
-	contentBytes, err := json.Marshal(detail)
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 200:
+		err = json.NewDecoder(resp.Body).Decode(&data)
+		if err != nil {
+			return data, err
+		}
+		return data, nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return data, err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return data, errobj
+	}
+}
+
+func (client ZMSClient) GetPolicyVersion(domainName DomainName, policyName EntityName, version SimpleName) (*Policy, error) {
+	var data *Policy
+	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/policy/" + fmt.Sprint(policyName) + "/version/" + fmt.Sprint(version)
+	resp, err := client.httpGet(url, nil)
+	if err != nil {
+		return data, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 200:
+		err = json.NewDecoder(resp.Body).Decode(&data)
+		if err != nil {
+			return data, err
+		}
+		return data, nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return data, err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return data, errobj
+	}
+}
+
+func (client ZMSClient) PutPolicyVersion(domainName DomainName, policyName EntityName, policyOptions *PolicyOptions, auditRef string, returnObj *bool, resourceOwner string) (*Policy, error) {
+	var data *Policy
+	headers := map[string]string{
+		"Athenz-Resource-Owner": resourceOwner,
+		"Athenz-Return-Object":  strconv.FormatBool(*returnObj),
+		"Y-Audit-Ref":           auditRef,
+	}
+	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/policy/" + fmt.Sprint(policyName) + "/version/create"
+	contentBytes, err := json.Marshal(policyOptions)
+	if err != nil {
+		return data, err
+	}
+	resp, err := client.httpPut(url, headers, contentBytes)
+	if err != nil {
+		return data, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 204, 200:
+		if 204 != resp.StatusCode {
+			err = json.NewDecoder(resp.Body).Decode(&data)
+			if err != nil {
+				return data, err
+			}
+		}
+		return data, nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return data, err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return data, errobj
+	}
+}
+
+func (client ZMSClient) SetActivePolicyVersion(domainName DomainName, policyName EntityName, policyOptions *PolicyOptions, auditRef string, resourceOwner string) error {
+	headers := map[string]string{
+		"Athenz-Resource-Owner": resourceOwner,
+		"Y-Audit-Ref":           auditRef,
+	}
+	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/policy/" + fmt.Sprint(policyName) + "/version/active"
+	contentBytes, err := json.Marshal(policyOptions)
 	if err != nil {
 		return err
 	}
@@ -2373,7 +2846,7 @@ func (client ZMSClient) PutServiceIdentity(domain DomainName, service SimpleName
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -2385,6 +2858,114 @@ func (client ZMSClient) PutServiceIdentity(domain DomainName, service SimpleName
 			errobj.Message = string(contentBytes)
 		}
 		return errobj
+	}
+}
+
+func (client ZMSClient) DeletePolicyVersion(domainName DomainName, policyName EntityName, version SimpleName, auditRef string, resourceOwner string) error {
+	headers := map[string]string{
+		"Athenz-Resource-Owner": resourceOwner,
+		"Y-Audit-Ref":           auditRef,
+	}
+	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/policy/" + fmt.Sprint(policyName) + "/version/" + fmt.Sprint(version)
+	resp, err := client.httpDelete(url, headers)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 204:
+		return nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return errobj
+	}
+}
+
+func (client ZMSClient) PutResourcePolicyOwnership(domainName DomainName, policyName EntityName, auditRef string, resourceOwnership *ResourcePolicyOwnership) error {
+	headers := map[string]string{
+		"Y-Audit-Ref": auditRef,
+	}
+	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/policy/" + fmt.Sprint(policyName) + "/ownership"
+	contentBytes, err := json.Marshal(resourceOwnership)
+	if err != nil {
+		return err
+	}
+	resp, err := client.httpPut(url, headers, contentBytes)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 204:
+		return nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return errobj
+	}
+}
+
+func (client ZMSClient) PutServiceIdentity(domain DomainName, service SimpleName, auditRef string, returnObj *bool, resourceOwner string, detail *ServiceIdentity) (*ServiceIdentity, error) {
+	var data *ServiceIdentity
+	headers := map[string]string{
+		"Athenz-Resource-Owner": resourceOwner,
+		"Athenz-Return-Object":  strconv.FormatBool(*returnObj),
+		"Y-Audit-Ref":           auditRef,
+	}
+	url := client.URL + "/domain/" + fmt.Sprint(domain) + "/service/" + fmt.Sprint(service)
+	contentBytes, err := json.Marshal(detail)
+	if err != nil {
+		return data, err
+	}
+	resp, err := client.httpPut(url, headers, contentBytes)
+	if err != nil {
+		return data, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 204, 200:
+		if 204 != resp.StatusCode {
+			err = json.NewDecoder(resp.Body).Decode(&data)
+			if err != nil {
+				return data, err
+			}
+		}
+		return data, nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return data, err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return data, errobj
 	}
 }
 
@@ -2405,7 +2986,7 @@ func (client ZMSClient) GetServiceIdentity(domain DomainName, service SimpleName
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -2420,9 +3001,10 @@ func (client ZMSClient) GetServiceIdentity(domain DomainName, service SimpleName
 	}
 }
 
-func (client ZMSClient) DeleteServiceIdentity(domain DomainName, service SimpleName, auditRef string) error {
+func (client ZMSClient) DeleteServiceIdentity(domain DomainName, service SimpleName, auditRef string, resourceOwner string) error {
 	headers := map[string]string{
-		"Y-Audit-Ref": auditRef,
+		"Athenz-Resource-Owner": resourceOwner,
+		"Y-Audit-Ref":           auditRef,
 	}
 	url := client.URL + "/domain/" + fmt.Sprint(domain) + "/service/" + fmt.Sprint(service)
 	resp, err := client.httpDelete(url, headers)
@@ -2435,7 +3017,7 @@ func (client ZMSClient) DeleteServiceIdentity(domain DomainName, service SimpleN
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -2450,9 +3032,9 @@ func (client ZMSClient) DeleteServiceIdentity(domain DomainName, service SimpleN
 	}
 }
 
-func (client ZMSClient) GetServiceIdentities(domainName DomainName, publickeys *bool, hosts *bool) (*ServiceIdentities, error) {
+func (client ZMSClient) GetServiceIdentities(domainName DomainName, publickeys *bool, hosts *bool, tagKey TagKey, tagValue TagCompoundValue) (*ServiceIdentities, error) {
 	var data *ServiceIdentities
-	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/services" + encodeParams(encodeOptionalBoolParam("publickeys", publickeys), encodeOptionalBoolParam("hosts", hosts))
+	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/services" + encodeParams(encodeOptionalBoolParam("publickeys", publickeys), encodeOptionalBoolParam("hosts", hosts), encodeStringParam("tagKey", string(tagKey), ""), encodeStringParam("tagValue", string(tagValue), ""))
 	resp, err := client.httpGet(url, nil)
 	if err != nil {
 		return data, err
@@ -2467,7 +3049,7 @@ func (client ZMSClient) GetServiceIdentities(domainName DomainName, publickeys *
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -2499,7 +3081,7 @@ func (client ZMSClient) GetServiceIdentityList(domainName DomainName, limit *int
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -2531,7 +3113,7 @@ func (client ZMSClient) GetPublicKeyEntry(domain DomainName, service SimpleName,
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -2546,9 +3128,10 @@ func (client ZMSClient) GetPublicKeyEntry(domain DomainName, service SimpleName,
 	}
 }
 
-func (client ZMSClient) PutPublicKeyEntry(domain DomainName, service SimpleName, id string, auditRef string, publicKeyEntry *PublicKeyEntry) error {
+func (client ZMSClient) PutPublicKeyEntry(domain DomainName, service SimpleName, id string, auditRef string, resourceOwner string, publicKeyEntry *PublicKeyEntry) error {
 	headers := map[string]string{
-		"Y-Audit-Ref": auditRef,
+		"Athenz-Resource-Owner": resourceOwner,
+		"Y-Audit-Ref":           auditRef,
 	}
 	url := client.URL + "/domain/" + fmt.Sprint(domain) + "/service/" + fmt.Sprint(service) + "/publickey/" + id
 	contentBytes, err := json.Marshal(publicKeyEntry)
@@ -2565,7 +3148,7 @@ func (client ZMSClient) PutPublicKeyEntry(domain DomainName, service SimpleName,
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -2580,9 +3163,10 @@ func (client ZMSClient) PutPublicKeyEntry(domain DomainName, service SimpleName,
 	}
 }
 
-func (client ZMSClient) DeletePublicKeyEntry(domain DomainName, service SimpleName, id string, auditRef string) error {
+func (client ZMSClient) DeletePublicKeyEntry(domain DomainName, service SimpleName, id string, auditRef string, resourceOwner string) error {
 	headers := map[string]string{
-		"Y-Audit-Ref": auditRef,
+		"Athenz-Resource-Owner": resourceOwner,
+		"Y-Audit-Ref":           auditRef,
 	}
 	url := client.URL + "/domain/" + fmt.Sprint(domain) + "/service/" + fmt.Sprint(service) + "/publickey/" + id
 	resp, err := client.httpDelete(url, headers)
@@ -2595,7 +3179,7 @@ func (client ZMSClient) DeletePublicKeyEntry(domain DomainName, service SimpleNa
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -2629,7 +3213,41 @@ func (client ZMSClient) PutServiceIdentitySystemMeta(domain DomainName, service 
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return errobj
+	}
+}
+
+func (client ZMSClient) PutResourceServiceIdentityOwnership(domainName DomainName, service SimpleName, auditRef string, resourceOwnership *ResourceServiceIdentityOwnership) error {
+	headers := map[string]string{
+		"Y-Audit-Ref": auditRef,
+	}
+	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/service/" + fmt.Sprint(service) + "/ownership"
+	contentBytes, err := json.Marshal(resourceOwnership)
+	if err != nil {
+		return err
+	}
+	resp, err := client.httpPut(url, headers, contentBytes)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 204:
+		return nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -2663,7 +3281,7 @@ func (client ZMSClient) PutTenancy(domain DomainName, service ServiceName, audit
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -2693,7 +3311,7 @@ func (client ZMSClient) DeleteTenancy(domain DomainName, service ServiceName, au
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -2727,7 +3345,7 @@ func (client ZMSClient) PutTenant(domain DomainName, service SimpleName, tenantD
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -2757,7 +3375,7 @@ func (client ZMSClient) DeleteTenant(domain DomainName, service SimpleName, tena
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -2796,7 +3414,7 @@ func (client ZMSClient) PutTenantResourceGroupRoles(domain DomainName, service S
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -2828,7 +3446,7 @@ func (client ZMSClient) GetTenantResourceGroupRoles(domain DomainName, service S
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -2858,7 +3476,7 @@ func (client ZMSClient) DeleteTenantResourceGroupRoles(domain DomainName, servic
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -2897,7 +3515,7 @@ func (client ZMSClient) PutProviderResourceGroupRoles(tenantDomain DomainName, p
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -2929,7 +3547,7 @@ func (client ZMSClient) GetProviderResourceGroupRoles(tenantDomain DomainName, p
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -2959,7 +3577,7 @@ func (client ZMSClient) DeleteProviderResourceGroupRoles(tenantDomain DomainName
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -2991,7 +3609,7 @@ func (client ZMSClient) GetAccess(action ActionName, resource ResourceName, doma
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -3023,7 +3641,7 @@ func (client ZMSClient) GetAccessExt(action ActionName, resource string, domain 
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -3055,7 +3673,7 @@ func (client ZMSClient) GetResourceAccessList(principal ResourceName, action Act
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -3093,7 +3711,7 @@ func (client ZMSClient) GetSignedDomains(domain DomainName, metaOnly string, met
 		return data, tag, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return nil, "", err
 		}
@@ -3108,26 +3726,32 @@ func (client ZMSClient) GetSignedDomains(domain DomainName, metaOnly string, met
 	}
 }
 
-func (client ZMSClient) GetJWSDomain(name DomainName) (*JWSDomain, error) {
+func (client ZMSClient) GetJWSDomain(name DomainName, signatureP1363Format *bool, matchingTag string) (*JWSDomain, string, error) {
 	var data *JWSDomain
-	url := client.URL + "/domain/" + fmt.Sprint(name) + "/signed"
-	resp, err := client.httpGet(url, nil)
+	headers := map[string]string{
+		"If-None-Match": matchingTag,
+	}
+	url := client.URL + "/domain/" + fmt.Sprint(name) + "/signed" + encodeParams(encodeOptionalBoolParam("signaturep1363format", signatureP1363Format))
+	resp, err := client.httpGet(url, headers)
 	if err != nil {
-		return data, err
+		return nil, "", err
 	}
 	defer resp.Body.Close()
 	switch resp.StatusCode {
-	case 200:
-		err = json.NewDecoder(resp.Body).Decode(&data)
-		if err != nil {
-			return data, err
+	case 200, 304:
+		if 304 != resp.StatusCode {
+			err = json.NewDecoder(resp.Body).Decode(&data)
+			if err != nil {
+				return nil, "", err
+			}
 		}
-		return data, nil
+		tag := resp.Header.Get(rdl.FoldHttpHeaderName("ETag"))
+		return data, tag, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return data, err
+			return nil, "", err
 		}
 		json.Unmarshal(contentBytes, &errobj)
 		if errobj.Code == 0 {
@@ -3136,7 +3760,7 @@ func (client ZMSClient) GetJWSDomain(name DomainName) (*JWSDomain, error) {
 		if errobj.Message == "" {
 			errobj.Message = string(contentBytes)
 		}
-		return data, errobj
+		return nil, "", errobj
 	}
 }
 
@@ -3157,7 +3781,7 @@ func (client ZMSClient) GetUserToken(userName SimpleName, serviceNames string, h
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -3189,7 +3813,7 @@ func (client ZMSClient) OptionsUserToken(userName SimpleName, serviceNames strin
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -3221,7 +3845,7 @@ func (client ZMSClient) GetServicePrincipal() (*ServicePrincipal, error) {
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -3253,7 +3877,7 @@ func (client ZMSClient) GetServerTemplateList() (*ServerTemplateList, error) {
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -3285,7 +3909,7 @@ func (client ZMSClient) GetTemplate(template SimpleName) (*Template, error) {
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -3317,7 +3941,7 @@ func (client ZMSClient) GetDomainTemplateDetailsList(name DomainName) (*DomainTe
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -3349,7 +3973,7 @@ func (client ZMSClient) GetServerTemplateDetailsList() (*DomainTemplateDetailsLi
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -3381,7 +4005,7 @@ func (client ZMSClient) GetUserList(domainName DomainName) (*UserList, error) {
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -3411,7 +4035,7 @@ func (client ZMSClient) DeleteUser(name SimpleName, auditRef string) error {
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -3441,7 +4065,7 @@ func (client ZMSClient) DeleteDomainRoleMember(domainName DomainName, memberName
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -3473,7 +4097,7 @@ func (client ZMSClient) GetQuota(name DomainName) (*Quota, error) {
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -3507,7 +4131,7 @@ func (client ZMSClient) PutQuota(name DomainName, auditRef string, quota *Quota)
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err = ioutil.ReadAll(resp.Body)
+		contentBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -3537,7 +4161,7 @@ func (client ZMSClient) DeleteQuota(name DomainName, auditRef string) error {
 		return nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}
@@ -3569,7 +4193,7 @@ func (client ZMSClient) GetStatus() (*Status, error) {
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -3584,9 +4208,9 @@ func (client ZMSClient) GetStatus() (*Status, error) {
 	}
 }
 
-func (client ZMSClient) GetPendingDomainRoleMembersList(principal EntityName) (*DomainRoleMembership, error) {
+func (client ZMSClient) GetPendingDomainRoleMembersList(principal EntityName, domainName string) (*DomainRoleMembership, error) {
 	var data *DomainRoleMembership
-	url := client.URL + "/pending_members" + encodeParams(encodeStringParam("principal", string(principal), ""))
+	url := client.URL + "/pending_members" + encodeParams(encodeStringParam("principal", string(principal), ""), encodeStringParam("domain", string(domainName), ""))
 	resp, err := client.httpGet(url, nil)
 	if err != nil {
 		return data, err
@@ -3601,7 +4225,7 @@ func (client ZMSClient) GetPendingDomainRoleMembersList(principal EntityName) (*
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}
@@ -3633,7 +4257,393 @@ func (client ZMSClient) GetUserAuthorityAttributeMap() (*UserAuthorityAttributeM
 		return data, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return data, err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return data, errobj
+	}
+}
+
+func (client ZMSClient) GetStats(name DomainName) (*Stats, error) {
+	var data *Stats
+	url := client.URL + "/domain/" + fmt.Sprint(name) + "/stats"
+	resp, err := client.httpGet(url, nil)
+	if err != nil {
+		return data, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 200:
+		err = json.NewDecoder(resp.Body).Decode(&data)
+		if err != nil {
+			return data, err
+		}
+		return data, nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return data, err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return data, errobj
+	}
+}
+
+func (client ZMSClient) GetSystemStats() (*Stats, error) {
+	var data *Stats
+	url := client.URL + "/sys/stats"
+	resp, err := client.httpGet(url, nil)
+	if err != nil {
+		return data, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 200:
+		err = json.NewDecoder(resp.Body).Decode(&data)
+		if err != nil {
+			return data, err
+		}
+		return data, nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return data, err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return data, errobj
+	}
+}
+
+func (client ZMSClient) PutDomainDependency(domainName DomainName, auditRef string, service *DependentService) error {
+	headers := map[string]string{
+		"Y-Audit-Ref": auditRef,
+	}
+	url := client.URL + "/dependency/domain/" + fmt.Sprint(domainName)
+	contentBytes, err := json.Marshal(service)
+	if err != nil {
+		return err
+	}
+	resp, err := client.httpPut(url, headers, contentBytes)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 204:
+		return nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return errobj
+	}
+}
+
+func (client ZMSClient) DeleteDomainDependency(domainName DomainName, service ServiceName, auditRef string) error {
+	headers := map[string]string{
+		"Y-Audit-Ref": auditRef,
+	}
+	url := client.URL + "/dependency/domain/" + fmt.Sprint(domainName) + "/service/" + fmt.Sprint(service)
+	resp, err := client.httpDelete(url, headers)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 204:
+		return nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return errobj
+	}
+}
+
+func (client ZMSClient) GetDependentServiceList(domainName DomainName) (*ServiceIdentityList, error) {
+	var data *ServiceIdentityList
+	url := client.URL + "/dependency/domain/" + fmt.Sprint(domainName)
+	resp, err := client.httpGet(url, nil)
+	if err != nil {
+		return data, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 200:
+		err = json.NewDecoder(resp.Body).Decode(&data)
+		if err != nil {
+			return data, err
+		}
+		return data, nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return data, err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return data, errobj
+	}
+}
+
+func (client ZMSClient) GetDependentServiceResourceGroupList(domainName DomainName) (*DependentServiceResourceGroupList, error) {
+	var data *DependentServiceResourceGroupList
+	url := client.URL + "/dependency/domain/" + fmt.Sprint(domainName) + "/resourceGroup"
+	resp, err := client.httpGet(url, nil)
+	if err != nil {
+		return data, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 200:
+		err = json.NewDecoder(resp.Body).Decode(&data)
+		if err != nil {
+			return data, err
+		}
+		return data, nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return data, err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return data, errobj
+	}
+}
+
+func (client ZMSClient) GetDependentDomainList(service ServiceName) (*DomainList, error) {
+	var data *DomainList
+	url := client.URL + "/dependency/service/" + fmt.Sprint(service)
+	resp, err := client.httpGet(url, nil)
+	if err != nil {
+		return data, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 200:
+		err = json.NewDecoder(resp.Body).Decode(&data)
+		if err != nil {
+			return data, err
+		}
+		return data, nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return data, err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return data, errobj
+	}
+}
+
+func (client ZMSClient) GetRolesForReview(principal ResourceName) (*ReviewObjects, error) {
+	var data *ReviewObjects
+	url := client.URL + "/review/role" + encodeParams(encodeStringParam("principal", string(principal), ""))
+	resp, err := client.httpGet(url, nil)
+	if err != nil {
+		return data, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 200:
+		err = json.NewDecoder(resp.Body).Decode(&data)
+		if err != nil {
+			return data, err
+		}
+		return data, nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return data, err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return data, errobj
+	}
+}
+
+func (client ZMSClient) GetGroupsForReview(principal ResourceName) (*ReviewObjects, error) {
+	var data *ReviewObjects
+	url := client.URL + "/review/group" + encodeParams(encodeStringParam("principal", string(principal), ""))
+	resp, err := client.httpGet(url, nil)
+	if err != nil {
+		return data, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 200:
+		err = json.NewDecoder(resp.Body).Decode(&data)
+		if err != nil {
+			return data, err
+		}
+		return data, nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return data, err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return data, errobj
+	}
+}
+
+func (client ZMSClient) GetInfo() (*Info, error) {
+	var data *Info
+	url := client.URL + "/sys/info"
+	resp, err := client.httpGet(url, nil)
+	if err != nil {
+		return data, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 200:
+		err = json.NewDecoder(resp.Body).Decode(&data)
+		if err != nil {
+			return data, err
+		}
+		return data, nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return data, err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return data, errobj
+	}
+}
+
+func (client ZMSClient) PutPrincipalState(principalName MemberName, auditRef string, principalState *PrincipalState) error {
+	headers := map[string]string{
+		"Y-Audit-Ref": auditRef,
+	}
+	url := client.URL + "/principal/" + fmt.Sprint(principalName) + "/state"
+	contentBytes, err := json.Marshal(principalState)
+	if err != nil {
+		return err
+	}
+	resp, err := client.httpPut(url, headers, contentBytes)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 204:
+		return nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return errobj
+	}
+}
+
+func (client ZMSClient) GetRdlSchema() (*rdl.Schema, error) {
+	var data *rdl.Schema
+	url := client.URL + "/schema"
+	resp, err := client.httpGet(url, nil)
+	if err != nil {
+		return data, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 200:
+		err = json.NewDecoder(resp.Body).Decode(&data)
+		if err != nil {
+			return data, err
+		}
+		return data, nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return data, err
 		}

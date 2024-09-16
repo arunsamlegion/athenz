@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,11 @@
 import React from 'react';
 import { render } from '@testing-library/react';
 import RolePolicyList from '../../../components/role-policy/RolePolicyList';
+import { renderWithRedux } from '../../../tests_utils/ComponentsTestUtils';
 
 describe('RolePolicyList', () => {
     it('should render', () => {
-        const { getByTestId } = render(<RolePolicyList />);
+        const { getByTestId } = renderWithRedux(<RolePolicyList />);
         const rolepolicylist = getByTestId('role-policy-list');
 
         expect(rolepolicylist).toMatchSnapshot();

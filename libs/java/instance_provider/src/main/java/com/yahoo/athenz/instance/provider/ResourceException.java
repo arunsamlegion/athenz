@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Yahoo Holdings, Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ public class ResourceException extends RuntimeException {
     public final static int NOT_FOUND = 404;
     public final static int NOT_IMPLEMENTED = 501;
     public final static int GATEWAY_TIMEOUT = 504;
+    public final static int BAD_REQUEST     = 400;
 
     final private int code;
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -50,6 +50,10 @@ public interface PrivateKeyStore {
 
     /**
      * Retrieve the application secret based on the configured key name.
+     * @deprecated
+     * This method should not be used to get application secrets.
+     * <p> Use {@link PrivateKeyStore#getSecret(String, String)} instead.</p>
+     *
      * The application name specifies what component is this secret for;
      * for example, jdbc for accessing the secret for the jdbc user.
      * The default implementation assumes the key name is the secret.
@@ -57,7 +61,38 @@ public interface PrivateKeyStore {
      * @param keyName configured value for the secret
      * @return secret for the given key and application
      */
+    @Deprecated
     default String getApplicationSecret(String appName, String keyName) {
         return keyName;
+    }
+
+    /**
+     * Retrieve the application secret based on the configured key name as char[].
+     * @deprecated
+     * The application name specifies what component is this secret for;
+     * for example, jdbc for accessing the secret for the jdbc user.
+     * The default implementation assumes the key name is the secret.
+     * @param appName application name for the secret
+     * @param keyName configured value for the secret
+     * @return secret for the given key and application as char[]
+     */
+    @Deprecated
+    default char[] getSecret(String appName, String keyName) {
+        final String secret = getApplicationSecret(appName, keyName);
+        return secret != null ? secret.toCharArray() : null;
+    }
+
+    /**
+     * Retrieve the application secret based on the configured key name as char[].
+     * The application name specifies what component is this secret for;
+     * for example, jdbc for accessing the secret for the jdbc user.
+     * The default implementation assumes the key name is the secret.
+     * @param appName application name for the secret
+     * @param keygroupName key group name for the secret
+     * @param keyName name of the secret
+     * @return secret for the given key, keygroup and application as char[]
+     */
+    default char[] getSecret(String appName, String keygroupName, String keyName) {
+        return getSecret(appName, keyName);
     }
 }

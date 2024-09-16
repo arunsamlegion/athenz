@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Oath Holdings Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,11 +17,14 @@
 package com.oath.auth;
 
 /**
- * 
- * @author charlesk
- *
+ * Listener interface for any key/cert changes.
  */
 public interface KeyRefresherListener {
 
-    public void onKeyChangeEvent(); 
+    /**
+     * method is called whenever the KeyRefresher detects a change
+     * either in the private key or x.509 certificate files and
+     * updates the ssl context with the new content.
+     */
+    void onKeyChangeEvent();
 }

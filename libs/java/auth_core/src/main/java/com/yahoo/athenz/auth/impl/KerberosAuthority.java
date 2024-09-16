@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -61,8 +61,8 @@ public class KerberosAuthority implements Authority {
     private String  servicePrincipal; // ex: HTTP/localhost@LOCALHOST
     private String  keyTabConfFile;
     private String  jaasConfigSection;
-    private String  loginCallbackHandler;
-    private AtomicReference<Subject> serviceSubject = new AtomicReference<>();
+    private final String  loginCallbackHandler;
+    private final AtomicReference<Subject> serviceSubject = new AtomicReference<>();
     private Exception initState = null;
 
     private long lastLogin   = 0; // last time logged in in millisecs
@@ -71,25 +71,26 @@ public class KerberosAuthority implements Authority {
     public KerberosAuthority(String servicePrincipal, String keyTabConfFile, String jaasConfigSection) {
 
         this();
-        if (servicePrincipal != null) {
+        if (servicePrincipal != null && !servicePrincipal.isEmpty()) {
             this.servicePrincipal  = servicePrincipal;
         }
-        if (keyTabConfFile != null) {
-            this.keyTabConfFile    = keyTabConfFile;
+        if (keyTabConfFile != null && !keyTabConfFile.isEmpty()) {
+            this.keyTabConfFile = keyTabConfFile;
         }
-        if (jaasConfigSection == null) {
-            this.jaasConfigSection = "";
-        } else {
-            this.jaasConfigSection = jaasConfigSection;
-        }
+        this.jaasConfigSection = Objects.requireNonNullElse(jaasConfigSection, "");
     }
 
     public KerberosAuthority() {
-        servicePrincipal     = System.getProperty(KRB_PROP_SVCPRPL);
-        keyTabConfFile       = System.getProperty(KRB_PROP_KEYTAB);
+        servicePrincipal     = getConfigValue(KRB_PROP_SVCPRPL);
+        keyTabConfFile       = getConfigValue(KRB_PROP_KEYTAB);
         jaasConfigSection    = System.getProperty(KRB_PROP_JAASCFG, "");
-        loginCallbackHandler = System.getProperty(KRB_PROP_LOGIN_CB_CLASS);
+        loginCallbackHandler = getConfigValue(KRB_PROP_LOGIN_CB_CLASS);
         loginWindow          = Long.decode(System.getProperty(KRB_PROP_LOGIN_WINDOW, LOGIN_WINDOW_DEF));
+    }
+
+    String getConfigValue(final String property) {
+        final String value = System.getProperty(property);
+        return (value != null && !value.isEmpty()) ? value : null;
     }
 
     public Exception getInitState() {
@@ -148,7 +149,7 @@ public class KerberosAuthority implements Authority {
             // qualified class name of a default handler implementation
             LoginContext    loginContext;
             CallbackHandler loginHandler = null;
-            if (loginCallbackHandler != null) {
+            if (loginCallbackHandler != null && !loginCallbackHandler.isEmpty()) {
                 Class cbhandlerClass = Class.forName(loginCallbackHandler);
                 loginHandler = (CallbackHandler) cbhandlerClass.getConstructor(String.class, String.class).newInstance(servicePrincipal, null);
             }
@@ -201,7 +202,6 @@ public class KerberosAuthority implements Authority {
         Subject subject = serviceSubject.get();
         KerberosTicket tgt = null;
         Set<KerberosTicket> tickets = subject.getPrivateCredentials(KerberosTicket.class);
-        /// CLOVER:OFF
         for (KerberosTicket ticket : tickets) {
             if (isTargetPrincipal(ticket, remoteSvcPrincipal)) {
                 tgt = ticket;
@@ -223,7 +223,6 @@ public class KerberosAuthority implements Authority {
             return true;
         }
         return false;
-        ///CLOVER:ON
     }
 
     /**
@@ -265,7 +264,7 @@ public class KerberosAuthority implements Authority {
             errMsg.append("KerberosAuthority:authenticate: Invalid token: exc=").
                    append(ex.getMessage()).append(" : credential=").
                    append(creds);
-            LOG.error("KerberosAuthority:authenticate: {}", errMsg.toString());
+            LOG.error("KerberosAuthority:authenticate: {}", errMsg);
             return null;
         }
 
@@ -280,21 +279,19 @@ public class KerberosAuthority implements Authority {
 
         String userDomain = token.getDomain();
         String userName   = token.getUserName();
-        /// CLOVER:OFF
         if (userName == null) {
             if (errMsg != null) {
                 errMsg.append("KerberosAuthority:authenticate: token validation failure: missing user");
             }
             return null;
         }
-        ///CLOVER:ON
         return SimplePrincipal.create(userDomain, userName, creds, this);
     }
 
     static class LoginConfig extends Configuration {
-        private String keyTabConfFile;
-        private String servicePrincipalName;
-        private boolean debugKrbEnabled;
+        private final String keyTabConfFile;
+        private final String servicePrincipalName;
+        private final boolean debugKrbEnabled;
 
         public LoginConfig(String keyTabConfFile, String servicePrincipalName) {
             this.keyTabConfFile       = keyTabConfFile;
@@ -337,13 +334,11 @@ public class KerberosAuthority implements Authority {
             // Otherwise a configuration error will be returned
             if (Boolean.parseBoolean(useTktCache)) {
                 String ticketCacheName = System.getenv("KRB5CCNAME");  // this is what hadoop does
-                ///CLOVER:OFF
                 if (ticketCacheName != null) {
                     options.put("ticketCache", ticketCacheName);
                 } else {
-                    ///CLOVER:ON
                     ticketCacheName = System.getProperty(KRB_PROP_LOGIN_TKT_CACHE_NAME);
-                    if (ticketCacheName != null) {
+                    if (ticketCacheName != null && !ticketCacheName.isEmpty()) {
                         options.put("ticketCache", ticketCacheName);
                     }
                 }

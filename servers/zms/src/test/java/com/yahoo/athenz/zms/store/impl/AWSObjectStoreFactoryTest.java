@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Oath Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,7 @@ package com.yahoo.athenz.zms.store.impl;
 
 import com.amazonaws.auth.AWSCredentials;
 import com.amazonaws.auth.InstanceProfileCredentialsProvider;
-import com.amazonaws.services.rds.auth.GetIamAuthTokenRequest;
 import com.amazonaws.services.rds.auth.RdsIamAuthTokenGenerator;
-import com.amazonaws.util.EC2MetadataUtils;
 import com.yahoo.athenz.zms.ZMSConsts;
 import com.yahoo.athenz.zms.store.ObjectStore;
 import org.mockito.Mockito;
@@ -29,7 +27,7 @@ import static org.testng.Assert.assertNotNull;
 
 public class AWSObjectStoreFactoryTest {
 
-    class TestAWSObjectStoreFactory extends AWSObjectStoreFactory {
+    static class TestAWSObjectStoreFactory extends AWSObjectStoreFactory {
 
         @Override
         InstanceProfileCredentialsProvider getNewInstanceCredentialsProvider() {
@@ -58,9 +56,8 @@ public class AWSObjectStoreFactoryTest {
     @Test
     public void testCreate() {
 
-        System.setProperty(ZMSConsts.ZMS_PROP_AWS_RDS_MASTER_INSTANCE, "instance");
+        System.setProperty(ZMSConsts.ZMS_PROP_AWS_RDS_PRIMARY_INSTANCE, "instance");
         System.setProperty(ZMSConsts.ZMS_PROP_AWS_RDS_USER, "rds-user");
-        System.setProperty(ZMSConsts.ZMS_PROP_AWS_RDS_IAM_ROLE, "role");
         System.setProperty(ZMSConsts.ZMS_PROP_AWS_RDS_CREDS_REFRESH_TIME, "1");
 
         System.clearProperty(ZMSConsts.ZMS_PROP_AWS_RDS_REPLICA_INSTANCE);
@@ -79,9 +76,8 @@ public class AWSObjectStoreFactoryTest {
     @Test
     public void testOriginalMethods() {
 
-        System.setProperty(ZMSConsts.ZMS_PROP_AWS_RDS_MASTER_INSTANCE, "instance");
+        System.setProperty(ZMSConsts.ZMS_PROP_AWS_RDS_PRIMARY_INSTANCE, "instance");
         System.setProperty(ZMSConsts.ZMS_PROP_AWS_RDS_USER, "rds-user");
-        System.setProperty(ZMSConsts.ZMS_PROP_AWS_RDS_IAM_ROLE, "role");
         System.setProperty(ZMSConsts.ZMS_PROP_AWS_RDS_CREDS_REFRESH_TIME, "30000");
 
         System.clearProperty(ZMSConsts.ZMS_PROP_AWS_RDS_REPLICA_INSTANCE);
@@ -107,10 +103,9 @@ public class AWSObjectStoreFactoryTest {
     @Test
     public void testCreateWithReplica() {
 
-        System.setProperty(ZMSConsts.ZMS_PROP_AWS_RDS_MASTER_INSTANCE, "instance");
+        System.setProperty(ZMSConsts.ZMS_PROP_AWS_RDS_PRIMARY_INSTANCE, "instance");
         System.setProperty(ZMSConsts.ZMS_PROP_AWS_RDS_REPLICA_INSTANCE, "replica");
         System.setProperty(ZMSConsts.ZMS_PROP_AWS_RDS_USER, "rds-user");
-        System.setProperty(ZMSConsts.ZMS_PROP_AWS_RDS_IAM_ROLE, "role");
         System.setProperty(ZMSConsts.ZMS_PROP_AWS_RDS_CREDS_REFRESH_TIME, "30000");
 
         AWSObjectStoreFactory factory = new TestAWSObjectStoreFactory();

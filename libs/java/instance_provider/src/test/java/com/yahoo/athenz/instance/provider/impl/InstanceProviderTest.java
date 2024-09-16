@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Oath, Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
 package com.yahoo.athenz.instance.provider.impl;
 
 import com.yahoo.athenz.auth.KeyStore;
-import com.yahoo.athenz.common.server.dns.HostnameResolver;
 import com.yahoo.athenz.instance.provider.InstanceConfirmation;
 import com.yahoo.athenz.instance.provider.InstanceProvider;
 import org.testng.annotations.Test;
@@ -46,6 +45,7 @@ public class InstanceProviderTest {
         };
 
         provider.setHostnameResolver(null);
+        provider.setAuthorizer(null);
 
         assertEquals(InstanceProvider.Scheme.UNKNOWN, provider.getProviderScheme());
         provider.close();

@@ -3,6 +3,7 @@
 exports[`ReviewTable should render review table 1`] = `
 .emotion-0 {
   margin: 20px;
+  margin-bottom: 0px;
 }
 
 .emotion-2 {
@@ -19,7 +20,6 @@ exports[`ReviewTable should render review table 1`] = `
   border-bottom: 2px solid #d5d5d5;
   color: #9a9a9a;
   font-weight: 600;
-  font-size: 0.8rem;
   padding-bottom: 5px;
   vertical-align: top;
   text-transform: uppercase;
@@ -32,7 +32,6 @@ exports[`ReviewTable should render review table 1`] = `
   border-bottom: 2px solid #d5d5d5;
   color: #9a9a9a;
   font-weight: 600;
-  font-size: 0.8rem;
   padding-bottom: 5px;
   vertical-align: top;
   text-transform: uppercase;
@@ -45,8 +44,6 @@ exports[`ReviewTable should render review table 1`] = `
   margin-top: 10px;
   box-shadow: 0 1px 4px #d9d9d9;
   border: 1px solid #fff;
-  -webkit-border-image: none;
-  border-image: none;
   -webkit-border-image: initial;
   border-image: initial;
   height: 50px;
@@ -158,11 +155,15 @@ exports[`ReviewTable should render review table 1`] = `
   width: 8px;
 }
 
+.emotion-30>input[type='radio']:disabled:checked+label:after {
+  color: #d5d5d5;
+  border: 2px solid #d5d5d5;
+  background-color: #d5d5d5;
+  cursor: not-allowed;
+}
+
 .emotion-94 {
   box-sizing: border-box;
-  display: -webkit-inline-box;
-  display: -webkit-inline-flex;
-  display: -ms-inline-flexbox;
   display: inline-flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -267,7 +268,7 @@ exports[`ReviewTable should render review table 1`] = `
 .emotion-99 {
   border: none;
   border-radius: 2px;
-  box-shadow: 0 0 0 1px transparent inset,0 0 0 0 #d5d5d5 inset;
+  box-shadow: 0 0 0 1px #3697f2 inset;
   box-sizing: border-box;
   cursor: pointer;
   display: inline-block;
@@ -286,7 +287,6 @@ exports[`ReviewTable should render review table 1`] = `
   vertical-align: baseline;
   white-space: nowrap;
   background: transparent;
-  box-shadow: 0 0 0 1px #3697f2 inset;
   color: #3697f2;
 }
 
@@ -402,13 +402,13 @@ exports[`ReviewTable should render review table 1`] = `
           >
             <input
               checked=""
-              id="radiobutton-undefinedrole-review-0-extend"
-              name="undefinedrole-review-0"
+              id="radiobutton-undefinedrole-review-roleNameuser1-extend"
+              name="undefinedrole-review-roleNameuser1"
               type="radio"
               value="extend"
             />
             <label
-              for="radiobutton-undefinedrole-review-0-extend"
+              for="radiobutton-undefinedrole-review-roleNameuser1-extend"
             />
           </div>
         </td>
@@ -421,13 +421,13 @@ exports[`ReviewTable should render review table 1`] = `
             data-testid="radiobutton-wrapper"
           >
             <input
-              id="radiobutton-undefinedrole-review-0-no-action"
-              name="undefinedrole-review-0"
+              id="radiobutton-undefinedrole-review-roleNameuser1-no-action"
+              name="undefinedrole-review-roleNameuser1"
               type="radio"
               value="no-action"
             />
             <label
-              for="radiobutton-undefinedrole-review-0-no-action"
+              for="radiobutton-undefinedrole-review-roleNameuser1-no-action"
             />
           </div>
         </td>
@@ -440,13 +440,13 @@ exports[`ReviewTable should render review table 1`] = `
             data-testid="radiobutton-wrapper"
           >
             <input
-              id="radiobutton-undefinedrole-review-0-delete"
-              name="undefinedrole-review-0"
+              id="radiobutton-undefinedrole-review-roleNameuser1-delete"
+              name="undefinedrole-review-roleNameuser1"
               type="radio"
               value="delete"
             />
             <label
-              for="radiobutton-undefinedrole-review-0-delete"
+              for="radiobutton-undefinedrole-review-roleNameuser1-delete"
             />
           </div>
         </td>
@@ -487,13 +487,13 @@ exports[`ReviewTable should render review table 1`] = `
           >
             <input
               checked=""
-              id="radiobutton-undefinedrole-review-1-extend"
-              name="undefinedrole-review-1"
+              id="radiobutton-undefinedrole-review-roleNameuser2-extend"
+              name="undefinedrole-review-roleNameuser2"
               type="radio"
               value="extend"
             />
             <label
-              for="radiobutton-undefinedrole-review-1-extend"
+              for="radiobutton-undefinedrole-review-roleNameuser2-extend"
             />
           </div>
         </td>
@@ -506,13 +506,13 @@ exports[`ReviewTable should render review table 1`] = `
             data-testid="radiobutton-wrapper"
           >
             <input
-              id="radiobutton-undefinedrole-review-1-no-action"
-              name="undefinedrole-review-1"
+              id="radiobutton-undefinedrole-review-roleNameuser2-no-action"
+              name="undefinedrole-review-roleNameuser2"
               type="radio"
               value="no-action"
             />
             <label
-              for="radiobutton-undefinedrole-review-1-no-action"
+              for="radiobutton-undefinedrole-review-roleNameuser2-no-action"
             />
           </div>
         </td>
@@ -525,13 +525,13 @@ exports[`ReviewTable should render review table 1`] = `
             data-testid="radiobutton-wrapper"
           >
             <input
-              id="radiobutton-undefinedrole-review-1-delete"
-              name="undefinedrole-review-1"
+              id="radiobutton-undefinedrole-review-roleNameuser2-delete"
+              name="undefinedrole-review-roleNameuser2"
               type="radio"
               value="delete"
             />
             <label
-              for="radiobutton-undefinedrole-review-1-delete"
+              for="radiobutton-undefinedrole-review-roleNameuser2-delete"
             />
           </div>
         </td>
@@ -572,13 +572,13 @@ exports[`ReviewTable should render review table 1`] = `
           >
             <input
               checked=""
-              id="radiobutton-undefinedrole-review-2-extend"
-              name="undefinedrole-review-2"
+              id="radiobutton-undefinedrole-review-roleNameuser3-extend"
+              name="undefinedrole-review-roleNameuser3"
               type="radio"
               value="extend"
             />
             <label
-              for="radiobutton-undefinedrole-review-2-extend"
+              for="radiobutton-undefinedrole-review-roleNameuser3-extend"
             />
           </div>
         </td>
@@ -591,13 +591,13 @@ exports[`ReviewTable should render review table 1`] = `
             data-testid="radiobutton-wrapper"
           >
             <input
-              id="radiobutton-undefinedrole-review-2-no-action"
-              name="undefinedrole-review-2"
+              id="radiobutton-undefinedrole-review-roleNameuser3-no-action"
+              name="undefinedrole-review-roleNameuser3"
               type="radio"
               value="no-action"
             />
             <label
-              for="radiobutton-undefinedrole-review-2-no-action"
+              for="radiobutton-undefinedrole-review-roleNameuser3-no-action"
             />
           </div>
         </td>
@@ -610,13 +610,13 @@ exports[`ReviewTable should render review table 1`] = `
             data-testid="radiobutton-wrapper"
           >
             <input
-              id="radiobutton-undefinedrole-review-2-delete"
-              name="undefinedrole-review-2"
+              id="radiobutton-undefinedrole-review-roleNameuser3-delete"
+              name="undefinedrole-review-roleNameuser3"
               type="radio"
               value="delete"
             />
             <label
-              for="radiobutton-undefinedrole-review-2-delete"
+              for="radiobutton-undefinedrole-review-roleNameuser3-delete"
             />
           </div>
         </td>
@@ -657,13 +657,13 @@ exports[`ReviewTable should render review table 1`] = `
           >
             <input
               checked=""
-              id="radiobutton-undefinedrole-review-3-extend"
-              name="undefinedrole-review-3"
+              id="radiobutton-undefinedrole-review-roleNameuser4-extend"
+              name="undefinedrole-review-roleNameuser4"
               type="radio"
               value="extend"
             />
             <label
-              for="radiobutton-undefinedrole-review-3-extend"
+              for="radiobutton-undefinedrole-review-roleNameuser4-extend"
             />
           </div>
         </td>
@@ -676,13 +676,13 @@ exports[`ReviewTable should render review table 1`] = `
             data-testid="radiobutton-wrapper"
           >
             <input
-              id="radiobutton-undefinedrole-review-3-no-action"
-              name="undefinedrole-review-3"
+              id="radiobutton-undefinedrole-review-roleNameuser4-no-action"
+              name="undefinedrole-review-roleNameuser4"
               type="radio"
               value="no-action"
             />
             <label
-              for="radiobutton-undefinedrole-review-3-no-action"
+              for="radiobutton-undefinedrole-review-roleNameuser4-no-action"
             />
           </div>
         </td>
@@ -695,13 +695,13 @@ exports[`ReviewTable should render review table 1`] = `
             data-testid="radiobutton-wrapper"
           >
             <input
-              id="radiobutton-undefinedrole-review-3-delete"
-              name="undefinedrole-review-3"
+              id="radiobutton-undefinedrole-review-roleNameuser4-delete"
+              name="undefinedrole-review-roleNameuser4"
               type="radio"
               value="delete"
             />
             <label
-              for="radiobutton-undefinedrole-review-3-delete"
+              for="radiobutton-undefinedrole-review-roleNameuser4-delete"
             />
           </div>
         </td>
@@ -733,6 +733,7 @@ exports[`ReviewTable should render review table 1`] = `
         >
           <div
             class="emotion-97 emotion-98"
+            id="submit-button-roleName"
           >
             <button
               class="emotion-99 denali-button"
@@ -773,6 +774,7 @@ exports[`ReviewTable should render review table 1`] = `
 exports[`ReviewTable should render review table with reminder settings 1`] = `
 .emotion-0 {
   margin: 20px;
+  margin-bottom: 0px;
 }
 
 .emotion-2 {
@@ -789,7 +791,6 @@ exports[`ReviewTable should render review table with reminder settings 1`] = `
   border-bottom: 2px solid #d5d5d5;
   color: #9a9a9a;
   font-weight: 600;
-  font-size: 0.8rem;
   padding-bottom: 5px;
   vertical-align: top;
   text-transform: uppercase;
@@ -802,7 +803,6 @@ exports[`ReviewTable should render review table with reminder settings 1`] = `
   border-bottom: 2px solid #d5d5d5;
   color: #9a9a9a;
   font-weight: 600;
-  font-size: 0.8rem;
   padding-bottom: 5px;
   vertical-align: top;
   text-transform: uppercase;
@@ -815,8 +815,6 @@ exports[`ReviewTable should render review table with reminder settings 1`] = `
   margin-top: 10px;
   box-shadow: 0 1px 4px #d9d9d9;
   border: 1px solid #fff;
-  -webkit-border-image: none;
-  border-image: none;
   -webkit-border-image: initial;
   border-image: initial;
   height: 50px;
@@ -928,11 +926,15 @@ exports[`ReviewTable should render review table with reminder settings 1`] = `
   width: 8px;
 }
 
+.emotion-30>input[type='radio']:disabled:checked+label:after {
+  color: #d5d5d5;
+  border: 2px solid #d5d5d5;
+  background-color: #d5d5d5;
+  cursor: not-allowed;
+}
+
 .emotion-94 {
   box-sizing: border-box;
-  display: -webkit-inline-box;
-  display: -webkit-inline-flex;
-  display: -ms-inline-flexbox;
   display: inline-flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -1037,7 +1039,7 @@ exports[`ReviewTable should render review table with reminder settings 1`] = `
 .emotion-99 {
   border: none;
   border-radius: 2px;
-  box-shadow: 0 0 0 1px transparent inset,0 0 0 0 #d5d5d5 inset;
+  box-shadow: 0 0 0 1px #3697f2 inset;
   box-sizing: border-box;
   cursor: pointer;
   display: inline-block;
@@ -1056,7 +1058,6 @@ exports[`ReviewTable should render review table with reminder settings 1`] = `
   vertical-align: baseline;
   white-space: nowrap;
   background: transparent;
-  box-shadow: 0 0 0 1px #3697f2 inset;
   color: #3697f2;
 }
 
@@ -1172,13 +1173,13 @@ exports[`ReviewTable should render review table with reminder settings 1`] = `
           >
             <input
               checked=""
-              id="radiobutton-undefinedrole-review-0-extend"
-              name="undefinedrole-review-0"
+              id="radiobutton-undefinedrole-review-roleNameuser1-extend"
+              name="undefinedrole-review-roleNameuser1"
               type="radio"
               value="extend"
             />
             <label
-              for="radiobutton-undefinedrole-review-0-extend"
+              for="radiobutton-undefinedrole-review-roleNameuser1-extend"
             />
           </div>
         </td>
@@ -1191,13 +1192,13 @@ exports[`ReviewTable should render review table with reminder settings 1`] = `
             data-testid="radiobutton-wrapper"
           >
             <input
-              id="radiobutton-undefinedrole-review-0-no-action"
-              name="undefinedrole-review-0"
+              id="radiobutton-undefinedrole-review-roleNameuser1-no-action"
+              name="undefinedrole-review-roleNameuser1"
               type="radio"
               value="no-action"
             />
             <label
-              for="radiobutton-undefinedrole-review-0-no-action"
+              for="radiobutton-undefinedrole-review-roleNameuser1-no-action"
             />
           </div>
         </td>
@@ -1210,13 +1211,13 @@ exports[`ReviewTable should render review table with reminder settings 1`] = `
             data-testid="radiobutton-wrapper"
           >
             <input
-              id="radiobutton-undefinedrole-review-0-delete"
-              name="undefinedrole-review-0"
+              id="radiobutton-undefinedrole-review-roleNameuser1-delete"
+              name="undefinedrole-review-roleNameuser1"
               type="radio"
               value="delete"
             />
             <label
-              for="radiobutton-undefinedrole-review-0-delete"
+              for="radiobutton-undefinedrole-review-roleNameuser1-delete"
             />
           </div>
         </td>
@@ -1257,13 +1258,13 @@ exports[`ReviewTable should render review table with reminder settings 1`] = `
           >
             <input
               checked=""
-              id="radiobutton-undefinedrole-review-1-extend"
-              name="undefinedrole-review-1"
+              id="radiobutton-undefinedrole-review-roleNameuser2-extend"
+              name="undefinedrole-review-roleNameuser2"
               type="radio"
               value="extend"
             />
             <label
-              for="radiobutton-undefinedrole-review-1-extend"
+              for="radiobutton-undefinedrole-review-roleNameuser2-extend"
             />
           </div>
         </td>
@@ -1276,13 +1277,13 @@ exports[`ReviewTable should render review table with reminder settings 1`] = `
             data-testid="radiobutton-wrapper"
           >
             <input
-              id="radiobutton-undefinedrole-review-1-no-action"
-              name="undefinedrole-review-1"
+              id="radiobutton-undefinedrole-review-roleNameuser2-no-action"
+              name="undefinedrole-review-roleNameuser2"
               type="radio"
               value="no-action"
             />
             <label
-              for="radiobutton-undefinedrole-review-1-no-action"
+              for="radiobutton-undefinedrole-review-roleNameuser2-no-action"
             />
           </div>
         </td>
@@ -1295,13 +1296,13 @@ exports[`ReviewTable should render review table with reminder settings 1`] = `
             data-testid="radiobutton-wrapper"
           >
             <input
-              id="radiobutton-undefinedrole-review-1-delete"
-              name="undefinedrole-review-1"
+              id="radiobutton-undefinedrole-review-roleNameuser2-delete"
+              name="undefinedrole-review-roleNameuser2"
               type="radio"
               value="delete"
             />
             <label
-              for="radiobutton-undefinedrole-review-1-delete"
+              for="radiobutton-undefinedrole-review-roleNameuser2-delete"
             />
           </div>
         </td>
@@ -1342,13 +1343,13 @@ exports[`ReviewTable should render review table with reminder settings 1`] = `
           >
             <input
               checked=""
-              id="radiobutton-undefinedrole-review-2-extend"
-              name="undefinedrole-review-2"
+              id="radiobutton-undefinedrole-review-roleNameuser3-extend"
+              name="undefinedrole-review-roleNameuser3"
               type="radio"
               value="extend"
             />
             <label
-              for="radiobutton-undefinedrole-review-2-extend"
+              for="radiobutton-undefinedrole-review-roleNameuser3-extend"
             />
           </div>
         </td>
@@ -1361,13 +1362,13 @@ exports[`ReviewTable should render review table with reminder settings 1`] = `
             data-testid="radiobutton-wrapper"
           >
             <input
-              id="radiobutton-undefinedrole-review-2-no-action"
-              name="undefinedrole-review-2"
+              id="radiobutton-undefinedrole-review-roleNameuser3-no-action"
+              name="undefinedrole-review-roleNameuser3"
               type="radio"
               value="no-action"
             />
             <label
-              for="radiobutton-undefinedrole-review-2-no-action"
+              for="radiobutton-undefinedrole-review-roleNameuser3-no-action"
             />
           </div>
         </td>
@@ -1380,13 +1381,13 @@ exports[`ReviewTable should render review table with reminder settings 1`] = `
             data-testid="radiobutton-wrapper"
           >
             <input
-              id="radiobutton-undefinedrole-review-2-delete"
-              name="undefinedrole-review-2"
+              id="radiobutton-undefinedrole-review-roleNameuser3-delete"
+              name="undefinedrole-review-roleNameuser3"
               type="radio"
               value="delete"
             />
             <label
-              for="radiobutton-undefinedrole-review-2-delete"
+              for="radiobutton-undefinedrole-review-roleNameuser3-delete"
             />
           </div>
         </td>
@@ -1427,13 +1428,13 @@ exports[`ReviewTable should render review table with reminder settings 1`] = `
           >
             <input
               checked=""
-              id="radiobutton-undefinedrole-review-3-extend"
-              name="undefinedrole-review-3"
+              id="radiobutton-undefinedrole-review-roleNameuser4-extend"
+              name="undefinedrole-review-roleNameuser4"
               type="radio"
               value="extend"
             />
             <label
-              for="radiobutton-undefinedrole-review-3-extend"
+              for="radiobutton-undefinedrole-review-roleNameuser4-extend"
             />
           </div>
         </td>
@@ -1446,13 +1447,13 @@ exports[`ReviewTable should render review table with reminder settings 1`] = `
             data-testid="radiobutton-wrapper"
           >
             <input
-              id="radiobutton-undefinedrole-review-3-no-action"
-              name="undefinedrole-review-3"
+              id="radiobutton-undefinedrole-review-roleNameuser4-no-action"
+              name="undefinedrole-review-roleNameuser4"
               type="radio"
               value="no-action"
             />
             <label
-              for="radiobutton-undefinedrole-review-3-no-action"
+              for="radiobutton-undefinedrole-review-roleNameuser4-no-action"
             />
           </div>
         </td>
@@ -1465,13 +1466,13 @@ exports[`ReviewTable should render review table with reminder settings 1`] = `
             data-testid="radiobutton-wrapper"
           >
             <input
-              id="radiobutton-undefinedrole-review-3-delete"
-              name="undefinedrole-review-3"
+              id="radiobutton-undefinedrole-review-roleNameuser4-delete"
+              name="undefinedrole-review-roleNameuser4"
               type="radio"
               value="delete"
             />
             <label
-              for="radiobutton-undefinedrole-review-3-delete"
+              for="radiobutton-undefinedrole-review-roleNameuser4-delete"
             />
           </div>
         </td>
@@ -1503,6 +1504,7 @@ exports[`ReviewTable should render review table with reminder settings 1`] = `
         >
           <div
             class="emotion-97 emotion-98"
+            id="submit-button-roleName"
           >
             <button
               class="emotion-99 denali-button"
@@ -1543,6 +1545,7 @@ exports[`ReviewTable should render review table with reminder settings 1`] = `
 exports[`ReviewTable should render review table without expiry settings 1`] = `
 .emotion-0 {
   margin: 20px;
+  margin-bottom: 0px;
 }
 
 .emotion-2 {
@@ -1559,7 +1562,6 @@ exports[`ReviewTable should render review table without expiry settings 1`] = `
   border-bottom: 2px solid #d5d5d5;
   color: #9a9a9a;
   font-weight: 600;
-  font-size: 0.8rem;
   padding-bottom: 5px;
   vertical-align: top;
   text-transform: uppercase;
@@ -1572,7 +1574,6 @@ exports[`ReviewTable should render review table without expiry settings 1`] = `
   border-bottom: 2px solid #d5d5d5;
   color: #9a9a9a;
   font-weight: 600;
-  font-size: 0.8rem;
   padding-bottom: 5px;
   vertical-align: top;
   text-transform: uppercase;
@@ -1585,8 +1586,6 @@ exports[`ReviewTable should render review table without expiry settings 1`] = `
   margin-top: 10px;
   box-shadow: 0 1px 4px #d9d9d9;
   border: 1px solid #fff;
-  -webkit-border-image: none;
-  border-image: none;
   -webkit-border-image: initial;
   border-image: initial;
   height: 50px;
@@ -1698,11 +1697,15 @@ exports[`ReviewTable should render review table without expiry settings 1`] = `
   width: 8px;
 }
 
+.emotion-30>input[type='radio']:disabled:checked+label:after {
+  color: #d5d5d5;
+  border: 2px solid #d5d5d5;
+  background-color: #d5d5d5;
+  cursor: not-allowed;
+}
+
 .emotion-94 {
   box-sizing: border-box;
-  display: -webkit-inline-box;
-  display: -webkit-inline-flex;
-  display: -ms-inline-flexbox;
   display: inline-flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -1807,7 +1810,7 @@ exports[`ReviewTable should render review table without expiry settings 1`] = `
 .emotion-99 {
   border: none;
   border-radius: 2px;
-  box-shadow: 0 0 0 1px transparent inset,0 0 0 0 #d5d5d5 inset;
+  box-shadow: 0 0 0 1px #3697f2 inset;
   box-sizing: border-box;
   cursor: pointer;
   display: inline-block;
@@ -1826,7 +1829,6 @@ exports[`ReviewTable should render review table without expiry settings 1`] = `
   vertical-align: baseline;
   white-space: nowrap;
   background: transparent;
-  box-shadow: 0 0 0 1px #3697f2 inset;
   color: #3697f2;
 }
 
@@ -1942,13 +1944,13 @@ exports[`ReviewTable should render review table without expiry settings 1`] = `
           >
             <input
               checked=""
-              id="radiobutton-undefinedrole-review-0-extend"
-              name="undefinedrole-review-0"
+              id="radiobutton-undefinedrole-review-roleNameuser1-extend"
+              name="undefinedrole-review-roleNameuser1"
               type="radio"
               value="extend"
             />
             <label
-              for="radiobutton-undefinedrole-review-0-extend"
+              for="radiobutton-undefinedrole-review-roleNameuser1-extend"
             />
           </div>
         </td>
@@ -1961,13 +1963,13 @@ exports[`ReviewTable should render review table without expiry settings 1`] = `
             data-testid="radiobutton-wrapper"
           >
             <input
-              id="radiobutton-undefinedrole-review-0-no-action"
-              name="undefinedrole-review-0"
+              id="radiobutton-undefinedrole-review-roleNameuser1-no-action"
+              name="undefinedrole-review-roleNameuser1"
               type="radio"
               value="no-action"
             />
             <label
-              for="radiobutton-undefinedrole-review-0-no-action"
+              for="radiobutton-undefinedrole-review-roleNameuser1-no-action"
             />
           </div>
         </td>
@@ -1980,13 +1982,13 @@ exports[`ReviewTable should render review table without expiry settings 1`] = `
             data-testid="radiobutton-wrapper"
           >
             <input
-              id="radiobutton-undefinedrole-review-0-delete"
-              name="undefinedrole-review-0"
+              id="radiobutton-undefinedrole-review-roleNameuser1-delete"
+              name="undefinedrole-review-roleNameuser1"
               type="radio"
               value="delete"
             />
             <label
-              for="radiobutton-undefinedrole-review-0-delete"
+              for="radiobutton-undefinedrole-review-roleNameuser1-delete"
             />
           </div>
         </td>
@@ -2027,13 +2029,13 @@ exports[`ReviewTable should render review table without expiry settings 1`] = `
           >
             <input
               checked=""
-              id="radiobutton-undefinedrole-review-1-extend"
-              name="undefinedrole-review-1"
+              id="radiobutton-undefinedrole-review-roleNameuser2-extend"
+              name="undefinedrole-review-roleNameuser2"
               type="radio"
               value="extend"
             />
             <label
-              for="radiobutton-undefinedrole-review-1-extend"
+              for="radiobutton-undefinedrole-review-roleNameuser2-extend"
             />
           </div>
         </td>
@@ -2046,13 +2048,13 @@ exports[`ReviewTable should render review table without expiry settings 1`] = `
             data-testid="radiobutton-wrapper"
           >
             <input
-              id="radiobutton-undefinedrole-review-1-no-action"
-              name="undefinedrole-review-1"
+              id="radiobutton-undefinedrole-review-roleNameuser2-no-action"
+              name="undefinedrole-review-roleNameuser2"
               type="radio"
               value="no-action"
             />
             <label
-              for="radiobutton-undefinedrole-review-1-no-action"
+              for="radiobutton-undefinedrole-review-roleNameuser2-no-action"
             />
           </div>
         </td>
@@ -2065,13 +2067,13 @@ exports[`ReviewTable should render review table without expiry settings 1`] = `
             data-testid="radiobutton-wrapper"
           >
             <input
-              id="radiobutton-undefinedrole-review-1-delete"
-              name="undefinedrole-review-1"
+              id="radiobutton-undefinedrole-review-roleNameuser2-delete"
+              name="undefinedrole-review-roleNameuser2"
               type="radio"
               value="delete"
             />
             <label
-              for="radiobutton-undefinedrole-review-1-delete"
+              for="radiobutton-undefinedrole-review-roleNameuser2-delete"
             />
           </div>
         </td>
@@ -2112,13 +2114,13 @@ exports[`ReviewTable should render review table without expiry settings 1`] = `
           >
             <input
               checked=""
-              id="radiobutton-undefinedrole-review-2-extend"
-              name="undefinedrole-review-2"
+              id="radiobutton-undefinedrole-review-roleNameuser3-extend"
+              name="undefinedrole-review-roleNameuser3"
               type="radio"
               value="extend"
             />
             <label
-              for="radiobutton-undefinedrole-review-2-extend"
+              for="radiobutton-undefinedrole-review-roleNameuser3-extend"
             />
           </div>
         </td>
@@ -2131,13 +2133,13 @@ exports[`ReviewTable should render review table without expiry settings 1`] = `
             data-testid="radiobutton-wrapper"
           >
             <input
-              id="radiobutton-undefinedrole-review-2-no-action"
-              name="undefinedrole-review-2"
+              id="radiobutton-undefinedrole-review-roleNameuser3-no-action"
+              name="undefinedrole-review-roleNameuser3"
               type="radio"
               value="no-action"
             />
             <label
-              for="radiobutton-undefinedrole-review-2-no-action"
+              for="radiobutton-undefinedrole-review-roleNameuser3-no-action"
             />
           </div>
         </td>
@@ -2150,13 +2152,13 @@ exports[`ReviewTable should render review table without expiry settings 1`] = `
             data-testid="radiobutton-wrapper"
           >
             <input
-              id="radiobutton-undefinedrole-review-2-delete"
-              name="undefinedrole-review-2"
+              id="radiobutton-undefinedrole-review-roleNameuser3-delete"
+              name="undefinedrole-review-roleNameuser3"
               type="radio"
               value="delete"
             />
             <label
-              for="radiobutton-undefinedrole-review-2-delete"
+              for="radiobutton-undefinedrole-review-roleNameuser3-delete"
             />
           </div>
         </td>
@@ -2197,13 +2199,13 @@ exports[`ReviewTable should render review table without expiry settings 1`] = `
           >
             <input
               checked=""
-              id="radiobutton-undefinedrole-review-3-extend"
-              name="undefinedrole-review-3"
+              id="radiobutton-undefinedrole-review-roleNameuser4-extend"
+              name="undefinedrole-review-roleNameuser4"
               type="radio"
               value="extend"
             />
             <label
-              for="radiobutton-undefinedrole-review-3-extend"
+              for="radiobutton-undefinedrole-review-roleNameuser4-extend"
             />
           </div>
         </td>
@@ -2216,13 +2218,13 @@ exports[`ReviewTable should render review table without expiry settings 1`] = `
             data-testid="radiobutton-wrapper"
           >
             <input
-              id="radiobutton-undefinedrole-review-3-no-action"
-              name="undefinedrole-review-3"
+              id="radiobutton-undefinedrole-review-roleNameuser4-no-action"
+              name="undefinedrole-review-roleNameuser4"
               type="radio"
               value="no-action"
             />
             <label
-              for="radiobutton-undefinedrole-review-3-no-action"
+              for="radiobutton-undefinedrole-review-roleNameuser4-no-action"
             />
           </div>
         </td>
@@ -2235,13 +2237,13 @@ exports[`ReviewTable should render review table without expiry settings 1`] = `
             data-testid="radiobutton-wrapper"
           >
             <input
-              id="radiobutton-undefinedrole-review-3-delete"
-              name="undefinedrole-review-3"
+              id="radiobutton-undefinedrole-review-roleNameuser4-delete"
+              name="undefinedrole-review-roleNameuser4"
               type="radio"
               value="delete"
             />
             <label
-              for="radiobutton-undefinedrole-review-3-delete"
+              for="radiobutton-undefinedrole-review-roleNameuser4-delete"
             />
           </div>
         </td>
@@ -2273,6 +2275,7 @@ exports[`ReviewTable should render review table without expiry settings 1`] = `
         >
           <div
             class="emotion-97 emotion-98"
+            id="submit-button-roleName"
           >
             <button
               class="emotion-99 denali-button"

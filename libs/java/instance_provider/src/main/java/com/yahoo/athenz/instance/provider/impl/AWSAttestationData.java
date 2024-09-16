@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Yahoo Holdings, Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * EC2 instance must provide to ZTS to authenticate.
  */
 @JsonInclude(JsonInclude.Include.ALWAYS)
-class AWSAttestationData {
+public class AWSAttestationData {
     private String document;
     private String signature;
     private String role;

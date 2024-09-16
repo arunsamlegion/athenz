@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,14 +14,15 @@
  * limitations under the License.
  */
 import React from 'react';
-import { render } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import ReviewTable from '../../../components/review/ReviewTable';
-import API from '../../../api';
+import { ReviewTable as ReviewTableWithoutRedux } from '../../../components/review/ReviewTable';
+import { renderWithRedux } from '../../../tests_utils/ComponentsTestUtils';
 
 describe('ReviewTable', () => {
     it('should render review table', () => {
         let members = [];
-        let domain= 'domain';
+        let domain = 'domain';
         let role = 'roleName';
         const roleDetails = {
             memberExpiryDays: 15,
@@ -30,30 +31,36 @@ describe('ReviewTable', () => {
             memberReviewDays: null,
             serviceReviewDays: null,
             groupReviewDays: null,
-        }
+        };
         let user1 = {
             memberName: 'user1',
             approved: true,
-        }
+        };
         let user2 = {
             memberName: 'user2',
             approved: false,
-        }
+        };
         let user3 = {
             memberName: 'user3',
             approved: false,
-        }
+        };
         let user4 = {
             memberName: 'user4',
             approved: true,
-        }
+        };
         members.push(user1);
         members.push(user2);
         members.push(user3);
         members.push(user4);
 
-        const { getByTestId } = render(
-            <ReviewTable api={API()} domain={domain} role={role} roleDetails={roleDetails} members={members} justificationRequired={true} />
+        const { getByTestId } = renderWithRedux(
+            <ReviewTable
+                domain={domain}
+                role={role}
+                roleDetails={roleDetails}
+                members={members}
+                justificationRequired={true}
+            />
         );
         const reviewTable = getByTestId('review-table');
 
@@ -61,7 +68,7 @@ describe('ReviewTable', () => {
     });
     it('should render review table with reminder settings', () => {
         let members = [];
-        let domain= 'domain';
+        let domain = 'domain';
         let role = 'roleName';
         const roleDetails = {
             memberExpiryDays: null,
@@ -70,30 +77,36 @@ describe('ReviewTable', () => {
             memberReviewDays: 5,
             serviceReviewDays: 10,
             groupReviewDays: 15,
-        }
+        };
         let user1 = {
             memberName: 'user1',
             approved: true,
-        }
+        };
         let user2 = {
             memberName: 'user2',
             approved: false,
-        }
+        };
         let user3 = {
             memberName: 'user3',
             approved: false,
-        }
+        };
         let user4 = {
             memberName: 'user4',
             approved: true,
-        }
+        };
         members.push(user1);
         members.push(user2);
         members.push(user3);
         members.push(user4);
 
-        const { getByTestId } = render(
-            <ReviewTable api={API()} domain={domain} role={role} roleDetails={roleDetails} members={members} justificationRequired={true} />
+        const { getByTestId } = renderWithRedux(
+            <ReviewTable
+                domain={domain}
+                role={role}
+                roleDetails={roleDetails}
+                members={members}
+                justificationRequired={true}
+            />
         );
         const reviewTableReminder = getByTestId('review-table');
 
@@ -101,7 +114,7 @@ describe('ReviewTable', () => {
     });
     it('should render review table without expiry settings', () => {
         let members = [];
-        let domain= 'domain';
+        let domain = 'domain';
         let role = 'roleName';
         const roleDetails = {
             memberExpiryDays: null,
@@ -110,33 +123,141 @@ describe('ReviewTable', () => {
             memberReviewDays: null,
             serviceReviewDays: null,
             groupReviewDays: null,
-        }
+        };
         let user1 = {
             memberName: 'user1',
             approved: true,
-        }
+        };
         let user2 = {
             memberName: 'user2',
             approved: false,
-        }
+        };
         let user3 = {
             memberName: 'user3',
             approved: false,
-        }
+        };
         let user4 = {
             memberName: 'user4',
             approved: true,
-        }
+        };
         members.push(user1);
         members.push(user2);
         members.push(user3);
         members.push(user4);
 
-        const { getByTestId } = render(
-            <ReviewTable api={API()} domain={domain} role={role} roleDetails={roleDetails} members={members} justificationRequired={true} />
+        const { getByTestId } = renderWithRedux(
+            <ReviewTable
+                domain={domain}
+                role={role}
+                roleDetails={roleDetails}
+                members={members}
+                justificationRequired={true}
+            />
         );
         const reviewTableNoSettings = getByTestId('review-table');
 
         expect(reviewTableNoSettings).toMatchSnapshot();
+    });
+
+    it('should not ask for confirmation once submit button was clicked', async () => {
+        let members = [];
+        let domain = 'domain';
+        let role = 'roleName';
+        const roleDetails = {
+            memberExpiryDays: 15,
+            serviceExpiryDays: 15,
+            groupExpiryDays: null,
+            memberReviewDays: null,
+            serviceReviewDays: null,
+            groupReviewDays: null,
+        };
+        let user1 = {
+            memberName: 'user1',
+            approved: true,
+        };
+        let user2 = {
+            memberName: 'user2',
+            approved: true,
+        };
+        members.push(user1);
+        members.push(user2);
+
+        const { queryByTestId } = render(
+            <ReviewTableWithoutRedux
+                domain={domain}
+                role={role}
+                roleDetails={roleDetails}
+                members={members}
+                justificationRequired={true}
+                onUpdateSuccess={jest.fn()}
+                reviewRole={jest.fn().mockReturnValue(Promise.resolve())}
+            />
+        );
+
+        fireEvent.change(
+            screen.getByPlaceholderText('Enter justification here'),
+            {
+                target: { value: 'delete' },
+            }
+        );
+
+        const submitButton = screen.getByRole('button', {
+            name: /Submit Review/i,
+        });
+        fireEvent.click(submitButton);
+        expect(queryByTestId(/delete-modal-message/i)).toBeNull();
+    });
+
+    it('should ask for confirmation once submit button was clicked', async () => {
+        let members = [];
+        let domain = 'domain';
+        let role = 'roleName';
+        const roleDetails = {
+            memberExpiryDays: 15,
+            serviceExpiryDays: 15,
+            groupExpiryDays: null,
+            memberReviewDays: null,
+            serviceReviewDays: null,
+            groupReviewDays: null,
+        };
+        let user1 = {
+            memberName: 'user1',
+            approved: true,
+        };
+        let user2 = {
+            memberName: 'user2',
+            approved: true,
+        };
+        members.push(user1);
+        members.push(user2);
+
+        const { queryByTestId } = render(
+            <ReviewTableWithoutRedux
+                domain={domain}
+                role={role}
+                roleDetails={roleDetails}
+                members={members}
+                justificationRequired={true}
+                onUpdateSuccess={jest.fn()}
+                reviewRole={jest.fn().mockReturnValue(Promise.resolve())}
+            />
+        );
+        const deleteRadioButton = screen.getAllByTestId(
+            'radiobutton-wrapper'
+        )[2];
+        fireEvent.click(deleteRadioButton.children[0], {
+            target: { value: 'delete' },
+        });
+        fireEvent.change(
+            screen.getByPlaceholderText('Enter justification here'),
+            {
+                target: { value: 'delete' },
+            }
+        );
+        const submitButton = screen.getByRole('button', {
+            name: /Submit Review/i,
+        });
+        fireEvent.click(submitButton);
+        expect(queryByTestId(/delete-modal-message/i)).not.toBeNull();
     });
 });

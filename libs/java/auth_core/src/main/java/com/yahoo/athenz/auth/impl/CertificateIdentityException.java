@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ package com.yahoo.athenz.auth.impl;
 public class CertificateIdentityException extends Exception {
 
     private static final long serialVersionUID = -3287975953851497109L;
+    boolean reportError = true;
 
     public CertificateIdentityException() {
         super();
@@ -30,8 +31,16 @@ public class CertificateIdentityException extends Exception {
         super(message);
     }
 
+    public CertificateIdentityException(String message, boolean reportError) {
+        super(message);
+        this.reportError = reportError;
+    }
+
     public CertificateIdentityException(Throwable cause) {
         super(cause);
     }
 
+    public boolean isReportError() {
+        return reportError;
+    }
 }

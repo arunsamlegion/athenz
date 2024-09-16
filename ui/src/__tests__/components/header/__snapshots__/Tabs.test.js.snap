@@ -10,7 +10,7 @@ exports[`Tabs should render 1`] = `
   border-radius: 2px;
   box-sizing: border-box;
   display: inline-grid;
-  grid-template-columns: repeat(8, 1fr);
+  grid-template-columns: repeat(9, 1fr);
   margin-top: 0;
   min-width: 80px;
   position: relative;
@@ -18,9 +18,6 @@ exports[`Tabs should render 1`] = `
 
 .emotion-0.vertical {
   background: #f5f8fe;
-  display: -webkit-box;
-  display: -webkit-flex;
-  display: -ms-flexbox;
   display: flex;
   -webkit-flex-direction: column;
   -ms-flex-direction: column;
@@ -43,9 +40,6 @@ exports[`Tabs should render 1`] = `
   background: #f5f8fe;
   color: #3697f2;
   cursor: pointer;
-  display: -webkit-box;
-  display: -webkit-flex;
-  display: -ms-flexbox;
   display: flex;
   -webkit-box-pack: center;
   -ms-flex-pack: center;
@@ -139,6 +133,12 @@ exports[`Tabs should render 1`] = `
     data-active="false"
   >
     Settings
+  </div>
+  <div
+    class="emotion-1 denali-tab"
+    data-active="false"
+  >
+    Visibility
   </div>
   <div
     class="emotion-1 denali-tab active"

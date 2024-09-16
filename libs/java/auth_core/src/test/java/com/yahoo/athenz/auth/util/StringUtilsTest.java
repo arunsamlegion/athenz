@@ -1,5 +1,5 @@
 /*
- *  Copyright 2020 Verizon Media
+ *  Copyright The Athenz Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -97,5 +97,12 @@ public class StringUtilsTest {
         assertFalse(StringUtils.requestUriMatch("/zts/v1/domain/athenz/token", uriSet, uriList));
         assertFalse(StringUtils.requestUriMatch("/zts/v1/domain/athenz/service/zms", uriSet, uriList));
         assertTrue(StringUtils.requestUriMatch("/zts/v1/domain/athenz/service/zms/publickey/zms1", uriSet, uriList));
+    }
+    
+    @Test
+    public void testCountMatches() {
+        assertEquals(StringUtils.countMatches("user", '.'), 0);
+        assertEquals(StringUtils.countMatches("user.joe", '.'), 1);
+        assertEquals(StringUtils.countMatches("home.joe.service", '.'), 2);
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Oath, Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@ package com.yahoo.athenz.zms;
 
 import org.testng.annotations.Test;
 
-import javax.ws.rs.core.Response;
+import jakarta.ws.rs.core.Response;
 
 import static org.testng.Assert.assertEquals;
 

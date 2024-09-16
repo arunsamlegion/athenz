@@ -23,7 +23,6 @@ import org.eclipse.jetty.io.EndPoint;
 import org.eclipse.jetty.io.SocketChannelEndPoint;
 import org.eclipse.jetty.io.ssl.SslConnection;
 import org.eclipse.jetty.io.ssl.SslHandshakeListener;
-import org.eclipse.jetty.server.ProxyConnectionFactory;
 import org.testng.annotations.Test;
 
 import org.mockito.ArgumentCaptor;
@@ -51,10 +50,14 @@ public class JettyConnectionLoggerTest {
         Metric metric = Mockito.mock(Metric.class);
 
         JettyConnectionLogger jettyConnectionLogger = new JettyConnectionLogger(connectionLog, metric);
+        jettyConnectionLogger.doStart();
 
         MockedConnection failedMockedConnection = getMockConnection();
         SslConnection mockConnection2 = failedMockedConnection.sslConnection;
 
+        AthenzConnectionListener athenzConnectionListener = new AthenzConnectionListener();
+        athenzConnectionListener.onOpened(mockConnection2);
+        
         // Now simulate handshake failure for mockConnection2
         SslHandshakeListener.Event event = Mockito.mock(SslHandshakeListener.Event.class);
         when(event.getSSLEngine()).thenReturn(failedMockedConnection.sslEngine);
@@ -71,9 +74,17 @@ public class JettyConnectionLoggerTest {
         assertEquals("no cipher suites in common", connectionLogEntryArgumentCaptor.getValue().sslHandshakeFailureMessage().get());
         assertFalse(connectionLogEntryArgumentCaptor.getValue().sslHandshakeFailureCause().isPresent());
         List<String[]> allMetricValues = metricArgumentCaptor.getAllValues();
-        assertEquals(2, allMetricValues.size());
-        assertEquals("failureType", allMetricValues.get(0));
-        assertEquals("INCOMPATIBLE_CLIENT_CIPHER_SUITES", allMetricValues.get(1));
+        assertEquals(allMetricValues.size(), 1);
+        String[] testValue = allMetricValues.get(0);
+        assertEquals(testValue.length, 4);
+        assertEquals("failureType", testValue[0]);
+        assertEquals("INCOMPATIBLE_CLIENT_CIPHER_SUITES", testValue[1]);
+        assertEquals("athenzPrincipal", testValue[2]);
+        assertEquals("unknown", testValue[3]);
+
+        athenzConnectionListener.onClosed(mockConnection2);
+        athenzConnectionListener.shutdown();
+        jettyConnectionLogger.doStop();
     }
 
     @Test
@@ -82,10 +93,14 @@ public class JettyConnectionLoggerTest {
         ConnectionLog connectionLog = Mockito.mock(ConnectionLog.class);
         Metric metric = Mockito.mock(Metric.class);
         JettyConnectionLogger jettyConnectionLogger = new JettyConnectionLogger(connectionLog, metric);
+        jettyConnectionLogger.doStart();
 
         MockedConnection failedMockedConnection = getMockConnection();
         SslConnection mockConnection = failedMockedConnection.sslConnection;
 
+        AthenzConnectionListener athenzConnectionListener = new AthenzConnectionListener();
+        athenzConnectionListener.onOpened(mockConnection);
+        
         // Now simulate handshake failure for mockConnection
         SslHandshakeListener.Event event = Mockito.mock(SslHandshakeListener.Event.class);
         when(event.getSSLEngine()).thenReturn(failedMockedConnection.sslEngine);
@@ -102,13 +117,16 @@ public class JettyConnectionLoggerTest {
 
         jettyConnectionLogger.handshakeFailed(event, sslHandshakeException);
 
-
         Mockito.verify(connectionLog, Mockito.times(1)).log(connectionLogEntryArgumentCaptor.capture());
         assertEquals(GENERAL_SSL_ERROR, connectionLogEntryArgumentCaptor.getValue().sslHandshakeFailureMessage().get());
         assertEquals("Last cause (most specific reason)", connectionLogEntryArgumentCaptor.getValue().sslHandshakeFailureCause().get());
+
+        athenzConnectionListener.onClosed(mockConnection);
+        athenzConnectionListener.shutdown();
+        jettyConnectionLogger.doStop();
     }
 
-    private MockedConnection getMockConnection() throws Exception {
+    static MockedConnection getMockConnection() throws Exception {
         MockedConnection mockedConnection = new MockedConnection();
         SSLEngine sslEngine = Mockito.mock(SSLEngine.class);
         mockedConnection.sslEngine = sslEngine;
@@ -123,28 +141,7 @@ public class JettyConnectionLoggerTest {
         return mockedConnection;
     }
 
-    private MockedConnection getMockedProxyConncetion() throws Exception {
-        MockedConnection mockedConnection = new MockedConnection();
-        SSLEngine sslEngine = Mockito.mock(SSLEngine.class);
-        mockedConnection.sslEngine = sslEngine;
-        SslConnection sslConnection = Mockito.mock(SslConnection.class);
-        when(sslConnection.getSSLEngine()).thenReturn(sslEngine);
-
-        SocketChannelEndPoint socketChannelEndPoint = Mockito.mock(SocketChannelEndPoint.class);
-        when(socketChannelEndPoint.getLocalAddress()).thenReturn(new InetSocketAddress(InetAddress.getLocalHost(), 4444));
-        when(socketChannelEndPoint.getRemoteAddress()).thenReturn(new InetSocketAddress(InetAddress.getLocalHost(), 5555));
-        ProxyConnectionFactory.ProxyEndPoint proxyEndPoint = Mockito.mock(ProxyConnectionFactory.ProxyEndPoint.class);
-        when(proxyEndPoint.getRemoteAddress()).thenReturn(new InetSocketAddress(InetAddress.getLocalHost(), 3333));
-        when(proxyEndPoint.unwrap()).thenReturn(socketChannelEndPoint);
-
-        when(sslConnection.getEndPoint()).thenReturn(proxyEndPoint);
-        mockedConnection.endpoint = proxyEndPoint;
-        mockedConnection.sslConnection = sslConnection;
-        return mockedConnection;
-
-    }
-
-    private class MockedConnection {
+    static class MockedConnection {
         SSLEngine sslEngine;
         SslConnection sslConnection;
         EndPoint endpoint;

@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,18 +34,18 @@ public class PendingRoleMembershipApprovalNotificationTask implements Notificati
     private final DBService dbService;
     private final int pendingRoleMemberLifespan;
     private final String monitorIdentity;
-    private NotificationCommon notificationCommon;
+    private final NotificationCommon notificationCommon;
     private final static String DESCRIPTION = "pending role membership approvals reminders";
     private final PendingRoleMembershipApprovalNotificationToEmailConverter pendingMembershipApprovalNotificationToEmailConverter;
     private final PendingRoleMembershipApprovalNotificationToMetricConverter pendingRoleMembershipApprovalNotificationToMetricConverter;
 
-    public PendingRoleMembershipApprovalNotificationTask(DBService dbService, int pendingRoleMemberLifespan, String monitorIdentity, String userDomainPrefix) {
+    public PendingRoleMembershipApprovalNotificationTask(DBService dbService, int pendingRoleMemberLifespan, String monitorIdentity, String userDomainPrefix, NotificationToEmailConverterCommon notificationToEmailConverterCommon) {
         this.dbService = dbService;
         this.pendingRoleMemberLifespan = pendingRoleMemberLifespan;
         this.monitorIdentity = monitorIdentity;
         DomainRoleMembersFetcher domainRoleMembersFetcher = new DomainRoleMembersFetcher(dbService, USER_DOMAIN_PREFIX);
         this.notificationCommon = new NotificationCommon(domainRoleMembersFetcher, userDomainPrefix);
-        this.pendingMembershipApprovalNotificationToEmailConverter = new PendingRoleMembershipApprovalNotificationToEmailConverter();
+        this.pendingMembershipApprovalNotificationToEmailConverter = new PendingRoleMembershipApprovalNotificationToEmailConverter(notificationToEmailConverterCommon);
         this.pendingRoleMembershipApprovalNotificationToMetricConverter = new PendingRoleMembershipApprovalNotificationToMetricConverter();
     }
 
@@ -54,6 +54,7 @@ public class PendingRoleMembershipApprovalNotificationTask implements Notificati
         dbService.processExpiredPendingMembers(pendingRoleMemberLifespan, monitorIdentity);
         Set<String> recipients = dbService.getPendingMembershipApproverRoles(1);
         return Collections.singletonList(notificationCommon.createNotification(
+                Notification.Type.PENDING_ROLE_APPROVAL,
                 recipients,
                 null,
                 pendingMembershipApprovalNotificationToEmailConverter,
@@ -70,10 +71,10 @@ public class PendingRoleMembershipApprovalNotificationTask implements Notificati
         private static final String MEMBERSHIP_APPROVAL_REMINDER_SUBJECT = "athenz.notification.email.membership.reminder.subject";
 
         private final NotificationToEmailConverterCommon notificationToEmailConverterCommon;
-        private String emailMembershipApprovalReminderBody;
+        private final String emailMembershipApprovalReminderBody;
 
-        public PendingRoleMembershipApprovalNotificationToEmailConverter() {
-            notificationToEmailConverterCommon = new NotificationToEmailConverterCommon();
+        public PendingRoleMembershipApprovalNotificationToEmailConverter(NotificationToEmailConverterCommon notificationToEmailConverterCommon) {
+            this.notificationToEmailConverterCommon = notificationToEmailConverterCommon;
             emailMembershipApprovalReminderBody = notificationToEmailConverterCommon.readContentFromFile(getClass().getClassLoader(), EMAIL_TEMPLATE_NOTIFICATION_APPROVAL_REMINDER);
         }
 

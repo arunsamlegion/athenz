@@ -1,7 +1,8 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
 set -eu
 set -o pipefail
+shopt -s expand_aliases
 
 # to script directory
 cd "$(dirname "$0")"

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,21 +23,26 @@ import java.util.regex.Pattern;
  */
 public class Validate {
 
+    // these values must match the patters defined in the ZMS RDL:
+    //      core/zms/src/main/rdl/Names.tdl
+
     private static final String PRINCIPAL_REGEX = "((([a-zA-Z0-9_][a-zA-Z0-9_-]*\\.)*[a-zA-Z0-9_][a-zA-Z0-9_-]*):)?(([a-zA-Z0-9_][a-zA-Z0-9_-]*\\.)*[a-zA-Z0-9_][a-zA-Z0-9_-]*)";
     private static final String DOMAIN_REGEX = "([a-zA-Z0-9_][a-zA-Z0-9_-]*\\.)*[a-zA-Z0-9_][a-zA-Z0-9_-]*";
-    
-    private static Pattern principalPattern = Pattern.compile(PRINCIPAL_REGEX);
-    private static Pattern domainPattern = Pattern.compile(DOMAIN_REGEX);
+    private static final String SIMPLE_NAME_REGEX = "[a-zA-Z0-9_][a-zA-Z0-9_-]*";
+
+    private static final Pattern PRINCIPAL_PATTERN = Pattern.compile(PRINCIPAL_REGEX);
+    private static final Pattern DOMAIN_PATTERN = Pattern.compile(DOMAIN_REGEX);
+    private static final Pattern SIMPLE_NAME_PATTERN = Pattern.compile(SIMPLE_NAME_REGEX);
 
     /**
      * @param name a principal name to validate
      * @return true if the principal name is valid, false otherwise.
      */
-    public static boolean principalName(String name) {
+    public static boolean principalName(final String name) {
         if (name == null || name.isEmpty()) {
             return false;
         }
-        Matcher matcher = principalPattern.matcher(name);
+        Matcher matcher = PRINCIPAL_PATTERN.matcher(name);
         return matcher.matches();
     }
 
@@ -45,11 +50,23 @@ public class Validate {
      * @param name a domain name to validate
      * @return true if the domain name is valid, false otherwise.
      */
-    public static boolean domainName(String name) {
+    public static boolean domainName(final String name) {
         if (name == null || name.isEmpty()) {
             return false;
         }
-        Matcher matcher = domainPattern.matcher(name);
+        Matcher matcher = DOMAIN_PATTERN.matcher(name);
+        return matcher.matches();
+    }
+
+    /**
+     * @param name a simple name to validate
+     * @return true if the name is valid, false otherwise.
+     */
+    public static boolean simpleName(final String name) {
+        if (name == null || name.isEmpty()) {
+            return false;
+        }
+        Matcher matcher = SIMPLE_NAME_PATTERN.matcher(name);
         return matcher.matches();
     }
 }

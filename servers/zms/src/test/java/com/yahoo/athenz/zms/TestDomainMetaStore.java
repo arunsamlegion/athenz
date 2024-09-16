@@ -1,5 +1,5 @@
 /*
- * Copyright Athenz Authors
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -69,12 +69,37 @@ public class TestDomainMetaStore implements DomainMetaStore {
     }
 
     @Override
+    public boolean isValidGcpProject(String domainName, String gcpProject) {
+        return isValidAttribute(gcpProject);
+    }
+
+    @Override
+    public void setGcpProjectDomain(String domainName, String gcpProject) {
+        setAttribute(gcpProject);
+    }
+
+    @Override
+    public List<String> getValidGcpProjects(String userName) {
+        return new ArrayList<>();
+    }
+
+    @Override
     public boolean isValidProductId(String domainName, Integer productId) {
         return isValidAttribute(productId);
     }
 
     @Override
     public void setProductIdDomain(String domainName, Integer productId) {
+        setAttribute(productId);
+    }
+
+    @Override
+    public boolean isValidProductId(String domainName, String productId) {
+        return isValidAttribute(productId);
+    }
+
+    @Override
+    public void setProductIdDomain(String domainName, String productId) {
         setAttribute(productId);
     }
 

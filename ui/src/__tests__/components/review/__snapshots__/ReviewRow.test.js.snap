@@ -6,8 +6,6 @@ exports[`ReviewRow should render 1`] = `
   margin-top: 10px;
   box-shadow: 0 1px 4px #d9d9d9;
   border: 1px solid #fff;
-  -webkit-border-image: none;
-  border-image: none;
   -webkit-border-image: initial;
   border-image: initial;
   height: 50px;
@@ -119,6 +117,13 @@ exports[`ReviewRow should render 1`] = `
   width: 8px;
 }
 
+.emotion-8>input[type='radio']:disabled:checked+label:after {
+  color: #d5d5d5;
+  border: 2px solid #d5d5d5;
+  background-color: #d5d5d5;
+  cursor: not-allowed;
+}
+
 <tr
   class="emotion-0 emotion-1"
   data-testid="review-row"
@@ -133,6 +138,26 @@ exports[`ReviewRow should render 1`] = `
     class="emotion-2 emotion-3"
     color="#3570f40D"
   />
+  <td
+    class="emotion-6 emotion-3"
+    color="#3570f40D"
+  >
+    <div
+      class="emotion-8 denali-radiobutton"
+      data-testid="radiobutton-wrapper"
+    >
+      <input
+        checked=""
+        id="radiobutton-undefined50-extend"
+        name="undefined50"
+        type="radio"
+        value="extend"
+      />
+      <label
+        for="radiobutton-undefined50-extend"
+      />
+    </div>
+  </td>
   <td
     class="emotion-6 emotion-3"
     color="#3570f40D"

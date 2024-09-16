@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,25 +16,20 @@
 import React from 'react';
 import { render, fireEvent } from '@testing-library/react';
 import AddPolicy from '../../../components/policy/AddPolicy';
+import { renderWithRedux } from '../../../tests_utils/ComponentsTestUtils';
+import { resetIdCounter } from 'downshift';
 
 describe('AddPolicy', () => {
+    beforeEach(() => resetIdCounter());
     it('should render', () => {
         const showAddPolicy = true;
-        const cancel = function() {};
+        const cancel = function () {};
         const domain = 'domain';
-        const api = {
-            listRoles(domain) {
-                return new Promise((resolve, reject) => {
-                    resolve(['a, b']);
-                });
-            },
-        };
-        const { getByTestId } = render(
+        const { getByTestId } = renderWithRedux(
             <AddPolicy
                 showAddPolicy={showAddPolicy}
                 onCancel={cancel}
                 domain={domain}
-                api={api}
             />
         );
         const addPolicy = getByTestId('add-modal-message');
@@ -43,21 +38,13 @@ describe('AddPolicy', () => {
 
     it('should render fail to submit policy name is required', () => {
         const showAddPolicy = true;
-        const cancel = function() {};
+        const cancel = function () {};
         const domain = 'domain';
-        const api = {
-            listRoles(domain) {
-                return new Promise((resolve, reject) => {
-                    resolve(['a, b']);
-                });
-            },
-        };
-        const { getByTestId, getByText } = render(
+        const { getByTestId, getByText } = renderWithRedux(
             <AddPolicy
                 showAddPolicy={showAddPolicy}
                 onCancel={cancel}
                 domain={domain}
-                api={api}
             />
         );
         const addPolicy = getByTestId('add-modal-message');
@@ -70,23 +57,16 @@ describe('AddPolicy', () => {
 
     it('should render failed to submit action is required', () => {
         const showAddPolicy = true;
-        const cancel = function() {};
+        const cancel = function () {};
         const domain = 'domain';
-        const api = {
-            listRoles(domain) {
-                return new Promise((resolve, reject) => {
-                    resolve(['a, b']);
-                });
-            },
-        };
-        const { getByTestId, getByText, getByPlaceholderText } = render(
-            <AddPolicy
-                showAddPolicy={showAddPolicy}
-                onCancel={cancel}
-                domain={domain}
-                api={api}
-            />
-        );
+        const { getByTestId, getByText, getByPlaceholderText } =
+            renderWithRedux(
+                <AddPolicy
+                    showAddPolicy={showAddPolicy}
+                    onCancel={cancel}
+                    domain={domain}
+                />
+            );
         const addPolicy = getByTestId('add-modal-message');
         expect(addPolicy).toMatchSnapshot();
 
@@ -100,30 +80,23 @@ describe('AddPolicy', () => {
 
     it('should render failed to submit role name is required', () => {
         const showAddPolicy = true;
-        const cancel = function() {};
+        const cancel = function () {};
         const domain = 'domain';
-        const api = {
-            listRoles(domain) {
-                return new Promise((resolve, reject) => {
-                    resolve(['a, b']);
-                });
-            },
-        };
-        const { getByTestId, getByText, getByPlaceholderText } = render(
-            <AddPolicy
-                showAddPolicy={showAddPolicy}
-                onCancel={cancel}
-                domain={domain}
-                api={api}
-            />
-        );
+        const { getByTestId, getByText, getByPlaceholderText } =
+            renderWithRedux(
+                <AddPolicy
+                    showAddPolicy={showAddPolicy}
+                    onCancel={cancel}
+                    domain={domain}
+                />
+            );
         const addPolicy = getByTestId('add-modal-message');
         expect(addPolicy).toMatchSnapshot();
 
         fireEvent.change(getByPlaceholderText('Policy Name'), {
             target: { value: 'policyname' },
         });
-        fireEvent.change(getByPlaceholderText('Rule Action (Case Sensitive)'), {
+        fireEvent.change(getByPlaceholderText('Rule Action'), {
             target: { value: 'ruleaction' },
         });
         fireEvent.click(getByText('Submit'));

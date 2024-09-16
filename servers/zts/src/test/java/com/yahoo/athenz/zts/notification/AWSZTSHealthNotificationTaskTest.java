@@ -1,5 +1,5 @@
 /*
- *  Copyright 2020 Verizon Media
+ *  Copyright The Athenz Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.yahoo.athenz.zts.notification;
 import com.yahoo.athenz.common.server.notification.Notification;
 import com.yahoo.athenz.common.server.notification.NotificationEmail;
 import com.yahoo.athenz.common.server.notification.NotificationMetric;
+import com.yahoo.athenz.common.server.notification.NotificationToEmailConverterCommon;
 import com.yahoo.athenz.zms.Role;
 import com.yahoo.athenz.zms.RoleMember;
 import com.yahoo.athenz.zts.ZTSClientNotification;
@@ -35,7 +36,6 @@ import java.util.*;
 
 import static com.yahoo.athenz.common.server.notification.NotificationServiceConstants.*;
 import static com.yahoo.athenz.common.server.notification.impl.MetricNotificationService.*;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.testng.Assert.*;
 import static org.testng.Assert.assertTrue;
@@ -46,6 +46,7 @@ public class AWSZTSHealthNotificationTaskTest {
     private DataStore dataStore;
     private final String userDomainPrefix = "user.";
     private final String serverName = "testServer";
+    private final NotificationToEmailConverterCommon notificationToEmailConverterCommon = new NotificationToEmailConverterCommon(null);
 
     @BeforeClass
     public void setup() {
@@ -59,7 +60,8 @@ public class AWSZTSHealthNotificationTaskTest {
                 ztsClientNotification,
                 dataStore,
                 userDomainPrefix,
-                serverName);
+                serverName,
+                notificationToEmailConverterCommon);
 
         List<Notification> notifications = awsztsHealthNotificationTask.getNotifications();
         assertEquals(0, notifications.size());
@@ -93,12 +95,15 @@ public class AWSZTSHealthNotificationTaskTest {
         List<Role> roles = new ArrayList<>();
         roles.add(adminRole);
 
-        when(dataStore.getRolesByDomain(eq("testDomain"))).thenReturn(roles);
+        when(dataStore.getRolesByDomain("testDomain")).thenReturn(roles);
+        when(dataStore.getRole("testDomain", "admin", Boolean.FALSE, Boolean.TRUE, Boolean.FALSE))
+                .thenThrow(new UnsupportedOperationException());
         AWSZTSHealthNotificationTask awsztsHealthNotificationTask = new AWSZTSHealthNotificationTask(
                 clientNotification,
                 dataStore,
                 userDomainPrefix,
-                serverName);
+                serverName,
+                notificationToEmailConverterCommon);
 
         List<Notification> notifications = awsztsHealthNotificationTask.getNotifications();
         assertEquals(1, notifications.size());
@@ -117,7 +122,8 @@ public class AWSZTSHealthNotificationTaskTest {
                 ztsClientNotification,
                 dataStore,
                 userDomainPrefix,
-                serverName);
+                serverName,
+                notificationToEmailConverterCommon);
 
         String description = awsztsHealthNotificationTask.getDescription();
         assertEquals("ZTS On AWS Health Notification", description);
@@ -134,9 +140,9 @@ public class AWSZTSHealthNotificationTaskTest {
         details.put(NOTIFICATION_DETAILS_AWS_ZTS_HEALTH,
                 "zts.url;domain0;role0;Sun Mar 15 15:08:07 IST 2020;Error message");
 
-        Notification notification = new Notification();
+        Notification notification = new Notification(Notification.Type.AWS_ZTS_HEALTH);
         notification.setDetails(details);
-        AWSZTSHealthNotificationTask.AWSZTSHealthNotificationToEmailConverter converter = new AWSZTSHealthNotificationTask.AWSZTSHealthNotificationToEmailConverter();
+        AWSZTSHealthNotificationTask.AWSZTSHealthNotificationToEmailConverter converter = new AWSZTSHealthNotificationTask.AWSZTSHealthNotificationToEmailConverter(new NotificationToEmailConverterCommon(null));
         NotificationEmail notificationAsEmail = converter.getNotificationAsEmail(notification);
 
         String body = notificationAsEmail.getBody();
@@ -159,8 +165,8 @@ public class AWSZTSHealthNotificationTaskTest {
 
     @Test
     public void getEmailSubject() {
-        Notification notification = new Notification();
-        AWSZTSHealthNotificationTask.AWSZTSHealthNotificationToEmailConverter converter = new AWSZTSHealthNotificationTask.AWSZTSHealthNotificationToEmailConverter();
+        Notification notification = new Notification(Notification.Type.AWS_ZTS_HEALTH);
+        AWSZTSHealthNotificationTask.AWSZTSHealthNotificationToEmailConverter converter = new AWSZTSHealthNotificationTask.AWSZTSHealthNotificationToEmailConverter(notificationToEmailConverterCommon);
         NotificationEmail notificationAsEmail = converter.getNotificationAsEmail(notification);
         String subject = notificationAsEmail.getSubject();
         Assert.assertEquals(subject, "AWS ZTS Failure Notification");
@@ -176,7 +182,7 @@ public class AWSZTSHealthNotificationTaskTest {
         details.put(NOTIFICATION_DETAILS_AWS_ZTS_HEALTH,
                 "zts.url;domain0;role0;" + twentyFiveDaysFromNow + ";Error message");
 
-        Notification notification = new Notification();
+        Notification notification = new Notification(Notification.Type.AWS_ZTS_HEALTH);
         notification.setDetails(details);
 
         AWSZTSHealthNotificationTask.AWSZTSHealthNotificationToMetricConverter converter = new AWSZTSHealthNotificationTask.AWSZTSHealthNotificationToMetricConverter();

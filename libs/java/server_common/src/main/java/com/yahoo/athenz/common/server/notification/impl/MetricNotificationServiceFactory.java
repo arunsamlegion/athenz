@@ -1,5 +1,5 @@
 /*
- *  Copyright 2020 Verizon Media
+ *  Copyright The Athenz Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -42,10 +42,10 @@ public class MetricNotificationServiceFactory implements NotificationServiceFact
                 METRIC_DEFAULT_FACTORY_CLASS);
         MetricFactory metricFactory;
         try {
-            metricFactory = (MetricFactory) Class.forName(metricFactoryClass).newInstance();
-        } catch (InstantiationException | IllegalAccessException | ClassNotFoundException e) {
-            LOG.error("Invalid MetricFactory class: {} error: {}", metricFactoryClass, e.getMessage());
-            throw new IllegalArgumentException("Invalid metric class");
+            metricFactory = (MetricFactory) Class.forName(metricFactoryClass).getDeclaredConstructor().newInstance();
+        } catch (Exception ex) {
+            LOG.error("Invalid MetricFactory class: {}", metricFactoryClass, ex);
+            throw new IllegalArgumentException("Invalid metric class", ex);
         }
 
         LOG.info("Loaded MetricFactory for receiving notification metrics: {}", metricFactoryClass);

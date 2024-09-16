@@ -1,5 +1,5 @@
 /*
- *  Copyright 2020 Verizon Media
+ *  Copyright The Athenz Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -55,7 +55,7 @@ public class MetricNotificationServiceTest {
         NotificationToMetricConverter notificationToMetricConverter = Mockito.mock(NotificationToMetricConverter.class);
         Mockito.when(notificationToMetricConverter.getNotificationAsMetrics(Mockito.any(), Mockito.any())).thenReturn(new NotificationMetric(attributes));
 
-        Notification notification = new Notification();
+        Notification notification = new Notification(Notification.Type.ROLE_MEMBER_EXPIRY);
         notification.setNotificationToMetricConverter(notificationToMetricConverter);
 
         boolean notify = metricNotificationService.notify(notification);
@@ -72,17 +72,23 @@ public class MetricNotificationServiceTest {
         assertEquals("athenz_notification", captorMetric.getAllValues().get(1));
 
         // Mockito captures all varargs arguments in a single array
-        assertEquals(12, captorAttributes.getAllValues().size());
 
-        List<String> expectedAttributes = new ArrayList<String>(Arrays.asList(
+        assertEquals(2, captorAttributes.getAllValues().size());
+
+        String[] collectedAttributes1 = captorAttributes.getAllValues().get(0);
+        assertEquals(6, collectedAttributes1.length);
+        List<String> expectedAttributes1 = Arrays.asList(
                 "key1", "attribute11",
                 "key2", "attribute12",
-                "key3", "attribute13",
+                "key3", "attribute13");
+        assertEquals(expectedAttributes1, List.of(collectedAttributes1));
+
+        String[] collectedAttributes2 = captorAttributes.getAllValues().get(1);
+        assertEquals(6, collectedAttributes2.length);
+        List<String> expectedAttributes2 = Arrays.asList(
                 "key1", "attribute21",
                 "key2", "attribute22",
-                "key3", "attribute23"
-        ));
-
-        assertEquals(expectedAttributes, captorAttributes.getAllValues());
+                "key3", "attribute23");
+        assertEquals(expectedAttributes2, List.of(collectedAttributes2));
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Oath Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -50,12 +50,12 @@ public class SelfCertSignerTest {
         
         SelfCertSignerFactory certFactory = new SelfCertSignerFactory();
         
-        SelfCertSigner certSigner = (SelfCertSigner) certFactory.create();
+        KeyStoreCertSigner certSigner = (KeyStoreCertSigner) certFactory.create();
         assertEquals(certSigner.getMaxCertExpiryTimeMins(), 43200);
         certSigner.close();
         
         System.setProperty(ZTSConsts.ZTS_PROP_CERTSIGN_MAX_EXPIRY_TIME, "1200");
-        certSigner = (SelfCertSigner) certFactory.create();
+        certSigner = (KeyStoreCertSigner) certFactory.create();
         assertEquals(certSigner.getMaxCertExpiryTimeMins(), 1200);
         certSigner.close();
 

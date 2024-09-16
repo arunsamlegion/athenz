@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -107,6 +107,14 @@ const makeCssRadioButton = (props) => css`
         top: 4px;
         transition: ${!props.noanim ? 'all 0.2s ease-in' : undefined};
         width: 8px;
+    }
+
+    /* Disabled checked button */
+    & > input[type='radio']:disabled:checked + label:after {
+        color: ${colors.grey500};
+        border: 2px solid ${colors.grey500};
+        background-color: ${colors.grey500};
+        cursor: not-allowed;
     }
 `;
 

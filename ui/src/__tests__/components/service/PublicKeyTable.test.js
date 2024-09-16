@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,207 +14,185 @@
  * limitations under the License.
  */
 import React from 'react';
-import { render, fireEvent, waitForElement } from '@testing-library/react';
+import { fireEvent, waitFor } from '@testing-library/react';
 import PublicKeyTable from '../../../components/service/PublicKeyTable';
+import {
+    buildServicesForState,
+    getStateWithServices,
+    renderWithRedux,
+} from '../../../tests_utils/ComponentsTestUtils';
+import MockApi from '../../../mock/MockApi';
+import { getExpiredTime } from '../../../redux/utils';
+
+const domain = 'domain';
+const service = 'service';
+const serviceFullName = `${domain}.${service}`;
 
 describe('PublicKeyTable', () => {
     it('should render', () => {
-        const domain = 'domain';
-        const service = 'service';
-        const serviceDetails = {
-            name: 'home.pgote.openhouse',
-            description: 'This is a default service for Openhouse.',
-            modified: '2017-12-19T20:24:41.195Z',
-        };
+        const services = buildServicesForState(
+            {
+                [serviceFullName]: {
+                    name: 'home.pgote.openhouse',
+                    description: 'This is a default service for Openhouse.',
+                    modified: '2017-12-19T20:24:41.195Z',
+                },
+            },
+            domain
+        );
         const color = '';
-        const api = {};
 
-        const { getByTestId } = render(
+        const { getByTestId } = renderWithRedux(
             <table>
                 <tbody>
                     <tr>
                         <PublicKeyTable
                             domain={domain}
-                            api={api}
                             service={service}
-                            serviceDetails={serviceDetails}
                             color={color}
                         />
                     </tr>
                 </tbody>
-            </table>
+            </table>,
+            getStateWithServices(services)
         );
         const publicKeyTable = getByTestId('public-key-table');
         expect(publicKeyTable).toMatchSnapshot();
     });
 
     it('should render addKey after click addKey', async () => {
-        const domain = 'domain';
-        const service = 'service';
-        const serviceDetails = {
-            name: 'home.pgote.openhouse',
-            description: 'This is a default service for Openhouse.',
-            modified: '2017-12-19T20:24:41.195Z',
-        };
+        const services = buildServicesForState(
+            {
+                [serviceFullName]: {
+                    name: 'home.pgote.openhouse',
+                    description: 'This is a default service for Openhouse.',
+                    modified: '2017-12-19T20:24:41.195Z',
+                },
+            },
+            domain
+        );
         const color = '';
-        const api = {};
 
-        const { getByText, getByTestId, getByTitle } = render(
+        const { getByText, getByTestId, getByTitle } = renderWithRedux(
             <table>
                 <tbody>
                     <tr>
                         <PublicKeyTable
                             domain={domain}
-                            api={api}
                             service={service}
-                            serviceDetails={serviceDetails}
                             color={color}
                         />
                     </tr>
                 </tbody>
-            </table>
+            </table>,
+            getStateWithServices(services)
         );
         fireEvent.click(getByText('Add Key'));
 
-        expect(
-            await waitForElement(() => getByTestId('add-key'))
-        ).toMatchSnapshot();
+        expect(await waitFor(() => getByTestId('add-key'))).toMatchSnapshot();
     });
 
     it('should render deleteKey after click trash icon', async () => {
-        const domain = 'domain';
-        const service = 'service';
-        const serviceDetails = {
-            name: 'home.pgote.openhouse',
-            description: 'This is a default service for Openhouse.',
-            modified: '2017-12-19T20:24:41.195Z',
-            publicKeys: [
-                {
-                    id: 'test-id',
-                    key: 'test-value',
+        const services = buildServicesForState(
+            {
+                [serviceFullName]: {
+                    name: 'home.pgote.openhouse',
+                    description: 'This is a default service for Openhouse.',
+                    modified: '2017-12-19T20:24:41.195Z',
+                    publicKeys: {
+                        'test-id': {
+                            id: 'test-id',
+                            key: 'test-value',
+                        },
+                    },
                 },
-            ],
-        };
+            },
+            domain
+        );
         const color = '';
-        const api = {};
 
-        const { getByText, getByTestId, getByTitle } = render(
+        const { getByText, getByTestId, getByTitle } = renderWithRedux(
             <table>
                 <tbody>
                     <tr>
                         <PublicKeyTable
                             domain={domain}
-                            api={api}
                             service={service}
-                            serviceDetails={serviceDetails}
                             color={color}
                         />
                     </tr>
                 </tbody>
-            </table>
+            </table>,
+            getStateWithServices(services)
         );
         fireEvent.click(getByTitle('trash'));
 
         expect(
-            await waitForElement(() => getByText('This deletion is permanent'))
+            await waitFor(() => getByText('This deletion is permanent'))
         ).toMatchSnapshot();
     });
 
     it('should not render deleteKeyModal after cancel', async () => {
-        const domain = 'domain';
-        const service = 'service';
-        const serviceDetails = {
-            name: 'home.pgote.openhouse',
-            description: 'This is a default service for Openhouse.',
-            modified: '2017-12-19T20:24:41.195Z',
-            publicKeys: [
-                {
-                    id: 'test-id',
-                    key: 'test-value',
+        const services = buildServicesForState(
+            {
+                [serviceFullName]: {
+                    name: 'home.pgote.openhouse',
+                    description: 'This is a default service for Openhouse.',
+                    modified: '2017-12-19T20:24:41.195Z',
+                    publicKeys: {
+                        'test-id': {
+                            id: 'test-id',
+                            key: 'test-value',
+                        },
+                    },
                 },
-            ],
-        };
-        const color = '';
-        const api = {};
-
-        const { getByText, getByTestId, getByTitle, queryByText } = render(
-            <table>
-                <tbody>
-                    <tr>
-                        <PublicKeyTable
-                            domain={domain}
-                            api={api}
-                            service={service}
-                            serviceDetails={serviceDetails}
-                            color={color}
-                        />
-                    </tr>
-                </tbody>
-            </table>
+            },
+            domain
         );
+        const color = '';
+
+        const { getByText, getByTestId, getByTitle, queryByText } =
+            renderWithRedux(
+                <table>
+                    <tbody>
+                        <tr>
+                            <PublicKeyTable
+                                domain={domain}
+                                service={service}
+                                color={color}
+                            />
+                        </tr>
+                    </tbody>
+                </table>,
+                getStateWithServices(services)
+            );
         fireEvent.click(getByTitle('trash'));
         fireEvent.click(
-            await waitForElement(() => getByTestId('delete-modal-cancel'))
+            await waitFor(() => getByTestId('delete-modal-cancel'))
         );
         expect(queryByText('This deletion is permanent')).toBeNull();
     });
 
-    it('should render error if there is an error in props', async () => {
-        const domain = 'domain';
-        const service = 'service';
-        const serviceDetails = {
-            name: 'home.test.openhouse',
-            description: 'This is a default service for Openhouse.',
-            modified: '2017-12-19T20:24:41.195Z',
-            publicKeys: [
-                {
-                    id: 'test-id',
-                    key: 'test-value',
-                },
-            ],
-            errorMessage: 'err',
-        };
-        const color = '';
-        const api = {};
-
-        const { getByText, getByTestId, getByTitle } = render(
-            <table>
-                <tbody>
-                    <tr>
-                        <PublicKeyTable
-                            domain={domain}
-                            api={api}
-                            service={service}
-                            serviceDetails={serviceDetails}
-                            color={color}
-                        />
-                    </tr>
-                </tbody>
-            </table>
-        );
-
-        expect(
-            await waitForElement(() => getByTestId('error-message'))
-        ).toMatchSnapshot();
-    });
-
     it('should render error if there is an error in submitDeleteKey(refresh)', async () => {
-        const domain = 'domain';
-        const service = 'service';
-        const serviceDetails = {
-            name: 'home.pgote.openhouse',
-            description: 'This is a default service for Openhouse.',
-            modified: '2017-12-19T20:24:41.195Z',
-            publicKeys: [
-                {
-                    id: 'test-id',
-                    key: 'test-value',
+        const services = buildServicesForState(
+            {
+                [serviceFullName]: {
+                    name: 'home.pgote.openhouse',
+                    description: 'This is a default service for Openhouse.',
+                    modified: '2017-12-19T20:24:41.195Z',
+                    publicKeys: {
+                        'test-id': {
+                            id: 'test-id',
+                            key: 'test-value',
+                        },
+                    },
                 },
-            ],
-        };
+            },
+            domain
+        );
         const color = '';
         const api = {
-            deleteKey: function(domainName, serviceName, keyId, _csrf) {
+            deleteKey: function (domainName, serviceName, keyId, _csrf) {
                 return new Promise((resolve, reject) => {
                     reject({
                         statusCode: 0,
@@ -222,48 +200,51 @@ describe('PublicKeyTable', () => {
                 });
             },
         };
+        MockApi.setMockApi(api);
 
-        const { getByText, getByTestId, getByTitle } = render(
+        const { getByText, getByTestId, getByTitle } = renderWithRedux(
             <table>
                 <tbody>
                     <tr>
                         <PublicKeyTable
                             domain={domain}
-                            api={api}
                             service={service}
-                            serviceDetails={serviceDetails}
                             color={color}
                         />
                     </tr>
                 </tbody>
-            </table>
+            </table>,
+            getStateWithServices(services)
         );
         fireEvent.click(getByTitle('trash'));
         fireEvent.click(
-            await waitForElement(() => getByTestId('delete-modal-delete'))
+            await waitFor(() => getByTestId('delete-modal-delete'))
         );
         expect(
-            await waitForElement(() => getByTestId('error-message'))
+            await waitFor(() => getByTestId('error-message'))
         ).toMatchSnapshot();
     });
 
     it('should render error if there is an error in submitDeleteKey(other)', async () => {
-        const domain = 'domain';
-        const service = 'service';
-        const serviceDetails = {
-            name: 'home.pgote.openhouse',
-            description: 'This is a default service for Openhouse.',
-            modified: '2017-12-19T20:24:41.195Z',
-            publicKeys: [
-                {
-                    id: 'test-id',
-                    key: 'test-value',
+        const services = buildServicesForState(
+            {
+                [serviceFullName]: {
+                    name: 'home.pgote.openhouse',
+                    description: 'This is a default service for Openhouse.',
+                    modified: '2017-12-19T20:24:41.195Z',
+                    publicKeys: {
+                        'test-id': {
+                            id: 'test-id',
+                            key: 'test-value',
+                        },
+                    },
                 },
-            ],
-        };
+            },
+            domain
+        );
         const color = '';
         const api = {
-            deleteKey: function(domainName, serviceName, keyId, _csrf) {
+            deleteKey: function (domainName, serviceName, keyId, _csrf) {
                 return new Promise((resolve, reject) => {
                     reject({
                         statusCode: 1,
@@ -274,141 +255,143 @@ describe('PublicKeyTable', () => {
                 });
             },
         };
-
-        const { getByText, getByTestId, getByTitle } = render(
+        MockApi.setMockApi(api);
+        const { getByText, getByTestId, getByTitle } = renderWithRedux(
             <table>
                 <tbody>
                     <tr>
                         <PublicKeyTable
                             domain={domain}
-                            api={api}
                             service={service}
-                            serviceDetails={serviceDetails}
                             color={color}
                         />
                     </tr>
                 </tbody>
-            </table>
+            </table>,
+            getStateWithServices(services)
         );
         fireEvent.click(getByTitle('trash'));
         fireEvent.click(
-            await waitForElement(() => getByTestId('delete-modal-delete'))
+            await waitFor(() => getByTestId('delete-modal-delete'))
         );
         expect(
-            await waitForElement(() => getByTestId('error-message'))
+            await waitFor(() => getByTestId('error-message'))
         ).toMatchSnapshot();
     });
 
     it('should reloadService after successful delete', async () => {
-        const domain = 'domain';
-        const service = 'service';
-        const serviceDetails = {
-            name: 'home.pgote.openhouse',
-            description: 'This is a default service for Openhouse.',
-            modified: '2017-12-19T20:24:41.195Z',
-            publicKeys: [
-                {
-                    id: 'test-id',
-                    key: 'test-value',
+        const services = buildServicesForState(
+            {
+                [serviceFullName]: {
+                    name: serviceFullName,
+                    description: 'delete-succeed',
+                    modified: '2017-12-19T20:24:41.195Z',
+                    publicKeys: {
+                        'test-id': {
+                            id: 'test-id',
+                            key: 'test-value',
+                        },
+                    },
                 },
-            ],
-        };
+            },
+            domain
+        );
         const color = '';
         const api = {
-            deleteKey: function(domainName, serviceName, keyId, _csrf) {
+            deleteKey: function (domainName, serviceName, keyId, _csrf) {
                 return new Promise((resolve, reject) => {
                     resolve();
                 });
             },
-            getService: function(domainName, serviceName) {
-                return new Promise((resolve, reject) => {
-                    resolve({
-                        description: 'delete-succeed',
-                        publicKeys: [],
-                    });
-                });
-            },
         };
+        MockApi.setMockApi(api);
 
-        const { getByText, getByTestId, getByTitle } = render(
+        const { getByText, getByTestId, getByTitle } = renderWithRedux(
             <table>
                 <tbody>
                     <tr>
                         <PublicKeyTable
                             domain={domain}
-                            api={api}
                             service={service}
-                            serviceDetails={serviceDetails}
                             color={color}
                         />
                     </tr>
                 </tbody>
-            </table>
+            </table>,
+            getStateWithServices(services)
         );
-        fireEvent.click(getByTitle('trash'));
-        fireEvent.click(
-            await waitForElement(() => getByTestId('delete-modal-delete'))
+        await waitFor(() => fireEvent.click(getByTitle('trash')));
+        await waitFor(() =>
+            expect(getByTestId('delete-modal-delete')).toBeInTheDocument()
         );
-        expect(
-            await waitForElement(() => getByTestId('public-key-table'))
-        ).toMatchSnapshot();
+        await waitFor(() =>
+            fireEvent.click(getByTestId('delete-modal-delete'))
+        );
+        await waitFor(() =>
+            expect(getByTestId('public-key-table')).toBeInTheDocument()
+        );
+        expect(getByTestId('public-key-table')).toMatchSnapshot();
     });
 
     it('should render error if getService throws error', async () => {
-        const domain = 'domain';
-        const service = 'service';
-        const serviceDetails = {
-            name: 'home.pgote.openhouse',
-            description: 'This is a default service for Openhouse.',
-            modified: '2017-12-19T20:24:41.195Z',
-            publicKeys: [
-                {
-                    id: 'test-id',
-                    key: 'test-value',
+        const serviceDetails = buildServicesForState(
+            {
+                [serviceFullName]: {
+                    name: serviceFullName,
+                    description: 'This is a default service for Openhouse.',
+                    modified: '2017-12-19T20:24:41.195Z',
+                    publicKeys: {
+                        'test-id': {
+                            id: 'test-id',
+                            key: 'test-value',
+                        },
+                    },
                 },
-            ],
-        };
+            },
+            domain
+        );
+        serviceDetails.expiry = getExpiredTime();
         const color = '';
         const api = {
-            deleteKey: function(domainName, serviceName, keyId, _csrf) {
+            deleteKey: function (domainName, serviceName, keyId, _csrf) {
                 return new Promise((resolve, reject) => {
                     resolve();
                 });
             },
-            getService: function(domainName, serviceName) {
+            getServices: function (domainName, serviceName) {
                 return new Promise((resolve, reject) => {
                     let err = {
                         statusCode: 404,
                         body: {
                             message: 'not found',
-                        }
-                    }
+                        },
+                    };
                     reject(err);
                 });
             },
         };
+        MockApi.setMockApi(api);
 
-        const { getByText, getByTestId, getByTitle } = render(
+        const { getByText, getByTestId, getByTitle } = renderWithRedux(
             <table>
                 <tbody>
                     <tr>
                         <PublicKeyTable
                             domain={domain}
-                            api={api}
                             service={service}
-                            serviceDetails={serviceDetails}
                             color={color}
                         />
                     </tr>
                 </tbody>
-            </table>
+            </table>,
+            getStateWithServices(serviceDetails)
         );
         fireEvent.click(getByTitle('trash'));
         fireEvent.click(
-            await waitForElement(() => getByTestId('delete-modal-delete'))
+            await waitFor(() => getByTestId('delete-modal-delete'))
         );
         expect(
-            await waitForElement(() => getByTestId('error-message'))
+            await waitFor(() => getByTestId('error-message'))
         ).toMatchSnapshot();
     });
 });

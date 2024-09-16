@@ -16,10 +16,10 @@ public class ZTSSchema {
         SchemaBuilder sb = new SchemaBuilder("ZTS");
         sb.version(1);
         sb.namespace("com.yahoo.athenz.zts");
-        sb.comment("Copyright 2016 Yahoo Inc. Licensed under the terms of the Apache version 2.0 license. See LICENSE file for terms. The Authorization Token Service (ZTS) API");
+        sb.comment("Copyright The Athenz Authors Licensed under the terms of the Apache version 2.0 license. See LICENSE file for terms. The Authorization Token Service (ZTS) API");
 
         sb.stringType("SimpleName")
-            .comment("Copyright 2016 Yahoo Inc. Licensed under the terms of the Apache version 2.0 license. See LICENSE file for terms. Common name types used by several API definitions A simple identifier, an element of compound name.")
+            .comment("Copyright The Athenz Authors Licensed under the terms of the Apache version 2.0 license. See LICENSE file for terms. Common name types used by several API definitions A simple identifier, an element of compound name.")
             .pattern("[a-zA-Z0-9_][a-zA-Z0-9_-]*");
 
         sb.stringType("CompoundName")
@@ -124,7 +124,9 @@ public class ZTSSchema {
             .field("name", "ResourceName", false, "name of the policy")
             .field("modified", "Timestamp", true, "last modification timestamp of this policy")
             .arrayField("assertions", "Assertion", false, "list of defined assertions for this policy")
-            .field("caseSensitive", "Bool", true, "If true, we should store action and resource in their original case");
+            .field("caseSensitive", "Bool", true, "If true, we should store action and resource in their original case")
+            .field("version", "SimpleName", true, "optional version string, defaults to 0")
+            .field("active", "Bool", true, "if multi-version policy then indicates active version");
 
         sb.structType("PolicyData")
             .field("domain", "DomainName", false, "name of the domain")
@@ -133,8 +135,8 @@ public class ZTSSchema {
         sb.structType("SignedPolicyData")
             .comment("A representation of policies object defined in a given server.")
             .field("policyData", "PolicyData", false, "list of policies defined in a domain")
-            .field("zmsSignature", "String", false, "zms signature generated based on the domain policies object")
-            .field("zmsKeyId", "String", false, "the identifier of the zms key used to generate the signature")
+            .field("zmsSignature", "String", true, "zms signature generated based on the domain policies object")
+            .field("zmsKeyId", "String", true, "the identifier of the zms key used to generate the signature")
             .field("modified", "Timestamp", false, "when the domain itself was last modified")
             .field("expires", "Timestamp", false, "timestamp specifying the expiration time for using this set of policies");
 
@@ -144,8 +146,19 @@ public class ZTSSchema {
             .field("signature", "String", false, "signature generated based on the domain policies object")
             .field("keyId", "String", false, "the identifier of the key used to generate the signature");
 
+        sb.structType("JWSPolicyData")
+            .comment("SignedPolicyData using flattened JWS JSON Serialization syntax. https://tools.ietf.org/html/rfc7515#section-7.2.2")
+            .field("payload", "String", false, "")
+            .field("protected", "String", false, "")
+            .mapField("header", "String", "String", false, "")
+            .field("signature", "String", false, "");
+
+        sb.structType("SignedPolicyRequest")
+            .mapField("policyVersions", "String", "String", false, "")
+            .field("signatureP1363Format", "Bool", false, "true if signature must be in P1363 format instead of ASN.1 DER");
+
         sb.structType("RoleCertificate")
-            .comment("Copyright Athenz Authors Licensed under the terms of the Apache version 2.0 license. See LICENSE file for terms. RoleCertificate - a role certificate")
+            .comment("Copyright The Athenz Authors Licensed under the terms of the Apache version 2.0 license. See LICENSE file for terms. RoleCertificate - a role certificate")
             .field("x509Certificate", "String", false, "");
 
         sb.structType("RoleCertificateRequest")
@@ -156,6 +169,9 @@ public class ZTSSchema {
             .field("prevCertNotBefore", "Timestamp", true, "previous role certificate not before date")
             .field("prevCertNotAfter", "Timestamp", true, "previous role certificate not after date");
 
+        sb.structType("RoleAccess")
+            .arrayField("roles", "EntityName", false, "");
+
         sb.structType("RoleToken")
             .comment("A representation of a signed RoleToken")
             .field("token", "String", false, "")
@@ -164,9 +180,6 @@ public class ZTSSchema {
         sb.structType("Access")
             .comment("Access can be checked and returned as this resource.")
             .field("granted", "Bool", false, "true (allowed) or false (denied)");
-
-        sb.structType("RoleAccess")
-            .arrayField("roles", "EntityName", false, "");
 
         sb.structType("TenantDomains")
             .arrayField("tenantDomainNames", "DomainName", false, "");
@@ -185,7 +198,9 @@ public class ZTSSchema {
             .comment("InstanceRefreshRequest - a certificate refresh request")
             .field("csr", "String", false, "Cert CSR signed by the service's private key (public key registered in ZMS)")
             .field("expiryTime", "Int32", true, "in minutes how long token should be valid for")
-            .field("keyId", "String", true, "public key identifier");
+            .field("keyId", "String", true, "public key identifier")
+            .field("namespace", "SimpleName", true, "spiffe/k8s namespace value")
+            .field("cloud", "SimpleName", true, "optional cloud name where the instance is bootstrapped. e.g. aws / gcp / azure / openstack etc.");
 
         sb.stringType("AWSRoleName")
             .comment("AWS role name without the path")
@@ -209,26 +224,123 @@ public class ZTSSchema {
             .field("sessionToken", "String", false, "")
             .field("expiration", "Timestamp", false, "");
 
+        sb.structType("SSHCertRequestData")
+            .arrayField("principals", "String", false, "principals in the ssh certificate (usually only one)")
+            .arrayField("sources", "String", true, "source FQDNs or ip addresses")
+            .arrayField("destinations", "String", true, "destination FQDNs or ip addresses")
+            .field("publicKey", "String", true, "public key for ssh certificate")
+            .field("touchPublicKey", "String", true, "yubikey/touch public key for ssh certificate")
+            .field("caPubKeyAlgo", "Int32", true, "CA public key algorithm: 0: Unknown, 1: RSA, 3: ECDSA")
+            .field("command", "String", true, "optional force command option for certificate");
+
+        sb.structType("SSHCertRequestMeta")
+            .field("requestor", "String", false, "requesting user")
+            .field("origin", "String", false, "origin FQDN or ip")
+            .field("clientInfo", "String", true, "client info")
+            .field("sshClientVersion", "String", true, "ssh client version")
+            .field("certType", "String", false, "cert type - user or host")
+            .arrayField("keyIdPrincipals", "String", true, "principals included in the keyId field in the certificate")
+            .field("athenzService", "EntityName", true, "ssh host cert request is for this athenz service")
+            .field("instanceId", "PathElement", true, "ssh host cert request is for this instance id")
+            .field("prevCertValidFrom", "Timestamp", true, "previous ssh certificate validity from date")
+            .field("prevCertValidTo", "Timestamp", true, "previous ssh certificate validity to date")
+            .field("transId", "String", true, "ssh request transaction id");
+
+        sb.structType("SSHCertRequest")
+            .field("certRequestData", "SSHCertRequestData", false, "ssh certificate request data")
+            .field("certRequestMeta", "SSHCertRequestMeta", false, "ssh certificate request meta")
+            .field("csr", "String", true, "free-form csr if not using data/meta fields.")
+            .field("attestationData", "String", true, "identity attestation data including document with its signature containing attributes like IP address, instance-id, account#, etc.");
+
+        sb.structType("SSHCertificate")
+            .field("certificate", "String", false, "the SSH certificate, signed by the CA")
+            .field("publicKey", "String", true, "certificate public key if generated by SSH RA")
+            .field("privateKey", "String", true, "certificate private key if generated by SSH Agent");
+
+        sb.structType("SSHCertificates")
+            .arrayField("certificates", "SSHCertificate", false, "set of user ssh certificates")
+            .field("certificateSigner", "String", true, "the SSH CA's public key for the sshCertificate (user or host)");
+
+        sb.structType("AccessTokenResponse")
+            .field("access_token", "String", false, "access token")
+            .field("token_type", "String", false, "token type e.g. Bearer")
+            .field("expires_in", "Int32", true, "expiration in seconds")
+            .field("scope", "String", true, "scope of the access token e.g. openid")
+            .field("refresh_token", "String", true, "refresh token")
+            .field("id_token", "String", true, "id token");
+
+        sb.structType("JWK")
+            .field("kty", "String", false, "key type: EC or RSA")
+            .field("kid", "String", false, "identifier")
+            .field("alg", "String", true, "key algorithm")
+            .field("use", "String", true, "usage: sig or enc")
+            .field("crv", "String", true, "ec curve name")
+            .field("x", "String", true, "ec x value")
+            .field("y", "String", true, "ec y value")
+            .field("n", "String", true, "rsa modulus value")
+            .field("e", "String", true, "rsa public exponent value");
+
+        sb.structType("OpenIDConfig")
+            .field("issuer", "String", false, "url using the https scheme")
+            .field("authorization_endpoint", "String", false, "oauth 2.0 authorization endpoint url")
+            .field("jwks_uri", "String", false, "public server jwk set url")
+            .arrayField("response_types_supported", "String", false, "list of supported response types")
+            .arrayField("subject_types_supported", "String", false, "list of supported subject identifier types")
+            .arrayField("id_token_signing_alg_values_supported", "String", false, "list of supported algorithms for issued id tokens")
+            .arrayField("claims_supported", "String", true, "list of supported id claims");
+
+        sb.structType("OAuthConfig")
+            .field("issuer", "String", false, "url using the https scheme")
+            .field("authorization_endpoint", "String", false, "oauth 2.0 authorization endpoint url")
+            .field("token_endpoint", "String", false, "authorization server token endpoint")
+            .field("jwks_uri", "String", false, "public server jwk set url")
+            .arrayField("response_types_supported", "String", false, "list of supported response types")
+            .arrayField("grant_types_supported", "String", false, "supported grant types")
+            .arrayField("token_endpoint_auth_signing_alg_values_supported", "String", false, "list of supported algorithms for issued access tokens");
+
+        sb.structType("JWKList")
+            .comment("JSON Web Key (JWK) List")
+            .arrayField("keys", "JWK", false, "array of JWKs");
+
+    
+
+        sb.structType("OIDCResponse")
+            .field("version", "Int32", false, "version number")
+            .field("id_token", "String", false, "id token")
+            .field("token_type", "String", false, "token type e.g. urn:ietf:params:oauth:token-type:id_token")
+            .field("success", "Bool", false, "response status")
+            .field("expiration_time", "Int64", false, "expiration time in UTC");
+
         sb.structType("InstanceRegisterInformation")
             .field("provider", "ServiceName", false, "the provider service name (i.e. \"aws.us-west-2\", \"sys.openstack.cluster1\")")
             .field("domain", "DomainName", false, "the domain of the instance")
             .field("service", "SimpleName", false, "the service this instance is supposed to run")
             .field("attestationData", "String", false, "identity attestation data including document with its signature containing attributes like IP address, instance-id, account#, etc.")
             .field("csr", "String", false, "the Certificate Signing Request for the expected X.509 certificate in the response")
-            .field("ssh", "String", true, "if present, return an SSH host certificate. Format is JSON.")
+            .field("ssh", "String", true, "deprecated - use sshCertRequest, if present, return an SSH host certificate. Format is JSON.")
+            .field("sshCertRequest", "SSHCertRequest", true, "if present, return an SSH host certificate")
             .field("token", "Bool", true, "if true, return a service token signed by ZTS for this service")
             .field("expiryTime", "Int32", true, "expiry time in minutes for the certificate (server enforces max expiry)")
             .field("hostname", "DomainName", true, "optional hostname in case included in the csr SAN dnsName attribute")
-            .arrayField("hostCnames", "DomainName", true, "optional host CNAMEs included in the csr SAN dnsName attribute");
+            .arrayField("hostCnames", "DomainName", true, "optional host CNAMEs included in the csr SAN dnsName attribute")
+            .field("athenzJWK", "Bool", true, "if true, return an Athenz JWK public keys file")
+            .field("athenzJWKModified", "Timestamp", true, "return the public keys file only if modified after the given timestamp")
+            .field("namespace", "SimpleName", true, "spiffe/k8s namespace value")
+            .field("cloud", "SimpleName", true, "optional cloud name where the instance is bootstrapped. e.g. aws / gcp / azure / openstack etc.");
 
         sb.structType("InstanceRefreshInformation")
             .field("attestationData", "String", true, "identity attestation data including document with its signature containing attributes like IP address, instance-id, account#, etc.")
             .field("csr", "String", true, "the Certificate Signing Request for the expected X.509 certificate in the response")
-            .field("ssh", "String", true, "if present, return an SSH host certificate. Format is JSON.")
+            .field("ssh", "String", true, "deprecated - use sshCertRequest, if present, return an SSH host certificate. Format is JSON.")
+            .field("sshCertRequest", "SSHCertRequest", true, "if present, return an SSH host certificate")
             .field("token", "Bool", true, "if true, return a service token signed by ZTS for this service")
             .field("expiryTime", "Int32", true, "expiry time in minutes for the certificate (server enforces max expiry)")
             .field("hostname", "DomainName", true, "optional hostname in case included in the csr SAN dnsName attribute")
-            .arrayField("hostCnames", "DomainName", true, "optional host CNAMEs included in the csr SAN dnsName attribute");
+            .arrayField("hostCnames", "DomainName", true, "optional host CNAMEs included in the csr SAN dnsName attribute")
+            .field("athenzJWK", "Bool", true, "if true, return an Athenz JWK public keys file")
+            .field("athenzJWKModified", "Timestamp", true, "return the public keys file only if modified after the given timestamp")
+            .field("namespace", "SimpleName", true, "spiffe/k8s namespace value")
+            .field("cloud", "SimpleName", true, "optional cloud name where the instance is bootstrapped. e.g. aws / gcp / azure / openstack etc.");
 
         sb.structType("InstanceRegisterToken")
             .field("provider", "ServiceName", false, "provider service name")
@@ -236,6 +348,11 @@ public class ZTSSchema {
             .field("service", "SimpleName", false, "the service this instance is supposed to run")
             .field("attestationData", "String", false, "identity attestation data including document with its signature containing attributes like IP address, instance-id, account#, etc.")
             .mapField("attributes", "String", "String", true, "additional non-signed attributes that assist in attestation. I.e. \"keyId\", \"accessKey\", etc");
+
+        sb.structType("AthenzJWKConfig")
+            .field("zms", "JWKList", false, "ZMS JSON Web Key (JWK) List")
+            .field("zts", "JWKList", false, "ZTS JSON Web Key (JWK) List")
+            .field("modified", "Timestamp", true, "the last modification timestamp of the Athenz JWK configuration");
 
         sb.structType("InstanceIdentity")
             .field("provider", "ServiceName", false, "the provider service name (i.e. \"aws.us-west-2\", \"sys.openstack.cluster1\")")
@@ -246,7 +363,8 @@ public class ZTSSchema {
             .field("sshCertificate", "String", true, "the SSH certificate, signed by the CA (user or host)")
             .field("sshCertificateSigner", "String", true, "the SSH CA's public key for the sshCertificate (user or host)")
             .field("serviceToken", "SignedToken", true, "service token instead of TLS certificate")
-            .mapField("attributes", "String", "String", true, "other config-like attributes determined at boot time");
+            .mapField("attributes", "String", "String", true, "other config-like attributes determined at boot time")
+            .field("athenzJWK", "AthenzJWKConfig", true, "the Athenz JSON Web Key (JWK) configuration object");
 
         sb.structType("CertificateAuthorityBundle")
             .field("name", "SimpleName", false, "name of the bundle")
@@ -286,63 +404,6 @@ public class ZTSSchema {
             .field("code", "Int32", false, "status message code")
             .field("message", "String", false, "status message of the server");
 
-        sb.structType("SSHCertRequestData")
-            .arrayField("principals", "String", false, "principals in the ssh certificate (usually only one)")
-            .arrayField("sources", "String", true, "source FQDNs or ip addresses")
-            .arrayField("destinations", "String", true, "destination FQDNs or ip addresses")
-            .field("publicKey", "String", true, "public key for ssh certificate")
-            .field("touchPublicKey", "String", true, "yubikey/touch public key for ssh certificate");
-
-        sb.structType("SSHCertRequestMeta")
-            .field("requestor", "String", false, "requesting user")
-            .field("origin", "String", false, "origin FQDN or ip")
-            .field("clientInfo", "String", true, "client info")
-            .field("sshClientVersion", "String", true, "ssh client version")
-            .field("certType", "String", false, "cert type - user or host")
-            .field("athenzService", "EntityName", true, "ssh host cert request is for this athenz service")
-            .field("instanceId", "PathElement", true, "ssh host cert request is for this instance id")
-            .field("prevCertValidFrom", "Timestamp", true, "previous ssh certificate validity from date")
-            .field("prevCertValidTo", "Timestamp", true, "previous ssh certificate validity to date");
-
-        sb.structType("SSHCertRequest")
-            .field("certRequestData", "SSHCertRequestData", false, "ssh certificate request data")
-            .field("certRequestMeta", "SSHCertRequestMeta", false, "ssh certificate request meta")
-            .field("csr", "String", true, "free-form csr if not using data/meta fields.");
-
-        sb.structType("SSHCertificate")
-            .field("certificate", "String", false, "the SSH certificate, signed by the CA")
-            .field("publicKey", "String", true, "certificate public key if generated by SSH RA")
-            .field("privateKey", "String", true, "certificate private key if generated by SSH Agent");
-
-        sb.structType("SSHCertificates")
-            .arrayField("certificates", "SSHCertificate", false, "set of user ssh certificates")
-            .field("certificateSigner", "String", true, "the SSH CA's public key for the sshCertificate (user or host)");
-
-        sb.structType("AccessTokenResponse")
-            .field("access_token", "String", false, "access token")
-            .field("token_type", "String", false, "token type e.g. Bearer")
-            .field("expires_in", "Int32", true, "expiration in seconds")
-            .field("scope", "String", true, "scope of the access token e.g. openid")
-            .field("refresh_token", "String", true, "refresh token")
-            .field("id_token", "String", true, "id token");
-
-        sb.structType("JWK")
-            .field("kty", "String", false, "key type: EC or RSA")
-            .field("kid", "String", false, "identifier")
-            .field("alg", "String", true, "key algorithm")
-            .field("use", "String", true, "usage: sig or enc")
-            .field("crv", "String", true, "ec curve name")
-            .field("x", "String", true, "ec x value")
-            .field("y", "String", true, "ec y value")
-            .field("n", "String", true, "rsa modulus value")
-            .field("e", "String", true, "rsa public exponent value");
-
-        sb.structType("JWKList")
-            .comment("JSON Web Key (JWK) List")
-            .arrayField("keys", "JWK", false, "array of JWKs");
-
-    
-
         sb.structType("Workload")
             .field("domainName", "DomainName", false, "name of the domain, optional for getWorkloadsByService API call")
             .field("serviceName", "EntityName", false, "name of the service, , optional for getWorkloadsByService API call")
@@ -372,6 +433,227 @@ public class ZTSSchema {
             .arrayField("ingressRules", "TransportRule", false, "")
             .arrayField("egressRules", "TransportRule", false, "");
 
+        sb.structType("Info")
+            .comment("Copyright The Athenz Authors Licensed under the terms of the Apache version 2.0 license. See LICENSE file for terms. The representation for an info object")
+            .field("buildJdkSpec", "String", true, "jdk build version")
+            .field("implementationTitle", "String", true, "implementation title - e.g. athenz-zms-server")
+            .field("implementationVersion", "String", true, "implementation version - e.g. 1.11.1")
+            .field("implementationVendor", "String", true, "implementation vendor - Athenz");
+
+        sb.structType("ExternalCredentialsRequest")
+            .field("clientId", "ServiceName", false, "client id to be referenced in the ID token as audience")
+            .field("expiryTime", "Int32", true, "optional expiry period specified in seconds")
+            .mapField("attributes", "String", "String", true, "credential request attributes");
+
+        sb.structType("ExternalCredentialsResponse")
+            .mapField("attributes", "String", "String", false, "credential response attributes")
+            .field("expiration", "Timestamp", true, "credential expiry timestamp");
+
+        sb.structType("DomainDetails")
+            .field("name", "DomainName", false, "name of the athenz domain")
+            .field("awsAccount", "String", true, "associated aws account id")
+            .field("azureSubscription", "String", true, "associated azure subscription id")
+            .field("azureTenant", "String", true, "associated azure tenant id")
+            .field("azureClient", "String", true, "associated azure client id")
+            .field("gcpProjectId", "String", true, "associated gcp project id")
+            .field("gcpProjectNumber", "String", true, "associated gcp project number");
+
+        sb.stringType("rdl.Identifier")
+            .comment("All names need to be of this restricted string type")
+            .pattern("[a-zA-Z_]+[a-zA-Z_0-9]*");
+
+        sb.stringType("rdl.NamespacedIdentifier")
+            .comment("A Namespace is a dotted compound name, using reverse domain name order (i.e. \"com.yahoo.auth\")")
+            .pattern("([a-zA-Z_]+[a-zA-Z_0-9]*)(\\.[a-zA-Z_]+[a-zA-Z_0-9])*");
+
+    
+
+    
+
+        sb.enumType("rdl.BaseType")
+            .element("Bool")
+            .element("Int8")
+            .element("Int16")
+            .element("Int32")
+            .element("Int64")
+            .element("Float32")
+            .element("Float64")
+            .element("Bytes")
+            .element("String")
+            .element("Timestamp")
+            .element("Symbol")
+            .element("UUID")
+            .element("Array")
+            .element("Map")
+            .element("Struct")
+            .element("Enum")
+            .element("Union")
+            .element("Any");
+
+        sb.stringType("rdl.ExtendedAnnotation")
+            .comment("ExtendedAnnotation - parsed and preserved, but has no defined meaning in RDL. Such annotations must begin with \"x_\", and may have an associated string literal value (the value will be \"\" if the annotation is just a flag).")
+            .pattern("x_[a-zA-Z_0-9]*");
+
+        sb.structType("rdl.TypeDef")
+            .comment("TypeDef is the basic type definition.")
+            .field("type", "rdl.TypeRef", false, "The type this type is derived from. For base types, it is the same as the name")
+            .field("name", "rdl.TypeName", false, "The name of the type")
+            .field("comment", "String", true, "The comment for the type")
+            .mapField("annotations", "rdl.ExtendedAnnotation", "String", true, "additional annotations starting with \"x_\"");
+
+        sb.structType("rdl.AliasTypeDef", "rdl.TypeDef")
+            .comment("AliasTypeDef is used for type definitions that add no additional attributes, and thus just create an alias");
+
+        sb.structType("rdl.BytesTypeDef", "rdl.TypeDef")
+            .comment("Bytes allow the restriction by fixed size, or min/max size.")
+            .field("size", "Int32", true, "Fixed size")
+            .field("minSize", "Int32", true, "Min size")
+            .field("maxSize", "Int32", true, "Max size");
+
+        sb.structType("rdl.StringTypeDef", "rdl.TypeDef")
+            .comment("Strings allow the restriction by regular expression pattern or by an explicit set of values. An optional maximum size may be asserted")
+            .field("pattern", "String", true, "A regular expression that must be matched. Mutually exclusive with values")
+            .arrayField("values", "String", true, "A set of allowable values")
+            .field("minSize", "Int32", true, "Min size")
+            .field("maxSize", "Int32", true, "Max size");
+
+        sb.unionType("rdl.Number")
+            .comment("A numeric is any of the primitive numeric types")
+            .variant("Int8")
+            .variant("Int16")
+            .variant("Int32")
+            .variant("Int64")
+            .variant("Float32")
+            .variant("Float64");
+
+        sb.structType("rdl.NumberTypeDef", "rdl.TypeDef")
+            .comment("A number type definition allows the restriction of numeric values.")
+            .field("min", "rdl.Number", true, "Min value")
+            .field("max", "rdl.Number", true, "Max value");
+
+        sb.structType("rdl.ArrayTypeDef", "rdl.TypeDef")
+            .comment("Array types can be restricted by item type and size")
+            .field("items", "rdl.TypeRef", false, "The type of the items, default to any type", null)
+            .field("size", "Int32", true, "If present, indicate the fixed size.")
+            .field("minSize", "Int32", true, "If present, indicate the min size")
+            .field("maxSize", "Int32", true, "If present, indicate the max size");
+
+        sb.structType("rdl.MapTypeDef", "rdl.TypeDef")
+            .comment("Map types can be restricted by key type, item type and size")
+            .field("keys", "rdl.TypeRef", false, "The type of the keys, default to String.", null)
+            .field("items", "rdl.TypeRef", false, "The type of the items, default to Any type", null)
+            .field("size", "Int32", true, "If present, indicates the fixed size.")
+            .field("minSize", "Int32", true, "If present, indicate the min size")
+            .field("maxSize", "Int32", true, "If present, indicate the max size");
+
+        sb.structType("rdl.StructFieldDef")
+            .comment("Each field in a struct_field_spec is defined by this type")
+            .field("name", "rdl.Identifier", false, "The name of the field")
+            .field("type", "rdl.TypeRef", false, "The type of the field")
+            .field("optional", "Bool", false, "The field may be omitted even if specified", false)
+            .field("default", "Any", true, "If field is absent, what default value should be assumed.")
+            .field("comment", "String", true, "The comment for the field")
+            .field("items", "rdl.TypeRef", true, "For map or array fields, the type of the items")
+            .field("keys", "rdl.TypeRef", true, "For map type fields, the type of the keys")
+            .mapField("annotations", "rdl.ExtendedAnnotation", "String", true, "additional annotations starting with \"x_\"");
+
+        sb.structType("rdl.StructTypeDef", "rdl.TypeDef")
+            .comment("A struct can restrict specific named fields to specific types. By default, any field not specified is allowed, and can be of any type. Specifying closed means only those fields explicitly")
+            .arrayField("fields", "rdl.StructFieldDef", false, "The fields in this struct. By default, open Structs can have any fields in addition to these")
+            .field("closed", "Bool", false, "indicates that only the specified fields are acceptable. Default is open (any fields)", false);
+
+        sb.structType("rdl.EnumElementDef")
+            .comment("EnumElementDef defines one of the elements of an Enum")
+            .field("symbol", "rdl.Identifier", false, "The identifier representing the value")
+            .field("comment", "String", true, "the comment for the element")
+            .mapField("annotations", "rdl.ExtendedAnnotation", "String", true, "additional annotations starting with \"x_\"");
+
+        sb.structType("rdl.EnumTypeDef", "rdl.TypeDef")
+            .comment("Define an enumerated type. Each value of the type is represented by a symbolic identifier.")
+            .arrayField("elements", "rdl.EnumElementDef", false, "The enumeration of the possible elements");
+
+        sb.structType("rdl.UnionTypeDef", "rdl.TypeDef")
+            .comment("Define a type as one of any other specified type.")
+            .arrayField("variants", "rdl.TypeRef", false, "The type names of constituent types. Union types get expanded, this is a flat list");
+
+        sb.unionType("rdl.Type")
+            .comment("A Type can be specified by any of the above specialized Types, determined by the value of the the 'type' field")
+            .variant("rdl.BaseType")
+            .variant("rdl.StructTypeDef")
+            .variant("rdl.MapTypeDef")
+            .variant("rdl.ArrayTypeDef")
+            .variant("rdl.EnumTypeDef")
+            .variant("rdl.UnionTypeDef")
+            .variant("rdl.StringTypeDef")
+            .variant("rdl.BytesTypeDef")
+            .variant("rdl.NumberTypeDef")
+            .variant("rdl.AliasTypeDef");
+
+        sb.structType("rdl.ResourceInput")
+            .comment("ResourceOutput defines input characteristics of a Resource")
+            .field("name", "rdl.Identifier", false, "the formal name of the input")
+            .field("type", "rdl.TypeRef", false, "The type of the input")
+            .field("comment", "String", true, "The optional comment")
+            .field("pathParam", "Bool", false, "true of this input is a path parameter", false)
+            .field("queryParam", "String", true, "if present, the name of the query param name")
+            .field("header", "String", true, "If present, the name of the header the input is associated with")
+            .field("pattern", "String", true, "If present, the pattern associated with the pathParam (i.e. wildcard path matches)")
+            .field("default", "Any", true, "If present, the default value for optional params")
+            .field("optional", "Bool", false, "If present, indicates that the input is optional", false)
+            .field("flag", "Bool", false, "If present, indicates the queryparam is of flag style (no value)", false)
+            .field("context", "String", true, "If present, indicates the parameter comes form the implementation context")
+            .mapField("annotations", "rdl.ExtendedAnnotation", "String", true, "additional annotations starting with \"x_\"");
+
+        sb.structType("rdl.ResourceOutput")
+            .comment("ResourceOutput defines output characteristics of a Resource")
+            .field("name", "rdl.Identifier", false, "the formal name of the output")
+            .field("type", "rdl.TypeRef", false, "The type of the output")
+            .field("header", "String", false, "the name of the header associated with this output")
+            .field("comment", "String", true, "The optional comment for the output")
+            .field("optional", "Bool", false, "If present, indicates that the output is optional (the server decides)", false)
+            .mapField("annotations", "rdl.ExtendedAnnotation", "String", true, "additional annotations starting with \"x_\"");
+
+        sb.structType("rdl.ResourceAuth")
+            .comment("ResourceAuth defines authentication and authorization attributes of a resource. Presence of action, resource, or domain implies authentication; the authentication flag alone is required only when no authorization is done.")
+            .field("authenticate", "Bool", false, "if present and true, then the requester must be authenticated", false)
+            .field("action", "String", true, "the action to authorize access to. This forces authentication")
+            .field("resource", "String", true, "the resource identity to authorize access to")
+            .field("domain", "String", true, "if present, the alternate domain to check access to. This is rare.");
+
+        sb.structType("rdl.ExceptionDef")
+            .comment("ExceptionDef describes the exception a symbolic response code maps to.")
+            .field("type", "String", false, "The type of the exception")
+            .field("comment", "String", true, "the optional comment for the exception");
+
+        sb.structType("rdl.Resource")
+            .comment("A Resource of a REST service")
+            .field("type", "rdl.TypeRef", false, "The type of the resource")
+            .field("method", "String", false, "The method for the action (typically GET, POST, etc for HTTP access)")
+            .field("path", "String", false, "The resource path template")
+            .field("comment", "String", true, "The optional comment")
+            .arrayField("inputs", "rdl.ResourceInput", true, "An Array named inputs")
+            .arrayField("outputs", "rdl.ResourceOutput", true, "An Array of named outputs")
+            .field("auth", "rdl.ResourceAuth", true, "The optional authentication or authorization directive")
+            .field("expected", "String", false, "The expected symbolic response code", "OK")
+            .arrayField("alternatives", "String", true, "The set of alternative but non-error response codes")
+            .mapField("exceptions", "String", "rdl.ExceptionDef", true, "A map of symbolic response code to Exception definitions")
+            .field("async", "Bool", true, "A hint to server implementations that this resource would be better implemented with async I/O")
+            .mapField("annotations", "rdl.ExtendedAnnotation", "String", true, "additional annotations starting with \"x_\"")
+            .arrayField("consumes", "String", true, "Optional hint for resource acceptable input types")
+            .arrayField("produces", "String", true, "Optional hint for resource output content types")
+            .field("name", "rdl.Identifier", true, "The optional name of the resource");
+
+        sb.structType("rdl.Schema")
+            .comment("A Schema is a container for types and resources. It is self-contained (no external references). and is the output of the RDL parser.")
+            .field("namespace", "rdl.NamespacedIdentifier", true, "The namespace for the schema")
+            .field("name", "rdl.Identifier", true, "The name of the schema")
+            .field("version", "Int32", true, "The version of the schema")
+            .field("comment", "String", true, "The comment for the entire schema")
+            .arrayField("types", "rdl.Type", true, "The types this schema defines.")
+            .arrayField("resources", "rdl.Resource", true, "The resources for a service this schema defines")
+            .field("base", "String", true, "the base path for resources in the schema.")
+            .mapField("annotations", "rdl.ExtendedAnnotation", "String", true, "additional annotations starting with \"x_\"");
+
 
         sb.resource("ResourceAccess", "GET", "/access/{action}/{resource}")
             .comment("Check access for the specified operation on the specified resource for the currently authenticated user. This is the slow centralized access for control-plane purposes. Use distributed mechanisms for decentralized (data-plane) access by fetching signed policies and role tokens for users. With this endpoint the resource is part of the uri and restricted to its strict definition of resource name. If needed, you can use the GetAccessExt api that allows resource name to be less restrictive.")
@@ -386,6 +668,8 @@ public class ZTSSchema {
             .exception("FORBIDDEN", "ResourceError", "")
 
             .exception("NOT_FOUND", "ResourceError", "")
+
+            .exception("TOO_MANY_REQUESTS", "ResourceError", "")
 
             .exception("UNAUTHORIZED", "ResourceError", "")
 ;
@@ -405,6 +689,8 @@ public class ZTSSchema {
 
             .exception("NOT_FOUND", "ResourceError", "")
 
+            .exception("TOO_MANY_REQUESTS", "ResourceError", "")
+
             .exception("UNAUTHORIZED", "ResourceError", "")
 ;
 
@@ -418,6 +704,8 @@ public class ZTSSchema {
 
             .exception("NOT_FOUND", "ResourceError", "")
 
+            .exception("TOO_MANY_REQUESTS", "ResourceError", "")
+
             .exception("UNAUTHORIZED", "ResourceError", "")
 ;
 
@@ -429,6 +717,8 @@ public class ZTSSchema {
             .exception("BAD_REQUEST", "ResourceError", "")
 
             .exception("NOT_FOUND", "ResourceError", "")
+
+            .exception("TOO_MANY_REQUESTS", "ResourceError", "")
 
             .exception("UNAUTHORIZED", "ResourceError", "")
 ;
@@ -443,6 +733,10 @@ public class ZTSSchema {
             .exception("BAD_REQUEST", "ResourceError", "")
 
             .exception("NOT_FOUND", "ResourceError", "")
+
+            .exception("TOO_MANY_REQUESTS", "ResourceError", "")
+
+            .exception("UNAUTHORIZED", "ResourceError", "")
 ;
 
         sb.resource("HostServices", "GET", "/host/{host}/services")
@@ -451,6 +745,10 @@ public class ZTSSchema {
             .auth("", "", true)
             .expected("OK")
             .exception("BAD_REQUEST", "ResourceError", "")
+
+            .exception("TOO_MANY_REQUESTS", "ResourceError", "")
+
+            .exception("UNAUTHORIZED", "ResourceError", "")
 ;
 
         sb.resource("DomainSignedPolicyData", "GET", "/domain/{domainName}/signed_policy_data")
@@ -463,6 +761,27 @@ public class ZTSSchema {
             .exception("BAD_REQUEST", "ResourceError", "")
 
             .exception("NOT_FOUND", "ResourceError", "")
+
+            .exception("TOO_MANY_REQUESTS", "ResourceError", "")
+
+            .exception("UNAUTHORIZED", "ResourceError", "")
+;
+
+        sb.resource("SignedPolicyRequest", "POST", "/domain/{domainName}/policy/signed")
+            .comment("Get a signed policy enumeration from the service, to transfer to a local store. An ETag is generated for the PolicyList that changes when any item in the list changes. If the If-None-Match header is provided, and it matches the ETag that would be returned, then a NOT_MODIFIED response is returned instead of the list.")
+            .pathParam("domainName", "DomainName", "name of the domain")
+            .input("request", "SignedPolicyRequest", "policy version request details")
+            .headerParam("If-None-Match", "matchingTag", "String", null, "Retrieved from the previous request, this timestamp specifies to the server to return any policies modified since this time")
+            .output("ETag", "tag", "String", "The current latest modification timestamp is returned in this header")
+            .auth("", "", true)
+            .expected("OK")
+            .exception("BAD_REQUEST", "ResourceError", "")
+
+            .exception("NOT_FOUND", "ResourceError", "")
+
+            .exception("TOO_MANY_REQUESTS", "ResourceError", "")
+
+            .exception("UNAUTHORIZED", "ResourceError", "")
 ;
 
         sb.resource("RoleToken", "GET", "/domain/{domainName}/token")
@@ -480,6 +799,8 @@ public class ZTSSchema {
 
             .exception("NOT_FOUND", "ResourceError", "")
 
+            .exception("TOO_MANY_REQUESTS", "ResourceError", "")
+
             .exception("UNAUTHORIZED", "ResourceError", "")
 ;
 
@@ -496,6 +817,8 @@ public class ZTSSchema {
 
             .exception("NOT_FOUND", "ResourceError", "")
 
+            .exception("TOO_MANY_REQUESTS", "ResourceError", "")
+
             .exception("UNAUTHORIZED", "ResourceError", "")
 ;
 
@@ -511,6 +834,8 @@ public class ZTSSchema {
 
             .exception("NOT_FOUND", "ResourceError", "")
 
+            .exception("TOO_MANY_REQUESTS", "ResourceError", "")
+
             .exception("UNAUTHORIZED", "ResourceError", "")
 ;
 
@@ -522,6 +847,8 @@ public class ZTSSchema {
             .exception("BAD_REQUEST", "ResourceError", "")
 
             .exception("NOT_FOUND", "ResourceError", "")
+
+            .exception("TOO_MANY_REQUESTS", "ResourceError", "")
 
             .exception("UNAUTHORIZED", "ResourceError", "")
 ;
@@ -537,6 +864,8 @@ public class ZTSSchema {
             .exception("BAD_REQUEST", "ResourceError", "")
 
             .exception("NOT_FOUND", "ResourceError", "")
+
+            .exception("TOO_MANY_REQUESTS", "ResourceError", "")
 
             .exception("UNAUTHORIZED", "ResourceError", "")
 ;
@@ -556,6 +885,8 @@ public class ZTSSchema {
 
             .exception("NOT_FOUND", "ResourceError", "")
 
+            .exception("TOO_MANY_REQUESTS", "ResourceError", "")
+
             .exception("UNAUTHORIZED", "ResourceError", "")
 ;
 
@@ -573,6 +904,8 @@ public class ZTSSchema {
 
             .exception("NOT_FOUND", "ResourceError", "")
 
+            .exception("TOO_MANY_REQUESTS", "ResourceError", "")
+
             .exception("UNAUTHORIZED", "ResourceError", "")
 ;
 
@@ -589,6 +922,8 @@ public class ZTSSchema {
             .exception("INTERNAL_SERVER_ERROR", "ResourceError", "")
 
             .exception("NOT_FOUND", "ResourceError", "")
+
+            .exception("TOO_MANY_REQUESTS", "ResourceError", "")
 
             .exception("UNAUTHORIZED", "ResourceError", "")
 ;
@@ -610,6 +945,8 @@ public class ZTSSchema {
 
             .exception("NOT_FOUND", "ResourceError", "")
 
+            .exception("TOO_MANY_REQUESTS", "ResourceError", "")
+
             .exception("UNAUTHORIZED", "ResourceError", "")
 ;
 
@@ -629,16 +966,18 @@ public class ZTSSchema {
 
             .exception("NOT_FOUND", "ResourceError", "")
 
+            .exception("TOO_MANY_REQUESTS", "ResourceError", "")
+
             .exception("UNAUTHORIZED", "ResourceError", "")
 ;
 
         sb.resource("InstanceIdentity", "DELETE", "/instance/{provider}/{domain}/{service}/{instanceId}")
-            .comment("Delete the given service instance certificate record thus blocking any future refresh requests from the given instance for this service")
+            .comment("Delete the given service instance certificate record thus blocking any future refresh requests from the given instance for this service There are two possible authorization checks for this endpoint: 1) domain admin: authorize(\"delete\", \"{domain}:instance.{instanceId}\") the authorized user can remove the instance record from the datastore 2) provider itself: if the identity of the caller is the provider itself then the provider is notifying ZTS that the instance was deleted")
             .pathParam("provider", "ServiceName", "the provider service name (i.e. \"aws.us-west-2\", \"paas.manhattan.corp-gq1\")")
             .pathParam("domain", "DomainName", "the domain of the instance")
             .pathParam("service", "SimpleName", "the service this instance is supposed to run")
             .pathParam("instanceId", "PathElement", "unique instance id within provider's namespace")
-            .auth("delete", "{domain}:instance.{instanceId}")
+            .auth("", "", true)
             .expected("NO_CONTENT")
             .exception("BAD_REQUEST", "ResourceError", "")
 
@@ -647,6 +986,8 @@ public class ZTSSchema {
             .exception("INTERNAL_SERVER_ERROR", "ResourceError", "")
 
             .exception("NOT_FOUND", "ResourceError", "")
+
+            .exception("TOO_MANY_REQUESTS", "ResourceError", "")
 
             .exception("UNAUTHORIZED", "ResourceError", "")
 ;
@@ -660,6 +1001,8 @@ public class ZTSSchema {
 
             .exception("NOT_FOUND", "ResourceError", "")
 
+            .exception("TOO_MANY_REQUESTS", "ResourceError", "")
+
             .exception("UNAUTHORIZED", "ResourceError", "")
 ;
 
@@ -670,6 +1013,8 @@ public class ZTSSchema {
             .exception("BAD_REQUEST", "ResourceError", "")
 
             .exception("NOT_FOUND", "ResourceError", "")
+
+            .exception("TOO_MANY_REQUESTS", "ResourceError", "")
 
             .exception("UNAUTHORIZED", "ResourceError", "")
 ;
@@ -684,22 +1029,37 @@ public class ZTSSchema {
 
             .exception("INTERNAL_SERVER_ERROR", "ResourceError", "")
 
+            .exception("TOO_MANY_REQUESTS", "ResourceError", "")
+
             .exception("UNAUTHORIZED", "ResourceError", "")
+;
+
+        sb.resource("OpenIDConfig", "GET", "/.well-known/openid-configuration")
+            .expected("OK")
+            .exception("BAD_REQUEST", "ResourceError", "")
+
+            .exception("TOO_MANY_REQUESTS", "ResourceError", "")
+;
+
+        sb.resource("OAuthConfig", "GET", "/.well-known/oauth-authorization-server")
+            .expected("OK")
+            .exception("BAD_REQUEST", "ResourceError", "")
+
+            .exception("TOO_MANY_REQUESTS", "ResourceError", "")
 ;
 
         sb.resource("JWKList", "GET", "/oauth2/keys")
             .queryParam("rfc", "rfc", "Bool", false, "flag to indicate ec curve names are restricted to RFC values")
-            .auth("", "", true)
+            .queryParam("service", "service", "ServiceName", "zts", "service")
             .expected("OK")
             .exception("BAD_REQUEST", "ResourceError", "")
 
-            .exception("NOT_FOUND", "ResourceError", "")
-
-            .exception("UNAUTHORIZED", "ResourceError", "")
+            .exception("TOO_MANY_REQUESTS", "ResourceError", "")
 ;
 
         sb.resource("AccessTokenRequest", "POST", "/oauth2/token")
-            .input("request", "AccessTokenRequest", "")
+            .comment("Fetch OAuth2 Access Token")
+            .input("request", "AccessTokenRequest", "token request details include scope")
             .auth("", "", true)
             .expected("OK")
             .exception("BAD_REQUEST", "ResourceError", "")
@@ -707,6 +1067,36 @@ public class ZTSSchema {
             .exception("FORBIDDEN", "ResourceError", "")
 
             .exception("NOT_FOUND", "ResourceError", "")
+
+            .exception("TOO_MANY_REQUESTS", "ResourceError", "")
+
+            .exception("UNAUTHORIZED", "ResourceError", "")
+;
+
+        sb.resource("OIDCResponse", "GET", "/oauth2/auth")
+            .comment("Fetch OAuth OpenID Connect ID Token")
+            .queryParam("response_type", "responseType", "String", null, "response type - currently only supporting id tokens - id_token")
+            .queryParam("client_id", "clientId", "ServiceName", null, "client id - must be valid athenz service identity name")
+            .queryParam("redirect_uri", "redirectUri", "String", null, "redirect uri for the response")
+            .queryParam("scope", "scope", "String", null, "id token scope")
+            .queryParam("state", "state", "EntityName", null, "optional state claim included in the response location header")
+            .queryParam("nonce", "nonce", "EntityName", null, "nonce claim included in the id token")
+            .queryParam("keyType", "keyType", "SimpleName", null, "optional signing key type - RSA or EC. Might be ignored if server doesn't have the requested type configured")
+            .queryParam("fullArn", "fullArn", "Bool", false, "flag to indicate to use full arn in group claim (e.g. sports:role.deployer instead of deployer)")
+            .queryParam("expiryTime", "expiryTime", "Int32", null, "optional expiry period specified in seconds")
+            .queryParam("output", "output", "SimpleName", null, "optional output format of json")
+            .queryParam("roleInAudClaim", "roleInAudClaim", "Bool", false, "flag to indicate to include role name in the audience claim only if we have a single role in response")
+            .queryParam("allScopePresent", "allScopePresent", "Bool", false, "flag to indicate that all requested roles/groups in the scope must be present in the response otherwise return an error")
+            .output("Location", "location", "String", "return location header with id token")
+            .auth("", "", true)
+            .expected("OK")
+            .exception("BAD_REQUEST", "ResourceError", "")
+
+            .exception("FORBIDDEN", "ResourceError", "")
+
+            .exception("NOT_FOUND", "ResourceError", "")
+
+            .exception("TOO_MANY_REQUESTS", "ResourceError", "")
 
             .exception("UNAUTHORIZED", "ResourceError", "")
 ;
@@ -722,6 +1112,25 @@ public class ZTSSchema {
             .exception("FORBIDDEN", "ResourceError", "")
 
             .exception("NOT_FOUND", "ResourceError", "")
+
+            .exception("TOO_MANY_REQUESTS", "ResourceError", "")
+
+            .exception("UNAUTHORIZED", "ResourceError", "")
+;
+
+        sb.resource("RoleAccess", "GET", "/role/cert")
+            .comment("Fetch all roles that are tagged as requiring role certificates for principal")
+            .name("getRolesRequireRoleCert")
+            .queryParam("principal", "principal", "EntityName", null, "If not present, will return roles for the user making the call")
+            .auth("", "", true)
+            .expected("OK")
+            .exception("BAD_REQUEST", "ResourceError", "")
+
+            .exception("FORBIDDEN", "ResourceError", "")
+
+            .exception("NOT_FOUND", "ResourceError", "")
+
+            .exception("TOO_MANY_REQUESTS", "ResourceError", "")
 
             .exception("UNAUTHORIZED", "ResourceError", "")
 ;
@@ -774,6 +1183,40 @@ public class ZTSSchema {
 
             .exception("UNAUTHORIZED", "ResourceError", "")
 ;
+
+        sb.resource("Info", "GET", "/sys/info")
+            .comment("Retrieve the server info. Since we're exposing server version details, the request will require authorization")
+            .auth("get", "sys.auth:info")
+            .expected("OK")
+            .exception("BAD_REQUEST", "ResourceError", "")
+
+            .exception("FORBIDDEN", "ResourceError", "")
+
+            .exception("NOT_FOUND", "ResourceError", "")
+
+            .exception("TOO_MANY_REQUESTS", "ResourceError", "")
+
+            .exception("UNAUTHORIZED", "ResourceError", "")
+;
+
+        sb.resource("ExternalCredentialsRequest", "POST", "/external/{provider}/domain/{domainName}/creds")
+            .comment("request external credentials from the specified provider based on the specified request attributes and the principal's id token (that will be internally generated by ZTS). Based on the provider, the server will carry out internal authorization checks (e.g. is the principal authorized to request a given scope in the credentials).")
+            .pathParam("provider", "SimpleName", "provider name to request credentials from")
+            .pathParam("domainName", "DomainName", "request credentials from account/project associated with this athenz domain")
+            .input("request", "ExternalCredentialsRequest", "request object with optional and required attributes")
+            .auth("", "", true)
+            .expected("OK")
+            .exception("BAD_REQUEST", "ResourceError", "")
+
+            .exception("FORBIDDEN", "ResourceError", "")
+
+            .exception("UNAUTHORIZED", "ResourceError", "")
+;
+
+        sb.resource("rdl.Schema", "GET", "/schema")
+            .comment("Get RDL Schema")
+            .auth("", "", true)
+            .expected("OK");
 
 
         return sb.build();

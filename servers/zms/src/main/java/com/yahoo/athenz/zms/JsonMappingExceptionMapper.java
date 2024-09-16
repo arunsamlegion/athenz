@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Oath Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,9 @@ package com.yahoo.athenz.zms;
 
 import com.fasterxml.jackson.databind.*;
 
-import javax.annotation.*;
-import javax.ws.rs.core.*;
-import javax.ws.rs.ext.*;
+import jakarta.annotation.*;
+import jakarta.ws.rs.core.*;
+import jakarta.ws.rs.ext.*;
 
 @Provider
 @Priority(1)

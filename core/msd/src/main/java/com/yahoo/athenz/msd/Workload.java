@@ -4,11 +4,13 @@
 
 package com.yahoo.athenz.msd;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.List;
 import com.yahoo.rdl.*;
 
 //
-// Workload - workload type describing workload associated with an identity
+// Workload - kept for backward compatibility sake. Will be eventually
+// deprecated in favor of DynamicWorkload
 //
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Workload {
@@ -20,6 +22,9 @@ public class Workload {
     public String provider;
     public Timestamp updateTime;
     public Timestamp certExpiryTime;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public Timestamp certIssueTime;
 
     public Workload setDomainName(String domainName) {
         this.domainName = domainName;
@@ -77,6 +82,13 @@ public class Workload {
     public Timestamp getCertExpiryTime() {
         return certExpiryTime;
     }
+    public Workload setCertIssueTime(Timestamp certIssueTime) {
+        this.certIssueTime = certIssueTime;
+        return this;
+    }
+    public Timestamp getCertIssueTime() {
+        return certIssueTime;
+    }
 
     @Override
     public boolean equals(Object another) {
@@ -107,6 +119,9 @@ public class Workload {
                 return false;
             }
             if (certExpiryTime == null ? a.certExpiryTime != null : !certExpiryTime.equals(a.certExpiryTime)) {
+                return false;
+            }
+            if (certIssueTime == null ? a.certIssueTime != null : !certIssueTime.equals(a.certIssueTime)) {
                 return false;
             }
         }

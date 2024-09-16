@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,12 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-function fetcherError(err) {
+function fetcherError(err, prefix) {
     // this is the right way to handle errors in Fetchr
     let error = new Error();
-    error.statusCode = err.status;
+    error.statusCode = err.status ? err.status : '';
+    var errorMessage = err.message ? err.message.message : '';
+    if (prefix) {
+        errorMessage = prefix + ': ' + errorMessage;
+    }
     error.output = {
-        message: err.message ? err.message.message : '',
+        message: errorMessage,
     };
     return error;
 }

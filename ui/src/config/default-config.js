@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,11 @@ const config = {
         zms: process.env.ZMS_SERVER_URL || 'https://localhost:4443/zms/v1/',
         zmsLoginUrl:
             process.env.ZMS_LOGIN_URL || 'https://localhost:4443/zms/v1/',
+        zmsConnectSrcUrl:
+            process.env.ZMS_CONNECT_SRC_URL || 'https://localhost:4443',
+        msd: process.env.MSD_LOGIN_URL || 'https://localhost:4443/msd/v1/',
+        zts: process.env.ZTS_LOGIN_URL || 'https://localhost:4443/zts/v1/',
+        ums: process.env.UMS_LOGIN_URL || 'https://localhost:4443/ums/v1/',
         authHeader: 'Athenz-Principal-Auth',
         strictSSL: false,
         user: 'ui-server',
@@ -97,6 +102,7 @@ const config = {
         userFilePath: process.env.UI_CONF_PATH || 'src/config',
         cookieSession:
             process.env.UI_SESSION_SECRET_PATH || 'keys/cookie-session',
+        userDomain: 'user',
         userDomains: 'user,unix',
         port: parseInt(process.env.PORT, 10) || 443,
         allProviders: [
@@ -108,9 +114,24 @@ const config = {
         createDomainMessage:
             'Athenz top level domain creation is manual. \n Please connect with your system administrator to create top level domains. \n',
         cspReportUri: '',
-        cspImgSrc: '',
+        cspImgSrc: [],
+        formAction: [],
+        allPrefixes: [
+            {
+                name: 'AWS',
+                prefix: ':role.aws',
+            },
+        ],
         statusPath: process.env.UI_SESSION_SECRET_PATH || 'keys/cookie-session',
         featureFlag: true,
+        pageFeatureFlag: {
+            microsegmentation: {
+                policyValidation: true,
+            },
+            roleGroupReview: {
+                roleGroupReviewFeatureFlag: true,
+            },
+        },
         serviceHeaderLinks: [
             {
                 description:
@@ -126,8 +147,14 @@ const config = {
             },
         ],
         templates: ['openhouse'],
+        msdAuthHeaderPath:
+            '/var/lib/sia/tokens/msd-api-access/msd-api-access-token',
+        numberOfRetry: 2,
+        serverCipherSuites:
+            'TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256:TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256:TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384:TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384:TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256:TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256:TLS_DHE_RSA_WITH_AES_128_GCM_SHA256:TLS_DHE_RSA_WITH_AES_256_GCM_SHA384:TLS_DHE_RSA_WITH_CHACHA20_POLY1305_SHA256',
     },
     unittest: {
+        zmsConnectSrcUrl: 'https://localhost:4443',
         athenzDomainService: 'athenz.unit-test',
         authKeyVersion: '1',
         envLabel: 'unittest',
@@ -139,7 +166,21 @@ const config = {
         authHeader: 'Athenz-Principal-Auth',
         cspReportUri: 'https://athenz.io/csp',
         cspImgSrc: 'https://athenz.com',
+        allPrefixes: [
+            {
+                name: 'AWS',
+                prefix: ':role.aws',
+            },
+        ],
         featureFlag: true,
+        pageFeatureFlag: {
+            microsegmentation: {
+                policyValidation: true,
+            },
+            roleGroupReview: {
+                roleGroupReviewFeatureFlag: true,
+            },
+        },
         serviceHeaderLinks: [
             {
                 description:
@@ -155,6 +196,11 @@ const config = {
             },
         ],
         templates: ['openhouse'],
+        msdAuthHeaderPath:
+            '/var/lib/sia/tokens/msd-api-access/msd-api-access-token',
+        numberOfRetry: 2,
+        serverCipherSuites:
+            'TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256:TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256:TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384:TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384:TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256:TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256:TLS_DHE_RSA_WITH_AES_128_GCM_SHA256:TLS_DHE_RSA_WITH_AES_256_GCM_SHA384:TLS_DHE_RSA_WITH_CHACHA20_POLY1305_SHA256',
     },
 };
 

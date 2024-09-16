@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -62,7 +62,6 @@ const StyledTd = styled.td`
 class GroupMemberList extends React.Component {
     constructor(props) {
         super(props);
-        this.api = props.api;
         this.viewGroup = this.viewGroup.bind(this);
         this.localDate = new DateUtils();
     }
@@ -73,8 +72,7 @@ class GroupMemberList extends React.Component {
         let grp = this.props.groupName.split(':group.')[1];
         this.props.router.push(
             `/domain/${dom}/group/${grp}/members`,
-            `/domain/${dom}/group/${grp}/members`,
-            { getInitialProps: true }
+            `/domain/${dom}/group/${grp}/members`
         );
     }
 
@@ -90,8 +88,8 @@ class GroupMemberList extends React.Component {
                             {item.expiration
                                 ? this.localDate.getLocalDate(
                                       item.expiration,
-                                      'UTC',
-                                      'UTC'
+                                      this.props.timeZone,
+                                      this.props.timeZone
                                   )
                                 : 'N/A'}
                         </StyledTd>

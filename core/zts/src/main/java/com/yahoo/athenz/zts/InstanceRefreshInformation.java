@@ -24,6 +24,9 @@ public class InstanceRefreshInformation {
     public String ssh;
     @RdlOptional
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public SSHCertRequest sshCertRequest;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public Boolean token;
     @RdlOptional
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
@@ -34,6 +37,18 @@ public class InstanceRefreshInformation {
     @RdlOptional
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public List<String> hostCnames;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public Boolean athenzJWK;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public Timestamp athenzJWKModified;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public String namespace;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public String cloud;
 
     public InstanceRefreshInformation setAttestationData(String attestationData) {
         this.attestationData = attestationData;
@@ -55,6 +70,13 @@ public class InstanceRefreshInformation {
     }
     public String getSsh() {
         return ssh;
+    }
+    public InstanceRefreshInformation setSshCertRequest(SSHCertRequest sshCertRequest) {
+        this.sshCertRequest = sshCertRequest;
+        return this;
+    }
+    public SSHCertRequest getSshCertRequest() {
+        return sshCertRequest;
     }
     public InstanceRefreshInformation setToken(Boolean token) {
         this.token = token;
@@ -84,6 +106,34 @@ public class InstanceRefreshInformation {
     public List<String> getHostCnames() {
         return hostCnames;
     }
+    public InstanceRefreshInformation setAthenzJWK(Boolean athenzJWK) {
+        this.athenzJWK = athenzJWK;
+        return this;
+    }
+    public Boolean getAthenzJWK() {
+        return athenzJWK;
+    }
+    public InstanceRefreshInformation setAthenzJWKModified(Timestamp athenzJWKModified) {
+        this.athenzJWKModified = athenzJWKModified;
+        return this;
+    }
+    public Timestamp getAthenzJWKModified() {
+        return athenzJWKModified;
+    }
+    public InstanceRefreshInformation setNamespace(String namespace) {
+        this.namespace = namespace;
+        return this;
+    }
+    public String getNamespace() {
+        return namespace;
+    }
+    public InstanceRefreshInformation setCloud(String cloud) {
+        this.cloud = cloud;
+        return this;
+    }
+    public String getCloud() {
+        return cloud;
+    }
 
     @Override
     public boolean equals(Object another) {
@@ -101,6 +151,9 @@ public class InstanceRefreshInformation {
             if (ssh == null ? a.ssh != null : !ssh.equals(a.ssh)) {
                 return false;
             }
+            if (sshCertRequest == null ? a.sshCertRequest != null : !sshCertRequest.equals(a.sshCertRequest)) {
+                return false;
+            }
             if (token == null ? a.token != null : !token.equals(a.token)) {
                 return false;
             }
@@ -111,6 +164,18 @@ public class InstanceRefreshInformation {
                 return false;
             }
             if (hostCnames == null ? a.hostCnames != null : !hostCnames.equals(a.hostCnames)) {
+                return false;
+            }
+            if (athenzJWK == null ? a.athenzJWK != null : !athenzJWK.equals(a.athenzJWK)) {
+                return false;
+            }
+            if (athenzJWKModified == null ? a.athenzJWKModified != null : !athenzJWKModified.equals(a.athenzJWKModified)) {
+                return false;
+            }
+            if (namespace == null ? a.namespace != null : !namespace.equals(a.namespace)) {
+                return false;
+            }
+            if (cloud == null ? a.cloud != null : !cloud.equals(a.cloud)) {
                 return false;
             }
         }

@@ -14,6 +14,7 @@ servers/zms/zms_logs/
 servers/zms/zms_root/
 servers/zms/bin/
 servers/zms/schema/zms_server.mwb.bak
+servers/zms/src/test/resources/mysql/zms_server.sql
 servers/zts/zts_logs/
 servers/zts/zts_store/
 servers/zts/bin/
@@ -33,12 +34,13 @@ clients/go/msd/bin/
 clients/go/zts/examples/get-role-token/get-role-token
 clients/java/zpe/src/test/resources/upd_pol_dir/
 clients/java/zpe/src/test/resources/pol_dir/angler.pol
+clients/java/zpe/src/test/resources/pol_dir/angler.jws
 clients/java/zpe/src/test/resources/pol_dir/empty.pol
 clients/java/zpe/src/test/resources/pol_dir/sports.pol
 clients/java/zms/bin/
 clients/java/zpe/bin/
 clients/java/zts/bin/
-clients/java/zts/core/src/test/resources/test.domain/admin
+clients/java/zts/src/test/resources/test.domain/admin
 clients/nodejs/zts/node_modules/
 clients/nodejs/zts/artifacts/
 clients/nodejs/zts/.eslintcodecache
@@ -90,6 +92,8 @@ utils/zms-cli/bin/
 utils/athenz-conf/pkg/
 utils/athenz-conf/src/
 utils/athenz-conf/bin/
+utils/hostdoc/pkg/
+utils/hostdoc/target/
 utils/zms-svctoken/bin/
 utils/zms-svctoken/pkg/
 utils/zms-svctoken/src/
@@ -102,13 +106,16 @@ utils/zts-roletoken/src/
 utils/zts-svccert/bin/
 utils/zts-svccert/pkg/
 utils/zts-svccert/src/
+utils/zts-accesstoken/bin/
 utils/zts-accesstoken/pkg/
+utils/zts-accesstoken/src/
+utils/zts-idtoken/bin/
+utils/zts-idtoken/pkg/
+utils/zts-idtoken/src/
 utils/zts-rolecert/bin/
 utils/zts-rolecert/pkg/
 utils/zts-rolecert/src/
-utils/zpe_policy_updater/bin/
-utils/zpe_policy_updater/tmp_metrics/
-utils/zpe_policy_updater/src/test/resources/sys.auth.new.pol
+utils/msd-agent/pkg/
 libs/go/ztsclientutil/bin/
 libs/go/ztsclientutil/pkg/
 libs/go/ztsclientutil/src/
@@ -125,6 +132,7 @@ libs/nodejs/auth_core/package-lock.json
 .envrc
 .clover/
 athenz-docker-build.log
+syncers/auth_history_syncer/dynamodb-local-metadata.json
 
 # Logs
 logs
@@ -139,3 +147,5 @@ pids
 
 # Optional REPL history
 .node_repl_history
+
+.vscode/

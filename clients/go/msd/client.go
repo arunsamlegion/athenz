@@ -24,22 +24,21 @@ var _ = rdl.BaseTypeAny
 var _ = ioutil.NopCloser
 
 type MSDClient struct {
-	URL         string
-	Transport   http.RoundTripper
-	CredsHeader *string
-	CredsToken  *string
-	Timeout     time.Duration
+	URL             string
+	Transport       http.RoundTripper
+	CredsHeaders    map[string]string
+	Timeout         time.Duration
+	DisableRedirect bool
 }
 
 // NewClient creates and returns a new HTTP client object for the MSD service
 func NewClient(url string, transport http.RoundTripper) MSDClient {
-	return MSDClient{url, transport, nil, nil, 0}
+	return MSDClient{url, transport, make(map[string]string), 0, false}
 }
 
 // AddCredentials adds the credentials to the client for subsequent requests.
 func (client *MSDClient) AddCredentials(header string, token string) {
-	client.CredsHeader = &header
-	client.CredsToken = &token
+	client.CredsHeaders[header] = token
 }
 
 func (client MSDClient) getClient() *http.Client {
@@ -49,6 +48,11 @@ func (client MSDClient) getClient() *http.Client {
 	} else {
 		c = &http.Client{}
 	}
+	if client.DisableRedirect {
+		c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
+	}
 	if client.Timeout > 0 {
 		c.Timeout = client.Timeout
 	}
@@ -56,11 +60,14 @@ func (client MSDClient) getClient() *http.Client {
 }
 
 func (client MSDClient) addAuthHeader(req *http.Request) {
-	if client.CredsHeader != nil && client.CredsToken != nil {
-		if strings.HasPrefix(*client.CredsHeader, "Cookie.") {
-			req.Header.Add("Cookie", (*client.CredsHeader)[7:]+"="+*client.CredsToken)
+	if len(client.CredsHeaders) == 0 {
+		return
+	}
+	for key, value := range client.CredsHeaders {
+		if strings.HasPrefix(key, "Cookie.") {
+			req.Header.Add("Cookie", (key)[7:]+"="+value)
 		} else {
-			req.Header.Add(*client.CredsHeader, *client.CredsToken)
+			req.Header.Add(key, value)
 		}
 	}
 }
@@ -297,16 +304,18 @@ func (client MSDClient) GetTransportPolicyRules(matchingTag string) (*TransportP
 	}
 	defer resp.Body.Close()
 	switch resp.StatusCode {
-	case 200:
-		err = json.NewDecoder(resp.Body).Decode(&data)
-		if err != nil {
-			return nil, "", err
+	case 200, 304:
+		if 304 != resp.StatusCode {
+			err = json.NewDecoder(resp.Body).Decode(&data)
+			if err != nil {
+				return nil, "", err
+			}
 		}
 		tag := resp.Header.Get(rdl.FoldHttpHeaderName("ETag"))
 		return data, tag, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return nil, "", err
 		}
@@ -318,6 +327,221 @@ func (client MSDClient) GetTransportPolicyRules(matchingTag string) (*TransportP
 			errobj.Message = string(contentBytes)
 		}
 		return nil, "", errobj
+	}
+}
+
+func (client MSDClient) ValidateTransportPolicy(transportPolicy *TransportPolicyValidationRequest) (*TransportPolicyValidationResponse, error) {
+	var data *TransportPolicyValidationResponse
+	url := client.URL + "/transportpolicy/validate"
+	contentBytes, err := json.Marshal(transportPolicy)
+	if err != nil {
+		return data, err
+	}
+	resp, err := client.httpPost(url, nil, contentBytes)
+	if err != nil {
+		return data, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 200:
+		err = json.NewDecoder(resp.Body).Decode(&data)
+		if err != nil {
+			return data, err
+		}
+		return data, nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return data, err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return data, errobj
+	}
+}
+
+func (client MSDClient) GetTransportPolicyValidationStatus(domainName DomainName) (*TransportPolicyValidationResponseList, error) {
+	var data *TransportPolicyValidationResponseList
+	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/transportpolicy/validationstatus"
+	resp, err := client.httpGet(url, nil)
+	if err != nil {
+		return data, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 200:
+		err = json.NewDecoder(resp.Body).Decode(&data)
+		if err != nil {
+			return data, err
+		}
+		return data, nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return data, err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return data, errobj
+	}
+}
+
+func (client MSDClient) GetTransportPolicyRulesByDomain(domainName DomainName, matchingTag string) (*TransportPolicyRules, string, error) {
+	var data *TransportPolicyRules
+	headers := map[string]string{
+		"If-None-Match": matchingTag,
+	}
+	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/transportpolicies"
+	resp, err := client.httpGet(url, headers)
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 200, 304:
+		if 304 != resp.StatusCode {
+			err = json.NewDecoder(resp.Body).Decode(&data)
+			if err != nil {
+				return nil, "", err
+			}
+		}
+		tag := resp.Header.Get(rdl.FoldHttpHeaderName("ETag"))
+		return data, tag, nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, "", err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return nil, "", errobj
+	}
+}
+
+func (client MSDClient) PutTransportPolicy(domainName DomainName, serviceName EntityName, auditRef string, payload *TransportPolicyRequest) (*TransportPolicyRules, error) {
+	var data *TransportPolicyRules
+	headers := map[string]string{
+		"Y-Audit-Ref": auditRef,
+	}
+	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/service/" + fmt.Sprint(serviceName) + "/transportpolicy"
+	contentBytes, err := json.Marshal(payload)
+	if err != nil {
+		return data, err
+	}
+	resp, err := client.httpPut(url, headers, contentBytes)
+	if err != nil {
+		return data, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 204, 200:
+		if 204 != resp.StatusCode {
+			err = json.NewDecoder(resp.Body).Decode(&data)
+			if err != nil {
+				return data, err
+			}
+		}
+		return data, nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return data, err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return data, errobj
+	}
+}
+
+func (client MSDClient) GetTransportPolicyRulesByService(domainName DomainName, serviceName EntityName, matchingTag string) (*TransportPolicyRules, string, error) {
+	var data *TransportPolicyRules
+	headers := map[string]string{
+		"If-None-Match": matchingTag,
+	}
+	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/service/" + fmt.Sprint(serviceName) + "/transportpolicies"
+	resp, err := client.httpGet(url, headers)
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 200, 304:
+		if 304 != resp.StatusCode {
+			err = json.NewDecoder(resp.Body).Decode(&data)
+			if err != nil {
+				return nil, "", err
+			}
+		}
+		tag := resp.Header.Get(rdl.FoldHttpHeaderName("ETag"))
+		return data, tag, nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, "", err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return nil, "", errobj
+	}
+}
+
+func (client MSDClient) DeleteTransportPolicy(domainName DomainName, serviceName EntityName, id int64, auditRef string) error {
+	headers := map[string]string{
+		"Y-Audit-Ref": auditRef,
+	}
+	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/service/" + fmt.Sprint(serviceName) + "/transportpolicy/" + fmt.Sprint(id)
+	resp, err := client.httpDelete(url, headers)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 204:
+		return nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return errobj
 	}
 }
 
@@ -333,16 +557,18 @@ func (client MSDClient) GetWorkloadsByService(domainName DomainName, serviceName
 	}
 	defer resp.Body.Close()
 	switch resp.StatusCode {
-	case 200:
-		err = json.NewDecoder(resp.Body).Decode(&data)
-		if err != nil {
-			return nil, "", err
+	case 200, 304:
+		if 304 != resp.StatusCode {
+			err = json.NewDecoder(resp.Body).Decode(&data)
+			if err != nil {
+				return nil, "", err
+			}
 		}
 		tag := resp.Header.Get(rdl.FoldHttpHeaderName("ETag"))
 		return data, tag, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return nil, "", err
 		}
@@ -369,16 +595,18 @@ func (client MSDClient) GetWorkloadsByIP(ip string, matchingTag string) (*Worklo
 	}
 	defer resp.Body.Close()
 	switch resp.StatusCode {
-	case 200:
-		err = json.NewDecoder(resp.Body).Decode(&data)
-		if err != nil {
-			return nil, "", err
+	case 200, 304:
+		if 304 != resp.StatusCode {
+			err = json.NewDecoder(resp.Body).Decode(&data)
+			if err != nil {
+				return nil, "", err
+			}
 		}
 		tag := resp.Header.Get(rdl.FoldHttpHeaderName("ETag"))
 		return data, tag, nil
 	default:
 		var errobj rdl.ResourceError
-		contentBytes, err := ioutil.ReadAll(resp.Body)
+		contentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return nil, "", err
 		}
@@ -390,5 +618,403 @@ func (client MSDClient) GetWorkloadsByIP(ip string, matchingTag string) (*Worklo
 			errobj.Message = string(contentBytes)
 		}
 		return nil, "", errobj
+	}
+}
+
+func (client MSDClient) PutDynamicWorkload(domainName DomainName, serviceName EntityName, options *WorkloadOptions) error {
+	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/service/" + fmt.Sprint(serviceName) + "/workload/dynamic"
+	contentBytes, err := json.Marshal(options)
+	if err != nil {
+		return err
+	}
+	resp, err := client.httpPut(url, nil, contentBytes)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 204:
+		return nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return errobj
+	}
+}
+
+func (client MSDClient) DeleteDynamicWorkload(domainName DomainName, serviceName EntityName, instanceId PathElement) error {
+	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/service/" + fmt.Sprint(serviceName) + "/instanceId/" + fmt.Sprint(instanceId) + "/workload/dynamic"
+	resp, err := client.httpDelete(url, nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 204:
+		return nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return errobj
+	}
+}
+
+func (client MSDClient) PutStaticWorkload(domainName DomainName, serviceName EntityName, staticWorkload *StaticWorkload) error {
+	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/service/" + fmt.Sprint(serviceName) + "/workload/static"
+	contentBytes, err := json.Marshal(staticWorkload)
+	if err != nil {
+		return err
+	}
+	resp, err := client.httpPut(url, nil, contentBytes)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 204:
+		return nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return errobj
+	}
+}
+
+func (client MSDClient) DeleteStaticWorkload(domainName DomainName, serviceName EntityName, name StaticWorkloadName) error {
+	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/service/" + fmt.Sprint(serviceName) + "/name/" + fmt.Sprint(name) + "/workload/static"
+	resp, err := client.httpDelete(url, nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 204:
+		return nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return errobj
+	}
+}
+
+func (client MSDClient) GetStaticWorkloadServicesByType(serviceType EntityName, serviceValue EntityName) (*StaticWorkloadServices, error) {
+	var data *StaticWorkloadServices
+	url := client.URL + "/services/" + fmt.Sprint(serviceType) + encodeParams(encodeStringParam("value", string(serviceValue), ""))
+	resp, err := client.httpGet(url, nil)
+	if err != nil {
+		return data, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 200, 304:
+		if 304 != resp.StatusCode {
+			err = json.NewDecoder(resp.Body).Decode(&data)
+			if err != nil {
+				return data, err
+			}
+		}
+		return data, nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return data, err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return data, errobj
+	}
+}
+
+func (client MSDClient) GetWorkloadsByDomain(domainName DomainName, matchingTag string) (*Workloads, string, error) {
+	var data *Workloads
+	headers := map[string]string{
+		"If-None-Match": matchingTag,
+	}
+	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/workloads"
+	resp, err := client.httpGet(url, headers)
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 200, 304:
+		if 304 != resp.StatusCode {
+			err = json.NewDecoder(resp.Body).Decode(&data)
+			if err != nil {
+				return nil, "", err
+			}
+		}
+		tag := resp.Header.Get(rdl.FoldHttpHeaderName("ETag"))
+		return data, tag, nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, "", err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return nil, "", errobj
+	}
+}
+
+func (client MSDClient) GetWorkloadsByDomainAndService(request *BulkWorkloadRequest, matchingTag string) (*BulkWorkloadResponse, string, error) {
+	var data *BulkWorkloadResponse
+	headers := map[string]string{
+		"If-None-Match": matchingTag,
+	}
+	url := client.URL + "/workloads"
+	contentBytes, err := json.Marshal(request)
+	if err != nil {
+		return nil, "", err
+	}
+	resp, err := client.httpPost(url, headers, contentBytes)
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 200, 304:
+		if 304 != resp.StatusCode {
+			err = json.NewDecoder(resp.Body).Decode(&data)
+			if err != nil {
+				return nil, "", err
+			}
+		}
+		tag := resp.Header.Get(rdl.FoldHttpHeaderName("ETag"))
+		return data, tag, nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, "", err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return nil, "", errobj
+	}
+}
+
+func (client MSDClient) PutCompositeInstance(domainName DomainName, serviceName EntityName, instance *CompositeInstance) error {
+	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/service/" + fmt.Sprint(serviceName) + "/workload/discover/instance"
+	contentBytes, err := json.Marshal(instance)
+	if err != nil {
+		return err
+	}
+	resp, err := client.httpPut(url, nil, contentBytes)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 204:
+		return nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return errobj
+	}
+}
+
+func (client MSDClient) DeleteCompositeInstance(domainName DomainName, serviceName EntityName, instance SimpleName) error {
+	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/service/" + fmt.Sprint(serviceName) + "/workload/discover/instance/" + fmt.Sprint(instance)
+	resp, err := client.httpDelete(url, nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 204:
+		return nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return errobj
+	}
+}
+
+func (client MSDClient) EvaluateNetworkPolicyChange(detail *NetworkPolicyChangeImpactRequest) (*NetworkPolicyChangeImpactResponse, error) {
+	var data *NetworkPolicyChangeImpactResponse
+	url := client.URL + "/transportpolicy/evaluatenetworkpolicychange"
+	contentBytes, err := json.Marshal(detail)
+	if err != nil {
+		return data, err
+	}
+	resp, err := client.httpPost(url, nil, contentBytes)
+	if err != nil {
+		return data, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 200:
+		err = json.NewDecoder(resp.Body).Decode(&data)
+		if err != nil {
+			return data, err
+		}
+		return data, nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return data, err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return data, errobj
+	}
+}
+
+func (client MSDClient) PostKubernetesNetworkPolicyRequest(domainName DomainName, serviceName EntityName, request *KubernetesNetworkPolicyRequest, matchingTag string) (*KubernetesNetworkPolicyResponse, string, error) {
+	var data *KubernetesNetworkPolicyResponse
+	headers := map[string]string{
+		"If-None-Match": matchingTag,
+	}
+	url := client.URL + "/domain/" + fmt.Sprint(domainName) + "/service/" + fmt.Sprint(serviceName) + "/kubernetesnetworkpolicy"
+	contentBytes, err := json.Marshal(request)
+	if err != nil {
+		return nil, "", err
+	}
+	resp, err := client.httpPost(url, headers, contentBytes)
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 200, 304:
+		if 304 != resp.StatusCode {
+			err = json.NewDecoder(resp.Body).Decode(&data)
+			if err != nil {
+				return nil, "", err
+			}
+		}
+		tag := resp.Header.Get(rdl.FoldHttpHeaderName("ETag"))
+		return data, tag, nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, "", err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return nil, "", errobj
+	}
+}
+
+func (client MSDClient) GetRdlSchema() (*rdl.Schema, error) {
+	var data *rdl.Schema
+	url := client.URL + "/schema"
+	resp, err := client.httpGet(url, nil)
+	if err != nil {
+		return data, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 200:
+		err = json.NewDecoder(resp.Body).Decode(&data)
+		if err != nil {
+			return data, err
+		}
+		return data, nil
+	default:
+		var errobj rdl.ResourceError
+		contentBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return data, err
+		}
+		json.Unmarshal(contentBytes, &errobj)
+		if errobj.Code == 0 {
+			errobj.Code = resp.StatusCode
+		}
+		if errobj.Message == "" {
+			errobj.Message = string(contentBytes)
+		}
+		return data, errobj
 	}
 }

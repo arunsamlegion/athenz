@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Oath Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -61,6 +61,31 @@ public class AthenzUtils {
             if (principal == null) {
                 principal = extractPrincipalFromEmail(x509Cert);
             }
+        }
+
+        return principal;
+    }
+
+    /**
+     * Return the Athenz Service principal for the given role certificate.
+     * If the certificate does not have the Athenz expected name format
+     * the method will return null.
+     * @param x509Cert x.509 role certificate
+     * @return service principal name
+     */
+    public static String extractRolePrincipal(X509Certificate x509Cert) {
+
+        // it's a role certificate, so we're going to extract
+        // our service principal from the SAN uri or email field
+        // first we're going to check the uri field
+
+        String principal = extractPrincipalFromUri(x509Cert);
+
+        // if it's not available in the uri then we're going
+        // to extract from the email san field
+
+        if (principal == null) {
+            principal = extractPrincipalFromEmail(x509Cert);
         }
 
         return principal;
@@ -139,6 +164,17 @@ public class AthenzUtils {
      */
     public static String extractRoleName(final String roleName) {
         return extractNameFromArn(roleName, AuthorityConsts.ROLE_SEP);
+    }
+
+    /**
+     * Extract the policy name from the full Athenz policy Name (arn)
+     * which includes the domain name. The format of the policy name
+     * is {domain}:policy.{role-name}
+     * @param policyName the full arn of the role
+     * @return policy name, null if it's not expected full arn format
+     */
+    public static String extractPolicyName(final String policyName) {
+        return extractNameFromArn(policyName, AuthorityConsts.POLICY_SEP);
     }
 
     /**

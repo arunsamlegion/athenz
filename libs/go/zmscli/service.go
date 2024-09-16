@@ -1,10 +1,11 @@
-// Copyright 2016 Yahoo Inc.
+// Copyright The Athenz Authors
 // Licensed under the terms of the Apache version 2.0 license. See LICENSE file for terms.
 
 package zmscli
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -54,7 +55,10 @@ func (cli Zms) ShowService(dn string, sn string) (*string, error) {
 	if err != nil {
 		return nil, err
 	}
+	return cli.ShowUpdatedService(service)
+}
 
+func (cli Zms) ShowUpdatedService(service *zms.ServiceIdentity) (*string, error) {
 	oldYamlConverter := func(res interface{}) (*string, error) {
 		var buf bytes.Buffer
 		buf.WriteString("service:\n")
@@ -66,11 +70,101 @@ func (cli Zms) ShowService(dn string, sn string) (*string, error) {
 	return cli.dumpByFormat(service, oldYamlConverter)
 }
 
+func (cli Zms) DeleteServiceTags(dn string, sn, tagKey string, tagValues []string) (*string, error) {
+	service, err := cli.Zms.GetServiceIdentity(zms.DomainName(dn), zms.SimpleName(sn))
+	if err != nil {
+		return nil, err
+	}
+
+	tagValueArr := make([]zms.TagCompoundValue, 0)
+	if service.Tags == nil {
+		s := "[domain " + dn + " Service " + sn + " has no tags]\n"
+		message := SuccessMessage{
+			Status:  200,
+			Message: s,
+		}
+		return cli.dumpByFormat(message, cli.buildYAMLOutput)
+	} else {
+		tagValueArr = cli.GetTagsAfterDeletion(service.Tags[zms.TagKey(tagKey)], tagValues)
+	}
+
+	service.Tags[zms.TagKey(tagKey)] = &zms.TagValueList{List: tagValueArr}
+	returnObj := false
+
+	_, err = cli.Zms.PutServiceIdentity(zms.DomainName(dn), zms.SimpleName(sn), cli.AuditRef, &returnObj, cli.ResourceOwner, service)
+	if err != nil {
+		return nil, err
+	}
+	s := "[domain " + dn + " service " + sn + " tags successfully deleted]\n"
+	message := SuccessMessage{
+		Status:  200,
+		Message: s,
+	}
+
+	return cli.dumpByFormat(message, cli.buildYAMLOutput)
+}
+
+func (cli Zms) AddServiceTags(dn string, sn, tagKey string, tagValues []string) (*string, error) {
+	service, err := cli.Zms.GetServiceIdentity(zms.DomainName(dn), zms.SimpleName(sn))
+	if err != nil {
+		return nil, err
+	}
+
+	tagValueArr := make([]zms.TagCompoundValue, 0)
+
+	if service.Tags == nil {
+		service.Tags = map[zms.TagKey]*zms.TagValueList{}
+	} else {
+		// append current tags
+		currentTagValues := service.Tags[zms.TagKey(tagKey)]
+		if currentTagValues != nil {
+			tagValueArr = append(tagValueArr, currentTagValues.List...)
+		}
+	}
+
+	for _, tagValue := range tagValues {
+		tagValueArr = append(tagValueArr, zms.TagCompoundValue(tagValue))
+	}
+
+	service.Tags[zms.TagKey(tagKey)] = &zms.TagValueList{List: tagValueArr}
+	returnObj := false
+	_, err = cli.Zms.PutServiceIdentity(zms.DomainName(dn), zms.SimpleName(sn), cli.AuditRef, &returnObj, cli.ResourceOwner, service)
+	if err != nil {
+		return nil, err
+	}
+	s := "[domain " + dn + " service " + sn + " tags successfully updated]\n"
+	message := SuccessMessage{
+		Status:  200,
+		Message: s,
+	}
+
+	return cli.dumpByFormat(message, cli.buildYAMLOutput)
+}
+
+func (cli Zms) ShowServices(dn string, tagKey string, tagValue string) (*string, error) {
+	if cli.OutputFormat == JSONOutputFormat || cli.OutputFormat == YAMLOutputFormat {
+		publicKeys := true
+		hosts := true
+		services, err := cli.Zms.GetServiceIdentities(zms.DomainName(dn), &publicKeys, &hosts, zms.TagKey(tagKey), zms.TagCompoundValue(tagValue))
+		if err != nil {
+			return nil, fmt.Errorf("unable to get service list - error: %v", err)
+		}
+		return cli.dumpByFormat(services, cli.buildYAMLOutput)
+	} else {
+		var buf bytes.Buffer
+		cli.dumpServices(&buf, dn, tagKey, tagValue)
+		s := buf.String()
+		return &s, nil
+	}
+}
+
 func (cli Zms) AddService(dn string, sn string, keyID string, pubKey *string) (*string, error) {
 	shortName := shortname(dn, sn)
-	service, err := cli.Zms.GetServiceIdentity(zms.DomainName(dn), zms.SimpleName(shortName))
-	if err == nil {
-		return nil, fmt.Errorf("Service identity already exists: " + string(service.Name) + " - use add-public-key to add a key")
+	if !cli.Overwrite {
+		service, err := cli.Zms.GetServiceIdentity(zms.DomainName(dn), zms.SimpleName(shortName))
+		if err == nil {
+			return nil, fmt.Errorf("Service identity already exists: " + string(service.Name) + " - use add-public-key to add a key")
+		}
 	}
 	longName := dn + "." + shortName
 	var publicKeys []*zms.PublicKeyEntry
@@ -92,7 +186,8 @@ func (cli Zms) AddService(dn string, sn string, keyID string, pubKey *string) (*
 		User:             "",
 		Group:            "",
 	}
-	err = cli.Zms.PutServiceIdentity(zms.DomainName(dn), zms.SimpleName(shortName), cli.AuditRef, &detail)
+	returnObject := true
+	updatedService, err := cli.Zms.PutServiceIdentity(zms.DomainName(dn), zms.SimpleName(shortName), cli.AuditRef, &returnObject, cli.ResourceOwner, &detail)
 	if err != nil {
 		return nil, err
 	}
@@ -100,22 +195,16 @@ func (cli Zms) AddService(dn string, sn string, keyID string, pubKey *string) (*
 		s := ""
 		return &s, nil
 	}
-	output, err := cli.ShowService(dn, shortName)
-	if err != nil {
-		// due to mysql read after write issue it's possible that
-		// we'll get 404 after writing our object so in that
-		// case we're going to do a quick sleep and retry request
-		time.Sleep(500 * time.Millisecond)
-		output, err = cli.ShowService(dn, shortName)
-	}
-	return output, err
+	return cli.ShowUpdatedService(updatedService)
 }
 
 func (cli Zms) AddProviderService(dn string, sn string, keyID string, pubKey *string) (*string, error) {
 	shortName := shortname(dn, sn)
-	service, err := cli.Zms.GetServiceIdentity(zms.DomainName(dn), zms.SimpleName(shortName))
-	if err == nil {
-		return nil, fmt.Errorf("Service identity already exists: " + string(service.Name) + " - use add-public-key to add a key")
+	if !cli.Overwrite {
+		service, err := cli.Zms.GetServiceIdentity(zms.DomainName(dn), zms.SimpleName(shortName))
+		if err == nil {
+			return nil, fmt.Errorf("Service identity already exists: " + string(service.Name) + " - use add-public-key to add a key")
+		}
 	}
 	longName := dn + "." + shortName
 	publicKeys := make([]*zms.PublicKeyEntry, 0)
@@ -134,7 +223,8 @@ func (cli Zms) AddProviderService(dn string, sn string, keyID string, pubKey *st
 		User:             "",
 		Group:            "",
 	}
-	err = cli.Zms.PutServiceIdentity(zms.DomainName(dn), zms.SimpleName(shortName), cli.AuditRef, &detail)
+	returnObject := false
+	_, err := cli.Zms.PutServiceIdentity(zms.DomainName(dn), zms.SimpleName(shortName), cli.AuditRef, &returnObject, cli.ResourceOwner, &detail)
 	if err != nil {
 		return nil, err
 	}
@@ -143,20 +233,22 @@ func (cli Zms) AddProviderService(dn string, sn string, keyID string, pubKey *st
 	rn := shortName + "_self_serve"
 	fullResourceName := dn + ":role." + rn
 	var role zms.Role
-	_, err = cli.Zms.GetRole(zms.DomainName(dn), zms.EntityName(rn), nil, nil, nil)
-	if err == nil {
-		return nil, fmt.Errorf("provider service created but self serve role already exists: %v", fullResourceName)
-	}
-	switch v := err.(type) {
-	case rdl.ResourceError:
-		if v.Code != 404 {
-			return nil, v
+	if !cli.Overwrite {
+		_, err = cli.Zms.GetRole(zms.DomainName(dn), zms.EntityName(rn), nil, nil, nil)
+		if err == nil {
+			return nil, fmt.Errorf("provider service created but self serve role already exists: %v", fullResourceName)
+		}
+		switch v := err.(type) {
+		case rdl.ResourceError:
+			if v.Code != 404 {
+				return nil, v
+			}
 		}
 	}
 	role.Name = zms.ResourceName(fullResourceName)
 	role.Members = make([]zms.MemberName, 0)
 	role.Members = append(role.Members, zms.MemberName(longName))
-	err = cli.Zms.PutRole(zms.DomainName(dn), zms.EntityName(rn), cli.AuditRef, &role)
+	_, err = cli.Zms.PutRole(zms.DomainName(dn), zms.EntityName(rn), cli.AuditRef, &returnObject, cli.ResourceOwner, &role)
 	if err != nil {
 		return nil, err
 	}
@@ -165,14 +257,16 @@ func (cli Zms) AddProviderService(dn string, sn string, keyID string, pubKey *st
 	// provider that would give access to all tenants
 	pn := shortName + "_self_serve"
 	fullResourceName = dn + ":policy." + pn
-	_, err = cli.Zms.GetPolicy(zms.DomainName(dn), zms.EntityName(pn))
-	if err == nil {
-		return nil, fmt.Errorf("provider service created but self serve policy already exists: %v", fullResourceName)
-	}
-	switch v := err.(type) {
-	case rdl.ResourceError:
-		if v.Code != 404 {
-			return nil, v
+	if !cli.Overwrite {
+		_, err = cli.Zms.GetPolicy(zms.DomainName(dn), zms.EntityName(pn))
+		if err == nil {
+			return nil, fmt.Errorf("provider service created but self serve policy already exists: %v", fullResourceName)
+		}
+		switch v := err.(type) {
+		case rdl.ResourceError:
+			if v.Code != 404 {
+				return nil, v
+			}
 		}
 	}
 	policy := zms.Policy{}
@@ -190,7 +284,7 @@ func (cli Zms) AddProviderService(dn string, sn string, keyID string, pubKey *st
 	}
 	tmp := [1]*zms.Assertion{newAssertion}
 	policy.Assertions = tmp[:]
-	err = cli.Zms.PutPolicy(zms.DomainName(dn), zms.EntityName(pn), cli.AuditRef, &policy)
+	_, err = cli.Zms.PutPolicy(zms.DomainName(dn), zms.EntityName(pn), cli.AuditRef, &returnObject, cli.ResourceOwner, &policy)
 	if err != nil {
 		return nil, err
 	}
@@ -211,9 +305,11 @@ func (cli Zms) AddProviderService(dn string, sn string, keyID string, pubKey *st
 
 func (cli Zms) AddServiceWithKeys(dn string, sn string, publicKeys []*zms.PublicKeyEntry) (*string, error) {
 	shortName := shortname(dn, sn)
-	service, err := cli.Zms.GetServiceIdentity(zms.DomainName(dn), zms.SimpleName(shortName))
-	if err == nil {
-		return nil, fmt.Errorf("Service identity already exists: " + string(service.Name) + " - use add-public-key to add a key")
+	if !cli.Overwrite {
+		service, err := cli.Zms.GetServiceIdentity(zms.DomainName(dn), zms.SimpleName(shortName))
+		if err == nil {
+			return nil, fmt.Errorf("Service identity already exists: " + string(service.Name) + " - use add-public-key to add a key")
+		}
 	}
 	longName := dn + "." + shortName
 	detail := zms.ServiceIdentity{
@@ -226,7 +322,8 @@ func (cli Zms) AddServiceWithKeys(dn string, sn string, publicKeys []*zms.Public
 		User:             "",
 		Group:            "",
 	}
-	err = cli.Zms.PutServiceIdentity(zms.DomainName(dn), zms.SimpleName(shortName), cli.AuditRef, &detail)
+	returnObject := true
+	updatedService, err := cli.Zms.PutServiceIdentity(zms.DomainName(dn), zms.SimpleName(shortName), cli.AuditRef, &returnObject, cli.ResourceOwner, &detail)
 	if err != nil {
 		return nil, err
 	}
@@ -234,15 +331,7 @@ func (cli Zms) AddServiceWithKeys(dn string, sn string, publicKeys []*zms.Public
 		s := ""
 		return &s, nil
 	}
-	output, err := cli.ShowService(dn, shortName)
-	if err != nil {
-		// due to mysql read after write issue it's possible that
-		// we'll get 404 after writing our object so in that
-		// case we're going to do a quick sleep and retry request
-		time.Sleep(500 * time.Millisecond)
-		output, err = cli.ShowService(dn, shortName)
-	}
-	return output, err
+	return cli.ShowUpdatedService(updatedService)
 }
 
 func (cli Zms) SetServiceEndpoint(dn string, sn string, endpoint string) (*string, error) {
@@ -272,7 +361,8 @@ func (cli Zms) SetServiceExe(dn string, sn string, exe string, user string, grou
 	service.Executable = exe
 	service.User = user
 	service.Group = group
-	err = cli.Zms.PutServiceIdentity(zms.DomainName(dn), zms.SimpleName(shortName), cli.AuditRef, service)
+	returnObject := true
+	updatedService, err := cli.Zms.PutServiceIdentity(zms.DomainName(dn), zms.SimpleName(shortName), cli.AuditRef, &returnObject, cli.ResourceOwner, service)
 	if err != nil {
 		return nil, err
 	}
@@ -280,7 +370,7 @@ func (cli Zms) SetServiceExe(dn string, sn string, exe string, user string, grou
 		s := ""
 		return &s, nil
 	}
-	return cli.ShowService(dn, shortName)
+	return cli.ShowUpdatedService(updatedService)
 }
 
 func (cli Zms) AddServiceHost(dn string, sn string, hosts []string) (*string, error) {
@@ -298,7 +388,8 @@ func (cli Zms) AddServiceHost(dn string, sn string, hosts []string) (*string, er
 			}
 		}
 	}
-	err = cli.Zms.PutServiceIdentity(zms.DomainName(dn), zms.SimpleName(shortName), cli.AuditRef, service)
+	returnObject := true
+	updatedService, err := cli.Zms.PutServiceIdentity(zms.DomainName(dn), zms.SimpleName(shortName), cli.AuditRef, &returnObject, cli.ResourceOwner, service)
 	if err != nil {
 		return nil, err
 	}
@@ -306,7 +397,7 @@ func (cli Zms) AddServiceHost(dn string, sn string, hosts []string) (*string, er
 		s := ""
 		return &s, nil
 	}
-	return cli.ShowService(dn, shortName)
+	return cli.ShowUpdatedService(updatedService)
 }
 
 func (cli Zms) DeleteServiceHost(dn string, sn string, hosts []string) (*string, error) {
@@ -317,7 +408,8 @@ func (cli Zms) DeleteServiceHost(dn string, sn string, hosts []string) (*string,
 	}
 	if service.Hosts != nil {
 		service.Hosts = cli.RemoveAll(service.Hosts, hosts)
-		err = cli.Zms.PutServiceIdentity(zms.DomainName(dn), zms.SimpleName(shortName), cli.AuditRef, service)
+		returnObject := false
+		_, err = cli.Zms.PutServiceIdentity(zms.DomainName(dn), zms.SimpleName(shortName), cli.AuditRef, &returnObject, cli.ResourceOwner, service)
 		if err != nil {
 			return nil, err
 		}
@@ -335,7 +427,7 @@ func (cli Zms) AddServicePublicKey(dn string, sn string, keyID string, pubKey *s
 		Key: *pubKey,
 		Id:  keyID,
 	}
-	err := cli.Zms.PutPublicKeyEntry(zms.DomainName(dn), zms.SimpleName(shortName), keyID, cli.AuditRef, &publicKey)
+	err := cli.Zms.PutPublicKeyEntry(zms.DomainName(dn), zms.SimpleName(shortName), keyID, cli.AuditRef, cli.ResourceOwner, &publicKey)
 	if err != nil {
 		return nil, err
 	}
@@ -367,7 +459,7 @@ func (cli Zms) ShowServicePublicKey(dn string, sn string, keyID string) (*string
 
 func (cli Zms) DeleteServicePublicKey(dn string, sn string, keyID string) (*string, error) {
 	shortName := shortname(dn, sn)
-	err := cli.Zms.DeletePublicKeyEntry(zms.DomainName(dn), zms.SimpleName(shortName), keyID, cli.AuditRef)
+	err := cli.Zms.DeletePublicKeyEntry(zms.DomainName(dn), zms.SimpleName(shortName), keyID, cli.AuditRef, cli.ResourceOwner)
 	if err != nil {
 		return nil, err
 	}
@@ -379,11 +471,44 @@ func (cli Zms) DeleteServicePublicKey(dn string, sn string, keyID string) (*stri
 }
 
 func (cli Zms) DeleteService(dn string, sn string) (*string, error) {
-	err := cli.Zms.DeleteServiceIdentity(zms.DomainName(dn), zms.SimpleName(sn), cli.AuditRef)
+	err := cli.Zms.DeleteServiceIdentity(zms.DomainName(dn), zms.SimpleName(sn), cli.AuditRef, cli.ResourceOwner)
 	if err != nil {
 		return nil, err
 	}
 	s := "[Deleted service identity: " + dn + "." + sn + "]"
+	message := SuccessMessage{
+		Status:  200,
+		Message: s,
+	}
+
+	return cli.dumpByFormat(message, cli.buildYAMLOutput)
+}
+
+func (cli Zms) SetServiceResourceOwnership(dn, sn, resourceOwner string) (*string, error) {
+	resourceOwnership := zms.ResourceServiceIdentityOwnership{}
+	if resourceOwner != "" {
+		fields := strings.Split(resourceOwner, ",")
+		for _, field := range fields {
+			parts := strings.Split(field, ":")
+			if len(parts) != 2 {
+				return nil, errors.New("invalid resource owner format")
+			}
+			if parts[0] == "objectowner" {
+				resourceOwnership.ObjectOwner = zms.SimpleName(parts[1])
+			} else if parts[0] == "publickeysowner" {
+				resourceOwnership.PublicKeysOwner = zms.SimpleName(parts[1])
+			} else if parts[0] == "hostsowner" {
+				resourceOwnership.HostsOwner = zms.SimpleName(parts[1])
+			} else {
+				return nil, errors.New("invalid resource owner format")
+			}
+		}
+	}
+	err := cli.Zms.PutResourceServiceIdentityOwnership(zms.DomainName(dn), zms.SimpleName(sn), cli.AuditRef, &resourceOwnership)
+	if err != nil {
+		return nil, err
+	}
+	s := "[domain " + dn + " service " + sn + " service-resource-ownership attribute successfully updated]\n"
 	message := SuccessMessage{
 		Status:  200,
 		Message: s,

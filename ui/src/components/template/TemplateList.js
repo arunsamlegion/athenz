@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,13 @@ import { colors } from '../denali/styles';
 import TemplateRow from './TemplateRow';
 import Alert from '../denali/Alert';
 import { MODAL_TIME_OUT } from '../constants/constants';
+import { connect } from 'react-redux';
+
 import RequestUtils from '../utils/RequestUtils';
+import { makeRolesExpires } from '../../redux/actions/roles';
+import { makePoliciesExpires } from '../../redux/actions/policies';
+import { selectIsLoading } from '../../redux/selectors/loading';
+import { ReduxPageLoader } from '../denali/ReduxPageLoader';
 
 const TemplatesSectionDiv = styled.div`
     margin: 20px;
@@ -38,7 +44,6 @@ const TableHeadStyled = styled.th`
     border-bottom: 2px solid ${colors.grey500};
     color: ${colors.grey600};
     font-weight: 600;
-    font-size: 0.8rem;
     padding-bottom: 5px;
     vertical-align: top;
     text-transform: uppercase;
@@ -52,7 +57,7 @@ const TitleDiv = styled.div`
     margin-top: 40px;
 `;
 
-export default class TemplateList extends React.Component {
+class TemplateList extends React.Component {
     constructor(props) {
         super(props);
         this.api = props.api;
@@ -122,6 +127,10 @@ export default class TemplateList extends React.Component {
                     showSuccess: true,
                     successMessage,
                 });
+
+                // if template boarded, the policies and roles sorted in the store is out of date
+                this.props.makeRolesAndPoliciesExpires();
+
                 // this is to close the success alert
                 setTimeout(
                     () =>
@@ -222,7 +231,9 @@ export default class TemplateList extends React.Component {
                 return toReturn;
             }
         );
-        return (
+        return this.props.isLoading.length !== 0 ? (
+            <ReduxPageLoader message={'Loading domain data'} />
+        ) : (
             <TemplatesSectionDiv data-testid='template-list'>
                 <TitleDiv>Domain Templates</TitleDiv>
                 <TemplateTable>
@@ -247,7 +258,9 @@ export default class TemplateList extends React.Component {
                         </tr>
                     </thead>
                     <tbody>{rows}</tbody>
-                    <TitleDiv>Server Templates</TitleDiv>
+                </TemplateTable>
+                <TitleDiv>Server Templates</TitleDiv>
+                <TemplateTable>
                     <thead>
                         <tr>
                             <TableHeadStyled align={left}>
@@ -290,3 +303,19 @@ export default class TemplateList extends React.Component {
         );
     }
 }
+
+const mapStateToProps = (state, props) => {
+    return {
+        ...props,
+        isLoading: selectIsLoading(state),
+    };
+};
+
+const mapDispatchToProps = (dispatch) => ({
+    makeRolesAndPoliciesExpires: () => {
+        dispatch(makeRolesExpires());
+        dispatch(makePoliciesExpires());
+    },
+});
+
+export default connect(mapStateToProps, mapDispatchToProps)(TemplateList);

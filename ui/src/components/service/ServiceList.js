@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,12 +18,21 @@ import styled from '@emotion/styled';
 import { colors } from '../denali/styles';
 import Button from '../denali/Button';
 import NameUtils from '../utils/NameUtils';
-import ServiceRow from './ServiceRow';
 import Alert from '../denali/Alert';
-import AddService from './AddService';
 import DeleteModal from '../modal/DeleteModal';
 import { MODAL_TIME_OUT } from '../constants/constants';
 import RequestUtils from '../utils/RequestUtils';
+import ServiceRow from './ServiceRow';
+import AddService from './AddService';
+import { deleteService } from '../../redux/thunks/services';
+import { connect } from 'react-redux';
+import { selectServices } from '../../redux/selectors/services';
+import { selectIsLoading } from '../../redux/selectors/loading';
+import {
+    selectTimeZone,
+    selectFeatureFlag,
+} from '../../redux/selectors/domains';
+import { ReduxPageLoader } from '../denali/ReduxPageLoader';
 
 const ServicesSectionDiv = styled.div`
     margin: 20px;
@@ -51,7 +60,6 @@ const TableHeadStyled = styled.th`
     border-bottom: 2px solid ${colors.grey500};
     color: ${colors.grey600};
     font-weight: 600;
-    font-size: 0.8rem;
     padding-bottom: 5px;
     vertical-align: top;
     text-transform: uppercase;
@@ -65,22 +73,19 @@ const StyledAnchor = styled.a`
     cursor: pointer;
 `;
 
-export default class ServiceList extends React.Component {
+class ServiceList extends React.Component {
     constructor(props) {
         super(props);
-        this.api = props.api;
         this.onCancelDeleteService = this.onCancelDeleteService.bind(this);
         this.toggleAddService = this.toggleAddService.bind(this);
         this.reloadServices = this.reloadServices.bind(this);
         this.closeModal = this.closeModal.bind(this);
         this.onSubmitDeleteService = this.onSubmitDeleteService.bind(this);
-        this.state = {
-            list: props.services || [],
-        };
+        this.state = {};
     }
 
     onSubmitDeleteService() {
-        this.api
+        this.props
             .deleteService(
                 this.props.domain,
                 this.state.deleteServiceName,
@@ -113,31 +118,70 @@ export default class ServiceList extends React.Component {
             errorMessage: null,
         });
     }
+
+    buildServiceRows(services) {
+        const rows = services
+            ? services.map((item, i) => {
+                  const serviceName = NameUtils.getShortName('.', item.name);
+                  let newService = serviceName === this.state.successMessage;
+                  let onClickDeleteService = this.onClickDeleteService.bind(
+                      this,
+                      serviceName
+                  );
+                  let color = '';
+                  if (i % 2 === 0) {
+                      color = colors.row;
+                  }
+                  let toReturn = [];
+                  toReturn.push(
+                      <ServiceRow
+                          serviceName={serviceName}
+                          domainName={this.props.domain}
+                          modified={item.modified}
+                          newService={newService}
+                          color={color}
+                          key={item.name}
+                          timeZone={this.props.timeZone}
+                          featureFlag={this.props.featureFlag}
+                          _csrf={this.props._csrf}
+                          onClickDeleteService={onClickDeleteService}
+                      />
+                  );
+                  return toReturn;
+              })
+            : [];
+        return rows;
+    }
+
+    componentDidMount() {
+        this.setState({
+            rows: this.buildServiceRows(this.props.services),
+        });
+    }
+
+    componentDidUpdate(prevProps) {
+        if (this.props.services !== prevProps.services) {
+            this.setState({
+                rows: this.buildServiceRows(this.props.services),
+            });
+        }
+    }
+
     //successMessage is only name of new service when adding a service
     reloadServices(successMessage, showSuccess) {
-        this.api
-            .getServices(this.props.domain)
-            .then((data) => {
+        this.setState({
+            showAddService: false,
+            showSuccess,
+            successMessage,
+            showDelete: false,
+        });
+        setTimeout(
+            () =>
                 this.setState({
-                    list: data,
-                    showAddService: false,
-                    showSuccess,
-                    successMessage,
-                    showDelete: false,
-                });
-                setTimeout(
-                    () =>
-                        this.setState({
-                            showSuccess: false,
-                        }),
-                    MODAL_TIME_OUT
-                );
-            })
-            .catch((err) => {
-                this.setState({
-                    errorMessage: RequestUtils.xhrErrorCheckHelper(err),
-                });
-            });
+                    showSuccess: false,
+                }),
+            MODAL_TIME_OUT
+        );
     }
 
     closeModal() {
@@ -154,48 +198,22 @@ export default class ServiceList extends React.Component {
         const { domain } = this.props;
         const left = 'left';
         const center = 'center';
-        const rows = this.state.list.map((item, i) => {
-            const serviceName = NameUtils.getShortName('.', item.name);
-            let newService = serviceName === this.state.successMessage;
-            let onClickDeleteService = this.onClickDeleteService.bind(
-                this,
-                serviceName
-            );
-            let color = '';
-            if (i % 2 === 0) {
-                color = colors.row;
-            }
-            let toReturn = [];
-            toReturn.push(
-                <ServiceRow
-                    serviceName={serviceName}
-                    domainName={domain}
-                    modified={item.modified}
-                    newService={newService}
-                    color={color}
-                    api={this.api}
-                    key={item.name}
-                    _csrf={this.props._csrf}
-                    onClickDeleteService={onClickDeleteService}
-                    featureFlag={this.props.featureFlag}
-                />
-            );
-            return toReturn;
-        });
+
         let addService = this.state.showAddService ? (
             <AddService
                 showAddService={this.state.showAddService}
                 onCancel={this.toggleAddService}
                 onSubmit={this.reloadServices}
                 domain={domain}
-                api={this.api}
                 _csrf={this.props._csrf}
                 pageConfig={this.props.pageConfig}
             />
         ) : (
             ''
         );
-        return (
+        return this.props.isLoading.length !== 0 ? (
+            <ReduxPageLoader message={'Loading services data'} />
+        ) : (
             <ServicesSectionDiv data-testid='service-list'>
                 <AddContainerDiv>
                     <div>
@@ -214,11 +232,19 @@ export default class ServiceList extends React.Component {
                             <TableHeadStyled align={left}>
                                 Modified Date
                             </TableHeadStyled>
-                            <TableHeadStyled align={center}>
-                                Instances
-                            </TableHeadStyled>
+                            {this.props.featureFlag ? (
+                                <TableHeadStyled align={center}>
+                                    Instances
+                                </TableHeadStyled>
+                            ) : null}
                             <TableHeadStyled align={center}>
                                 Public Keys
+                            </TableHeadStyled>
+                            <TableHeadStyled align={center}>
+                                Tags
+                            </TableHeadStyled>
+                            <TableHeadStyled align={center}>
+                                MSD Policies
                             </TableHeadStyled>
                             <TableHeadStyled align={center}>
                                 Providers
@@ -228,7 +254,7 @@ export default class ServiceList extends React.Component {
                             </TableHeadStyled>
                         </tr>
                     </thead>
-                    <tbody>{rows}</tbody>
+                    <tbody>{this.state.rows}</tbody>
                 </ServiceTable>
                 {this.state.showSuccess ? (
                     <Alert
@@ -254,3 +280,20 @@ export default class ServiceList extends React.Component {
         );
     }
 }
+
+const mapStateToProps = (state, props) => {
+    return {
+        ...props,
+        isLoading: selectIsLoading(state),
+        services: selectServices(state),
+        featureFlag: selectFeatureFlag(state),
+        timeZone: selectTimeZone(state),
+    };
+};
+
+const mapDispatchToProps = (dispatch) => ({
+    deleteService: (domainName, serviceName, _csrf) =>
+        dispatch(deleteService(domainName, serviceName, _csrf)),
+});
+
+export default connect(mapStateToProps, mapDispatchToProps)(ServiceList);

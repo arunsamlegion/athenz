@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,30 +14,32 @@
  * limitations under the License.
  */
 import React from 'react';
-import { render, fireEvent, waitForElement } from '@testing-library/react';
+import { fireEvent, waitFor } from '@testing-library/react';
+
 import AddService from '../../../components/service/AddService';
+import { renderWithRedux } from '../../../tests_utils/ComponentsTestUtils';
+import MockApi from '../../../mock/MockApi';
 const pageConfig = {
     servicePageConfig: {
         keyCreationLink: {
             title: 'Key Creation',
-            url:
-                'https://test.com',
+            url: 'https://test.com',
             target: '_blank',
         },
-        keyCreationMessage:
-            'Test Message',
-    }
+        keyCreationMessage: 'Test Message',
+    },
 };
 describe('AddService', () => {
+    afterEach(() => {
+        MockApi.cleanMockApi();
+    });
     it('should render', () => {
-        const cancel = function() {};
+        const cancel = function () {};
         const domain = 'domain';
-        const api = {};
-        const { getByTestId } = render(
+        const { getByTestId } = renderWithRedux(
             <AddService
                 onCancel={cancel}
                 domain={domain}
-                api={api}
                 showAddService={true}
                 pageConfig={pageConfig}
             />
@@ -47,10 +49,10 @@ describe('AddService', () => {
     });
 
     it('should render error after addService throws error(refresh)', async () => {
-        const cancel = function() {};
+        const cancel = function () {};
         const domain = 'domain';
         const api = {
-            addService: function(
+            addService: function (
                 domainName,
                 serviceName,
                 description,
@@ -65,35 +67,20 @@ describe('AddService', () => {
                     });
                 });
             },
-            getService: function(
-                domainName,
-                serviceName
-            ) {
-                return new Promise((resolve, reject) => {
-                    reject({
-                        statusCode: 404,
-                        body: {
-                            message: 'test-error',
-                        },
-                    });
-                });
-            },
+            getServices: jest.fn().mockReturnValue(Promise.resolve([])),
         };
-        const {
-            getByTestId,
-            querySelector,
-            getByText,
-            getAllByTestId,
-        } = render(
-            <AddService
-                onCancel={cancel}
-                domain={domain}
-                api={api}
-                showAddService={true}
-                pageConfig={pageConfig}
-            />
-        );
-        const addServiceInput = await waitForElement(() =>
+        MockApi.setMockApi(api);
+
+        const { getByTestId, querySelector, getByText, getAllByTestId } =
+            renderWithRedux(
+                <AddService
+                    onCancel={cancel}
+                    domain={domain}
+                    showAddService={true}
+                    pageConfig={pageConfig}
+                />
+            );
+        const addServiceInput = await waitFor(() =>
             getAllByTestId('input-node')
         );
         fireEvent.change(addServiceInput[0], {
@@ -106,17 +93,17 @@ describe('AddService', () => {
                 value: 'test-key',
             },
         });
-        fireEvent.click(await waitForElement(() => getByText('Submit')));
+        fireEvent.click(await waitFor(() => getByText('Submit')));
         expect(
-            await waitForElement(() => getByTestId('error-message'))
+            await waitFor(() => getByTestId('error-message'))
         ).toMatchSnapshot();
     });
 
     it('should render error after addService throws error(other)', async () => {
-        const cancel = function() {};
+        const cancel = function () {};
         const domain = 'domain';
         const api = {
-            addService: function(
+            addService: function (
                 domainName,
                 serviceName,
                 description,
@@ -134,35 +121,20 @@ describe('AddService', () => {
                     });
                 });
             },
-            getService: function(
-                domainName,
-                serviceName,
-            ) {
-                return new Promise((resolve, reject) => {
-                    reject({
-                        statusCode: 404,
-                        body: {
-                            message: 'test-error',
-                        },
-                    });
-                });
-            },
+            getServices: jest.fn().mockReturnValue(Promise.resolve([])),
         };
-        const {
-            getByTestId,
-            querySelector,
-            getByText,
-            getAllByTestId,
-        } = render(
-            <AddService
-                onCancel={cancel}
-                domain={domain}
-                api={api}
-                showAddService={true}
-                pageConfig={pageConfig}
-            />
-        );
-        const addServiceInput = await waitForElement(() =>
+        MockApi.setMockApi(api);
+
+        const { getByTestId, querySelector, getByText, getAllByTestId } =
+            renderWithRedux(
+                <AddService
+                    onCancel={cancel}
+                    domain={domain}
+                    showAddService={true}
+                    pageConfig={pageConfig}
+                />
+            );
+        const addServiceInput = await waitFor(() =>
             getAllByTestId('input-node')
         );
         fireEvent.change(addServiceInput[0], {
@@ -175,63 +147,38 @@ describe('AddService', () => {
                 value: 'test-key',
             },
         });
-        fireEvent.click(await waitForElement(() => getByText('Submit')));
+        fireEvent.click(await waitFor(() => getByText('Submit')));
         expect(
-            await waitForElement(() => getByTestId('error-message'))
+            await waitFor(() => getByTestId('error-message'))
         ).toMatchSnapshot();
     });
 
     it('should call onSubmit if add succeeds', async () => {
-        const cancel = function() {};
+        const cancel = function () {};
         const domain = 'domain';
         let test = 0;
-        const onSubmit = function(succedMessage) {
+        const onSubmit = function (succedMessage) {
             test = test + 1;
         };
         const api = {
-            addService: function(
-                domainName,
-                serviceName,
-                description,
-                endpoint,
-                keyId,
-                keyValue,
-                _csrf
-            ) {
-                return new Promise((resolve, reject) => {
-                    resolve();
-                });
-            },
-            getService: function(
-                domainName,
-                serviceName,
-            ) {
-                return new Promise((resolve, reject) => {
-                    reject({
-                        statusCode: 404,
-                        body: {
-                            message: 'test-error',
-                        },
-                    });
-                });
-            },
+            getServices: jest.fn().mockReturnValue(Promise.resolve([])),
+            addService: jest
+                .fn()
+                .mockReturnValue(Promise.resolve({ name: 'test-name' })),
         };
-        const {
-            getByTestId,
-            querySelector,
-            getByText,
-            getAllByTestId,
-        } = render(
-            <AddService
-                onCancel={cancel}
-                domain={domain}
-                api={api}
-                showAddService={true}
-                onSubmit={onSubmit}
-                pageConfig={pageConfig}
-            />
-        );
-        const addServiceInput = await waitForElement(() =>
+        MockApi.setMockApi(api);
+
+        const { getByTestId, querySelector, getByText, getAllByTestId } =
+            renderWithRedux(
+                <AddService
+                    onCancel={cancel}
+                    domain={domain}
+                    showAddService={true}
+                    onSubmit={onSubmit}
+                    pageConfig={pageConfig}
+                />
+            );
+        const addServiceInput = await waitFor(() =>
             getAllByTestId('input-node')
         );
         fireEvent.change(addServiceInput[0], {
@@ -244,54 +191,43 @@ describe('AddService', () => {
                 value: 'test-key',
             },
         });
-        fireEvent.click(await waitForElement(() => getByText('Submit')));
-        expect(await waitForElement(() => test)).toEqual(1);
+        fireEvent.click(await waitFor(() => getByText('Submit')));
+        await waitFor(() => expect(test).toEqual(1));
     });
 
     it('should render error if no key name specified', async () => {
-        const cancel = function() {};
+        const cancel = function () {};
         const domain = 'domain';
         const api = {
-            addService: function(
-                domainName,
-                serviceName,
-                description,
-                endpoint,
-                keyId,
-                keyValue,
-                _csrf
-            ) {
-                return new Promise((resolve, reject) => {
-                    resolve();
-                });
-            },
+            getServices: jest.fn().mockReturnValue(Promise.resolve([])),
+            addService: jest.fn().mockReturnValue(Promise.resolve()),
         };
-
-        const {
-            getByTestId,
-            querySelector,
-            getByText,
-            getAllByTestId,
-        } = render(
-            <AddService
-                onCancel={cancel}
-                domain={domain}
-                api={api}
-                showAddService={true}
-                pageConfig={pageConfig}
-            />
-        );
-        fireEvent.click(await waitForElement(() => getByText('Submit')));
+        MockApi.setMockApi(api);
+        const { getByTestId, querySelector, getByText, getAllByTestId } =
+            renderWithRedux(
+                <AddService
+                    onCancel={cancel}
+                    domain={domain}
+                    showAddService={true}
+                    pageConfig={pageConfig}
+                />
+            );
+        fireEvent.click(await waitFor(() => getByText('Submit')));
         expect(
-            await waitForElement(() => getByTestId('error-message'))
+            await waitFor(() => getByTestId('error-message'))
         ).toMatchSnapshot();
     });
 
     it('should render error when service already exists', async () => {
-        const cancel = function () {
-        };
+        const cancel = function () {};
         const domain = 'domain';
+        // const service = 'test';
         const api = {
+            getServices: jest
+                .fn()
+                .mockReturnValue(
+                    Promise.resolve([{ name: domain + '.' + 'test-name' }])
+                ),
             addService: function (
                 domainName,
                 serviceName,
@@ -310,30 +246,23 @@ describe('AddService', () => {
                     });
                 });
             },
-            getService: function (
-                domainName,
-                serviceName,
-            ) {
+            getService: function (domainName, serviceName) {
                 return new Promise((resolve, reject) => {
                     resolve();
                 });
             },
         };
-        const {
-            getByTestId,
-            querySelector,
-            getByText,
-            getAllByTestId,
-        } = render(
-            <AddService
-                onCancel={cancel}
-                domain={domain}
-                api={api}
-                showAddService={true}
-                pageConfig={pageConfig}
-            />
-        );
-        const addServiceInput = await waitForElement(() =>
+        MockApi.setMockApi(api);
+        const { getByTestId, querySelector, getByText, getAllByTestId } =
+            renderWithRedux(
+                <AddService
+                    onCancel={cancel}
+                    domain={domain}
+                    showAddService={true}
+                    pageConfig={pageConfig}
+                />
+            );
+        const addServiceInput = await waitFor(() =>
             getAllByTestId('input-node')
         );
         fireEvent.change(addServiceInput[0], {
@@ -346,15 +275,14 @@ describe('AddService', () => {
                 value: 'test-key',
             },
         });
-        fireEvent.click(await waitForElement(() => getByText('Submit')));
+        fireEvent.click(await waitFor(() => getByText('Submit')));
         expect(
-            await waitForElement(() => getByTestId('error-message'))
+            await waitFor(() => getByTestId('error-message'))
         ).toMatchSnapshot();
     });
 
     it('should render error when after getService throws error(other)', async () => {
-        const cancel = function () {
-        };
+        const cancel = function () {};
         const domain = 'domain';
         const api = {
             addService: function (
@@ -375,10 +303,7 @@ describe('AddService', () => {
                     });
                 });
             },
-            getService: function (
-                domainName,
-                serviceName,
-            ) {
+            getServices: function (domainName, serviceName) {
                 return new Promise((resolve, reject) => {
                     reject({
                         statusCode: 0,
@@ -386,21 +311,17 @@ describe('AddService', () => {
                 });
             },
         };
-        const {
-            getByTestId,
-            querySelector,
-            getByText,
-            getAllByTestId,
-        } = render(
-            <AddService
-                onCancel={cancel}
-                domain={domain}
-                api={api}
-                showAddService={true}
-                pageConfig={pageConfig}
-            />
-        );
-        const addServiceInput = await waitForElement(() =>
+        MockApi.setMockApi(api);
+        const { getByTestId, querySelector, getByText, getAllByTestId } =
+            renderWithRedux(
+                <AddService
+                    onCancel={cancel}
+                    domain={domain}
+                    showAddService={true}
+                    pageConfig={pageConfig}
+                />
+            );
+        const addServiceInput = await waitFor(() =>
             getAllByTestId('input-node')
         );
         fireEvent.change(addServiceInput[0], {
@@ -413,9 +334,9 @@ describe('AddService', () => {
                 value: 'test-key',
             },
         });
-        fireEvent.click(await waitForElement(() => getByText('Submit')));
+        fireEvent.click(await waitFor(() => getByText('Submit')));
         expect(
-            await waitForElement(() => getByTestId('error-message'))
+            await waitFor(() => getByTestId('error-message'))
         ).toMatchSnapshot();
     });
 });

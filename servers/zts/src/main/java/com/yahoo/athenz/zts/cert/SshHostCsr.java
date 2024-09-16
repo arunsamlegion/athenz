@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,12 @@
 package com.yahoo.athenz.zts.cert;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * A temporary class to help with transitioning to SSHCertRequest
  */
 @JsonInclude(JsonInclude.Include.ALWAYS)
 public class SshHostCsr {
-    private static final Logger LOGGER = LoggerFactory.getLogger(SshHostCsr.class);
 
     private String[] principals;
     private String[] xPrincipals;

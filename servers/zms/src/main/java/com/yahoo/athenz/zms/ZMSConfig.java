@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Oath Holidings, Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ package com.yahoo.athenz.zms;
 
 import com.yahoo.athenz.auth.Authority;
 import com.yahoo.athenz.zms.config.SolutionTemplates;
+import com.yahoo.rdl.Validator;
 
 import java.util.List;
 
@@ -25,9 +26,11 @@ public class ZMSConfig {
     private String serverHostName;
     private String userDomain;
     private String userDomainPrefix;
+    private String headlessUserDomainPrefix;
     private List<String> addlUserCheckDomainPrefixList;
     private SolutionTemplates serverSolutionTemplates;
     private Authority userAuthority;
+    private Validator validator;
 
     public String getUserDomain() {
         return userDomain;
@@ -43,6 +46,14 @@ public class ZMSConfig {
 
     public void setUserDomainPrefix(String userDomainPrefix) {
         this.userDomainPrefix = userDomainPrefix;
+    }
+
+    public String getHeadlessUserDomainPrefix() {
+        return headlessUserDomainPrefix;
+    }
+
+    public void setHeadlessUserDomainPrefix(String headlessUserDomainPrefix) {
+        this.headlessUserDomainPrefix = headlessUserDomainPrefix;
     }
 
     public List<String> getAddlUserCheckDomainPrefixList() {
@@ -75,5 +86,13 @@ public class ZMSConfig {
 
     public void setUserAuthority(Authority userAuthority) {
         this.userAuthority = userAuthority;
+    }
+
+    public Validator getValidator() {
+        return validator;
+    }
+
+    public void setValidator(Validator validator) {
+        this.validator = validator;
     }
 }

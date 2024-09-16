@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -76,5 +76,25 @@ public class ValidateTest {
         assertTrue(Validate.domainName("sub1_sub2_.sub3_sub4_-"));
         assertTrue(Validate.domainName("domain-part"));
         assertTrue(Validate.domainName("com-test.gov"));
+    }
+
+    @Test
+    public void testSimpleNameValidationInvalid() {
+
+        assertFalse(Validate.simpleName("domain:service%api"));
+        assertFalse(Validate.simpleName("api.service"));
+        assertFalse(Validate.simpleName("service/api"));
+        assertFalse(Validate.simpleName("service+api"));
+        assertFalse(Validate.simpleName(null));
+        assertFalse(Validate.simpleName(""));
+    }
+
+    @Test
+    public void testSimpleNameValidationValid() {
+
+        assertTrue(Validate.simpleName("service"));
+        assertTrue(Validate.simpleName("service001"));
+        assertTrue(Validate.simpleName("service_api"));
+        assertTrue(Validate.simpleName("service-api"));
     }
 }

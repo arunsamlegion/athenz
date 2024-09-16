@@ -1,5 +1,5 @@
 //
-// Copyright 2020 Verizon Media
+// Copyright The Athenz Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -57,7 +57,7 @@ func TestGetMetadata(test *testing.T) {
 	// Mock the metadata endpoints
 	router := httptreemux.New()
 	router.GET("/metadata/instance", func(w http.ResponseWriter, r *http.Request, params map[string]string) {
-		log.Printf("Called /metadata/instance?api-version=2020-06-01")
+		log.Println("Called /metadata/instance?api-version=2020-06-01")
 		io.WriteString(w, "{ \"test\": \"document\"}")
 	})
 

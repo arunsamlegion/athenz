@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Oath Holdings, Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,9 +24,9 @@ public class ServerPrivateKey {
     public static final String RSA   = "RSA";
     public static final String ECDSA = "ECDSA";
 
-    private String id;
-    private PrivateKey key;
-    private SignatureAlgorithm algorithm;
+    private final String id;
+    private final PrivateKey key;
+    private final SignatureAlgorithm algorithm;
 
     public ServerPrivateKey(final PrivateKey key, final String id) {
 

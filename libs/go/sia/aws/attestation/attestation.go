@@ -19,78 +19,77 @@ package attestation
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/AthenZ/athenz/libs/go/sia/aws/logutil"
-	"github.com/AthenZ/athenz/libs/go/sia/aws/stssession"
-	"github.com/aws/aws-sdk-go/service/sts"
-	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"strings"
+
+	"github.com/AthenZ/athenz/libs/go/sia/aws/options"
+	"github.com/AthenZ/athenz/libs/go/sia/aws/stssession"
+	"github.com/aws/aws-sdk-go/service/sts"
 )
 
 type AttestationData struct {
-	Role      string `json:"role,omitempty"`      //the IAM role. This must match the athenz service identity
-	Access    string `json:"access,omitempty"`    //the temp creds access key id
-	Secret    string `json:"secret,omitempty"`    //the temp creds secret key
-	Token     string `json:"token,omitempty"`     //the temp creds session token
-	Document  string `json:"document,omitempty"`  //for EC2 instance document
-	Signature string `json:"signature,omitempty"` //for EC2 instance document pkcs7 signature
-	TaskId    string `json:"taskid,omitempty"`    //for ECS Task Id
+	Role       string `json:"role,omitempty"`       //the IAM role. This must match the athenz service identity
+	CommonName string `json:"commonName,omitempty"` //The common name for CSR. Different from Role if we're using service name only
+	Access     string `json:"access,omitempty"`     //the temp creds access key id
+	Secret     string `json:"secret,omitempty"`     //the temp creds secret key
+	Token      string `json:"token,omitempty"`      //the temp creds session token
+	Document   string `json:"document,omitempty"`   //for EC2 instance document
+	Signature  string `json:"signature,omitempty"`  //for EC2 instance document pkcs7 signature
 }
 
-// New creates a new AttestationData with values fed to it and from the result of STS Assume Role
-func New(domain, service string, document, signature []byte, useRegionalSTS bool, sysLogger io.Writer) (*AttestationData, error) {
-
-	role := fmt.Sprintf("%s.%s", domain, service)
-
-	// Extract the accountId from document
-	var docMap map[string]interface{}
-	err := json.Unmarshal(document, &docMap)
+// New creates a new AttestationData with values fed to it and from the result of STS Assume Role.
+// This requires an identity document along with its signature. The aws account and region will
+// be extracted from the identity document.
+func New(opts *options.Options, service string) (*AttestationData, error) {
+	commonName := fmt.Sprintf("%s.%s", opts.Domain, service)
+	var role string
+	if opts.OmitDomain {
+		role = service
+	} else {
+		role = commonName
+	}
+	tok, err := getSTSToken(opts.UseRegionalSTS, opts.Region, opts.Account, role)
 	if err != nil {
-		logutil.LogInfo(sysLogger, "unable to parse host info document: %v\n", err)
 		return nil, err
 	}
-	account := docMap["accountId"].(string)
+	return &AttestationData{
+		Role:       role,
+		CommonName: commonName,
+		Document:   opts.EC2Document,
+		Signature:  opts.EC2Signature,
+		Access:     *tok.Credentials.AccessKeyId,
+		Secret:     *tok.Credentials.SecretAccessKey,
+		Token:      *tok.Credentials.SessionToken,
+	}, nil
+}
 
+func getSTSToken(useRegionalSTS bool, region, account, role string) (*sts.AssumeRoleOutput, error) {
 	// Attempt STS AssumeRole
-	stsSession, err := stssession.New(useRegionalSTS, docMap["region"].(string), sysLogger)
+	stsSession, err := stssession.New(useRegionalSTS, region)
 	if err != nil {
-		logutil.LogInfo(sysLogger, "unable to create new session: %v\n", err)
+		log.Printf("unable to create new session: %v\n", err)
 		return nil, err
 	}
 	stsService := sts.New(stsSession)
 	roleArn := fmt.Sprintf("arn:aws:iam::%s:role/%s", account, role)
-	logutil.LogInfo(sysLogger, "trying to assume role: %v\n", roleArn)
-	tok, err := stsService.AssumeRole(&sts.AssumeRoleInput{
+	log.Printf("Trying to assume role: %v\n", roleArn)
+	return stsService.AssumeRole(&sts.AssumeRoleInput{
 		RoleArn:         &roleArn,
 		RoleSessionName: &role,
 	})
-	if err != nil {
-		return nil, err
-	}
-
-	return &AttestationData{
-		Role:      role,
-		Document:  string(document),
-		Signature: string(signature),
-		Access:    *tok.Credentials.AccessKeyId,
-		Secret:    *tok.Credentials.SecretAccessKey,
-		Token:     *tok.Credentials.SessionToken,
-		TaskId:    getECSTaskId(),
-	}, nil
 }
 
-func getECSTaskId() string {
+func GetECSTaskId() string {
 	ecs := os.Getenv("ECS_CONTAINER_METADATA_FILE")
 	if ecs == "" {
 		return ""
 	}
-	ecsMetaData, err := ioutil.ReadFile(ecs)
+	ecsMetaData, err := os.ReadFile(ecs)
 	if err != nil {
 		return ""
 	}
-	log.Printf("Content: %s", ecsMetaData)
+	log.Printf("Content: %s\n", ecsMetaData)
 	var docMap map[string]interface{}
 	err = json.Unmarshal(ecsMetaData, &docMap)
 	if err != nil {
@@ -113,4 +112,17 @@ func getECSTaskId() string {
 		return ""
 	}
 	return taskId
+}
+
+// GetAttestationData fetches attestation data for all the services mentioned in the config file
+func GetAttestationData(opts *options.Options) ([]*AttestationData, error) {
+	data := []*AttestationData{}
+	for _, svc := range opts.Services {
+		a, err := New(opts, svc.Name)
+		if err != nil {
+			return nil, err
+		}
+		data = append(data, a)
+	}
+	return data, nil
 }

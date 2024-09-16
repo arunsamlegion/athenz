@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,9 +28,14 @@ describe('Tabs', () => {
         };
 
         let domain = 'home.mujibur';
-        let role = 'admin'
+        let role = 'admin';
         const { getByTestId } = render(
-            <RoleTabs domain={domain} role={role} selectedName='members' api={api} />
+            <RoleTabs
+                domain={domain}
+                role={role}
+                selectedName='members'
+                api={api}
+            />
         );
         const tabs = getByTestId('tabgroup');
         const tab = tabs.querySelectorAll('.denali-tab');

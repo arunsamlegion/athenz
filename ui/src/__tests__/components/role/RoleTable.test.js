@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,26 +17,30 @@ import React from 'react';
 import { render } from '@testing-library/react';
 import RoleTable from '../../../components/role/RoleTable';
 import API from '../../../api';
+import { renderWithRedux } from '../../../tests_utils/ComponentsTestUtils';
 
 describe('RoleTable', () => {
     it('should render', () => {
-        let domains = [];
-        let roles = [];
+        const domains = [];
         domains.push('dom1');
         domains.push('dom2');
         domains.push('dom3');
         domains.push('dom4');
-        let role1 = {
+
+        const roles = [];
+        const role1 = {
             name: 'a',
         };
-
-        let role2 = {
+        const role2 = {
             name: 'b',
         };
         roles.push(role1);
         roles.push(role2);
-        const { getByTestId } = render(
-            <RoleTable roles={roles} api={API()} domain={domains} />
+
+        const timeZone = 'UTC';
+
+        const { getByTestId } = renderWithRedux(
+            <RoleTable roles={roles} domain={domains} timeZone={timeZone} />
         );
         const roletable = getByTestId('roletable');
 

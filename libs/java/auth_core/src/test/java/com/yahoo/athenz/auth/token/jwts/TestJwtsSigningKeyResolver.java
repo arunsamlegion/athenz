@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Oath Holdings Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,16 @@
 package com.yahoo.athenz.auth.token.jwts;
 
 import io.jsonwebtoken.JwsHeader;
-import org.mockito.Mockito;
 import org.testng.annotations.Test;
 
+import javax.net.ssl.SSLContext;
+
+import static com.yahoo.athenz.auth.token.jwts.JwtsSigningKeyResolver.ZTS_PROP_JWK_ATHENZ_CONF;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
 import static org.testng.Assert.*;
+import static org.testng.AssertJUnit.assertNotNull;
+import static org.testng.AssertJUnit.assertNull;
 
 public class TestJwtsSigningKeyResolver {
 
@@ -40,8 +46,8 @@ public class TestJwtsSigningKeyResolver {
         JwtsSigningKeyResolver resolver = new JwtsSigningKeyResolver(null, null);
         assertEquals(resolver.publicKeyCount(), 2);
 
-        JwsHeader header = Mockito.mock(JwsHeader.class);
-        Mockito.when(header.getKeyId())
+        JwsHeader header = mock(JwsHeader.class);
+        when(header.getKeyId())
                 .thenReturn("eckey1")
                 .thenReturn("unknown");
 
@@ -59,6 +65,15 @@ public class TestJwtsSigningKeyResolver {
     }
 
     @Test
+    public void testCanFetch() {
+        JwtsSigningKeyResolver.setMillisBetweenZtsCalls(1000);
+        JwtsSigningKeyResolver resolver = new JwtsSigningKeyResolver(null, null);
+        assertFalse(JwtsSigningKeyResolver.canFetchLatestJwksFromZts());
+        JwtsSigningKeyResolver.setMillisBetweenZtsCalls(-1);
+        assertTrue(JwtsSigningKeyResolver.canFetchLatestJwksFromZts());
+    }
+
+    @Test
     public void testLoadPublicKeysFromServerInvalidUri() {
 
         final String oldConf = System.setProperty(JwtsSigningKeyResolver.ZTS_PROP_ATHENZ_CONF,
@@ -66,7 +81,33 @@ public class TestJwtsSigningKeyResolver {
 
         JwtsSigningKeyResolver resolver = new JwtsSigningKeyResolver("https://localhost:10099", null);
         assertNotNull(resolver);
+        assertEquals(resolver.getJwksUri(), "https://localhost:10099");
 
         resetConfProperty(oldConf);
+    }
+    
+    @Test
+    public void testLoadJWKPublicKeysFromServer() {
+        System.setProperty(ZTS_PROP_JWK_ATHENZ_CONF, TestJwtsSigningKeyResolver.class.getClassLoader().getResource("jwk/athenz.conf").getPath());
+        JwtsSigningKeyResolver resolver = spy(new JwtsSigningKeyResolver("https://localhost:10099", mock(SSLContext.class), "http://localhost:8128"));
+        assertNotNull(resolver);
+        String ecKeys = "{\n" +
+                "        \"keys\": [\n" +
+                "            {\n" +
+                "                \"kid\" : \"FdFYFzERwC2uCBB46pZQi4GG85LujR8obt-KWRBICVQ\",\n" +
+                "                \"kty\" : \"EC\",\n" +
+                "                \"crv\" : \"prime256v1\",\n" +
+                "                \"x\"   : \"SVqB4JcUD6lsfvqMr-OKUNUphdNn64Eay60978ZlL74\",\n" +
+                "                \"y\"   : \"lf0u0pMj4lGAzZix5u4Cm5CMQIgMNpkwy163wtKYVKI\",\n" +
+                "                \"d\"   : \"0g5vAEKzugrXaRbgKG0Tj2qJ5lMP4Bezds1_sTybkfk\"\n" +
+                "            }\n" +
+                "        ]\n" +
+                "    }";
+        when(resolver.getHttpData(any(), any(), any())).thenReturn(ecKeys);
+        resolver.loadPublicKeysFromServer();
+        assertNotNull(resolver.getPublicKey("FdFYFzERwC2uCBB46pZQi4GG85LujR8obt-KWRBICVQ"));
+        assertNotNull(resolver.getPublicKey("c6e34b18-fb1c-43bb-9de7-7edc8981b14d"));
+        verify(resolver).getHttpData(any(), any(), eq("http://localhost:8128"));
+        System.clearProperty(ZTS_PROP_JWK_ATHENZ_CONF);
     }
 }

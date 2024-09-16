@@ -1,5 +1,5 @@
 /*
- *  Copyright 2020 Verizon Media
+ *  Copyright The Athenz Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -42,10 +42,11 @@ public class AWSZTSHealthNotificationTask implements NotificationTask {
     public AWSZTSHealthNotificationTask(ZTSClientNotification ztsClientNotification,
                                         RolesProvider rolesProvider,
                                         String userDomainPrefix,
-                                        String serverName) {
+                                        String serverName,
+                                        NotificationToEmailConverterCommon notificationToEmailConverterCommon) {
         DomainRoleMembersFetcher domainRoleMembersFetcher = new DomainRoleMembersFetcher(rolesProvider, USER_DOMAIN_PREFIX);
         this.notificationCommon = new NotificationCommon(domainRoleMembersFetcher, userDomainPrefix);
-        this.awsZTSHealthNotificationToEmailConverter = new AWSZTSHealthNotificationToEmailConverter();
+        this.awsZTSHealthNotificationToEmailConverter = new AWSZTSHealthNotificationToEmailConverter(notificationToEmailConverterCommon);
         this.awsztsHealthNotificationToMetricConverter = new AWSZTSHealthNotificationToMetricConverter();
         this.ztsClientNotification = ztsClientNotification;
         this.serverName = serverName;
@@ -58,6 +59,7 @@ public class AWSZTSHealthNotificationTask implements NotificationTask {
         Map<String, String> details = getNotificationDetails();
 
         Notification notification = notificationCommon.createNotification(
+                Notification.Type.AWS_ZTS_HEALTH,
                 ResourceUtils.roleResourceName(athenzAdminDomain, ADMIN_ROLE_NAME),
                 details,
                 awsZTSHealthNotificationToEmailConverter,
@@ -95,10 +97,10 @@ public class AWSZTSHealthNotificationTask implements NotificationTask {
         private static final String AWS_ZTS_HEALTH_SUBJECT = "athenz.notification.email.aws.zts.health.subject";
 
         private final NotificationToEmailConverterCommon notificationToEmailConverterCommon;
-        private String emailAwsZtsHealthBody;
+        private final String emailAwsZtsHealthBody;
 
-        public AWSZTSHealthNotificationToEmailConverter() {
-            notificationToEmailConverterCommon = new NotificationToEmailConverterCommon();
+        public AWSZTSHealthNotificationToEmailConverter(NotificationToEmailConverterCommon notificationToEmailConverterCommon) {
+            this.notificationToEmailConverterCommon = notificationToEmailConverterCommon;
             emailAwsZtsHealthBody = notificationToEmailConverterCommon.readContentFromFile(getClass().getClassLoader(), EMAIL_TEMPLATE_NOTIFICATION_AWS_ZTS_HEALTH);
         }
 
@@ -112,7 +114,7 @@ public class AWSZTSHealthNotificationTask implements NotificationTask {
                     emailAwsZtsHealthBody,
                     NOTIFICATION_DETAILS_AFFECTED_ZTS,
                     NOTIFICATION_DETAILS_AWS_ZTS_HEALTH,
-                    5);
+                    5, null);
         }
 
         @Override

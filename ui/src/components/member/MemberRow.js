@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,19 @@ import DateUtils from '../utils/DateUtils';
 import RequestUtils from '../utils/RequestUtils';
 import GroupMemberList from './GroupMemberList';
 import { css, keyframes } from '@emotion/react';
+import { deleteMember, editMember } from '../../redux/thunks/collections';
+import { connect } from 'react-redux';
+import AppUtils from '../utils/AppUtils';
+import UpdateModal from '../modal/UpdateModal';
+import {
+    ADD_ROLE_EXPIRATION_PLACEHOLDER,
+    ADD_ROLE_REMINDER_PLACEHOLDER,
+    EDITABLE_DATE_ENUM,
+    MEMBER_ATHENZ_SYSTEM_DISABLED,
+    MEMBER_AUTHORITY_FILTER_DISABLED,
+    MEMBER_AUTHORITY_SYSTEM_SUSPENDED,
+} from '../constants/constants';
+import NameUtils from '../utils/NameUtils';
 
 const TDStyled = styled.td`
     background-color: ${(props) => props.color};
@@ -41,13 +54,20 @@ const GroupTDStyled = styled.td`
     text-decoration: dashed underline;
 `;
 
+const EditDiv = styled.div`
+    display: flex;
+    column-gap: 10px;
+    color: ${(props) => props.expired ? colors.red800 : ''};
+    font-style: ${(props) => props.expired ? 'italic' : ''};
+`;
+
 const colorTransition = keyframes`
-        0% {
-            background-color: rgba(21, 192, 70, 0.20);
-        }
-        100% {
-            background-color: transparent;
-        }
+    0% {
+        background-color: rgba(21, 192, 70, 0.20);
+    }
+    100% {
+        background-color: transparent;
+    }
 `;
 
 const TrStyled = styled.tr`
@@ -80,22 +100,24 @@ const StyledSpan = styled.span`
     }
 `;
 
-export default class MemberRow extends React.Component {
+class MemberRow extends React.Component {
     constructor(props) {
         super(props);
-        this.api = this.props.api;
         this.onSubmitDelete = this.onSubmitDelete.bind(this);
         this.onClickDeleteCancel = this.onClickDeleteCancel.bind(this);
         this.saveJustification = this.saveJustification.bind(this);
+        this.onDateChange = this.onDateChange.bind(this);
         this.state = {
             deleteName: this.props.details.memberName,
             showDelete: false,
+            showEdit: false,
+            date: null,
         };
         this.localDate = new DateUtils();
     }
 
     saveJustification(val) {
-        this.setState({ deleteJustification: val });
+        this.setState({ justification: val });
     }
 
     onClickDelete(name) {
@@ -105,42 +127,42 @@ export default class MemberRow extends React.Component {
         });
     }
 
-    onSubmitDelete(domain) {
-        let roleName = this.props.collection;
+    onSubmitDelete() {
+        let collectionName = this.props.collection;
         let name = this.state.deleteName;
 
         if (
             this.props.justificationRequired &&
-            (this.state.deleteJustification === undefined ||
-                this.state.deleteJustification.trim() === '')
+            (this.state.justification === undefined ||
+                this.state.justification.trim() === '')
         ) {
             this.setState({
                 errorMessage: 'Justification is required to delete a member',
             });
             return;
         }
-
-        this.api
+        this.props
             .deleteMember(
-                domain,
-                roleName,
+                this.props.domain,
+                collectionName,
+                this.props.category,
                 this.state.deleteName,
-                this.state.deleteJustification
-                    ? this.state.deleteJustification
+                this.state.justification
+                    ? this.state.justification
                     : 'deleted using Athenz UI',
                 this.props.pending,
-                this.props.category,
                 this.props._csrf
             )
-            .then(() => {
-                this.setState({
-                    showDelete: false,
-                    deleteName: null,
-                    deleteJustification: null,
-                    errorMessage: null,
-                });
-                //TODO add logic for pending vs non-pending
-                if (this.props.pending) {
+            .then((deleteProtection) => {
+                if (deleteProtection) {
+                    this.props.onUpdateSuccess(
+                        `Successfully added pending request to delete member ${name}`,
+                        true
+                    );
+                    this.setState({
+                        showDelete: false,
+                    });
+                } else if (this.props.pending) {
                     this.props.onUpdateSuccess(
                         `Successfully deleted pending member ${name}`,
                         true
@@ -167,6 +189,108 @@ export default class MemberRow extends React.Component {
         });
     }
 
+    onClickEditDate(dateType, ts) {
+        this.setState({
+            showEdit: true,
+            dateType,
+            date: ts ? new Date(ts) : null,
+        });
+    }
+
+    onClickEditDateCancel() {
+        this.setState({
+            showEdit: false,
+            errorMessage: null,
+            date: null,
+        });
+    }
+
+    onDateChange(date) {
+        if (date && date.length === 0) {
+            date = null;
+        }
+        this.setState({
+            date,
+        });
+    }
+
+    onSubmitEdit(dateType) {
+        let collectionName = this.props.collection;
+        let date = this.state.date;
+        let member = AppUtils.deepClone(this.props.details);
+        if (dateType === EDITABLE_DATE_ENUM.EXPIRATION) {
+            member.expiration = date
+                ? this.localDate.uxDatetimeToRDLTimestamp(date)
+                : '';
+        } else if (dateType === EDITABLE_DATE_ENUM.REMINDER) {
+            member.reviewReminder = date
+                ? this.localDate.uxDatetimeToRDLTimestamp(date)
+                : '';
+        }
+        this.props
+            .editMember(
+                this.props.domain,
+                collectionName,
+                this.props.category,
+                member,
+                this.state.justification
+                    ? this.state.justification
+                    : 'updated using Athenz UI',
+                this.props._csrf
+            )
+            .then(() => {
+                this.props.onUpdateSuccess(
+                    `Successfully edited ${dateType.toLowerCase()} date`,
+                    true
+                );
+                this.setState({
+                    showEdit: false,
+                });
+            })
+            .catch((err) => {
+                this.setState({
+                    errorMessage: RequestUtils.xhrErrorCheckHelper(err),
+                });
+            });
+    }
+
+    isMemberDisabled(member) {
+        if (member.systemDisabled && member.systemDisabled > 0) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    isMemberExpired(member) {
+        return member.expiration ? 
+            this.localDate.isExpired(
+                member.expiration,
+                this.props.timeZone
+            ) : false;
+    }
+
+    setupWarningTooltip(memberExpired, memberDisabled, member) {
+        var tooltip = "Member is ";
+        var parts = [];
+        if (memberExpired) {
+            parts.push("expired");
+        }
+        if (memberDisabled) {
+            if ((member.systemDisabled & MEMBER_ATHENZ_SYSTEM_DISABLED) === MEMBER_ATHENZ_SYSTEM_DISABLED) {
+                parts.push("disabled by the Athenz System");
+            } 
+            if ((member.systemDisabled & MEMBER_AUTHORITY_FILTER_DISABLED) === MEMBER_AUTHORITY_FILTER_DISABLED) {
+                parts.push("disabled by the Authority Filter");
+            } 
+            if ((member.systemDisabled & MEMBER_AUTHORITY_SYSTEM_SUSPENDED) === MEMBER_AUTHORITY_SYSTEM_SUSPENDED) {
+                parts.push("suspended by the Authority System");
+            }
+        }
+        tooltip += parts.join(", and ");
+        return tooltip;
+    }
+
     render() {
         let rows = [];
         let left = 'left';
@@ -177,6 +301,25 @@ export default class MemberRow extends React.Component {
         let clickDelete = this.onClickDelete.bind(this, this.state.deleteName);
         let submitDelete = this.onSubmitDelete.bind(this, this.props.domain);
         let clickDeleteCancel = this.onClickDeleteCancel.bind(this);
+        let clickEditExpiration = this.onClickEditDate.bind(
+            this,
+            EDITABLE_DATE_ENUM.EXPIRATION,
+            this.props.details.expiration
+        );
+        let clickEditReviewReminder = this.onClickEditDate.bind(
+            this,
+            EDITABLE_DATE_ENUM.REMINDER,
+            this.props.details.reviewReminder
+        );
+        let clickEditDateCancel = this.onClickEditDateCancel.bind(this);
+        let submitEditExpiration = this.onSubmitEdit.bind(
+            this,
+            EDITABLE_DATE_ENUM.EXPIRATION
+        );
+        let submitEditReviewReminder = this.onSubmitEdit.bind(
+            this,
+            EDITABLE_DATE_ENUM.REMINDER
+        );
         let isSuccess =
             member.memberName +
                 '-' +
@@ -186,25 +329,46 @@ export default class MemberRow extends React.Component {
                 '-' +
                 this.props.collection ===
             this.props.newMember;
+        // setting up warning for suspended/disabled users
+        let memberExpired = this.isMemberExpired(member);
+        let memberDisabled = this.isMemberDisabled(member);
+        let showWarningIcon = memberDisabled || memberExpired;
+        let warningTooltip = this.setupWarningTooltip(memberExpired, memberDisabled, member)
+
         rows.push(
             <TrStyled
                 key={member.memberName}
                 data-testid='member-row'
                 isSuccess={isSuccess}
             >
+                <TDStyled color={color} align={left}>
+                { showWarningIcon ? 
+                   <span>
+                           <Icon
+                               icon={'warning'}
+                               color={colors.red800}
+                               size={'1.25em'}
+                               verticalAlign={'middle'}
+                               title={warningTooltip}
+                           />
+                    </span> 
+                    : ''
+                }
+               </TDStyled>
                 {member.memberName.includes(':group.') ? (
                     <GroupTDStyled color={color} align={left}>
                         <StyledMenu
                             placement='right'
                             boundary='scrollParent'
+                            triggerOn='click'
                             trigger={
                                 <StyledSpan>{member.memberName}</StyledSpan>
                             }
                         >
                             <GroupMemberList
-                                api={this.api}
                                 member={member}
                                 groupName={member.memberName}
+                                timeZone={this.props.timeZone}
                             />
                         </StyledMenu>
                     </GroupTDStyled>
@@ -218,23 +382,68 @@ export default class MemberRow extends React.Component {
                 </TDStyled>
 
                 <TDStyled color={color} align={left}>
-                    {member.expiration
-                        ? this.localDate.getLocalDate(
-                              member.expiration,
-                              'UTC',
-                              'UTC'
-                          )
-                        : 'N/A'}
-                </TDStyled>
-                {this.props.category != 'group' && (
-                    <TDStyled color={color} align={left}>
-                        {member.reviewReminder
+                    <EditDiv expired={memberExpired}>
+                        {member.expiration
                             ? this.localDate.getLocalDate(
-                                  member.reviewReminder,
-                                  'UTC',
-                                  'UTC'
+                                  member.expiration,
+                                  this.props.timeZone,
+                                  this.props.timeZone
                               )
                             : 'N/A'}
+                        <Menu
+                            placement='bottom-start'
+                            trigger={
+                                <span>
+                                    <Icon
+                                        icon={'edit'}
+                                        onClick={clickEditExpiration}
+                                        color={colors.icons}
+                                        isLink
+                                        size={'1.25em'}
+                                        verticalAlign={'text-bottom'}
+                                    />
+                                </span>
+                            }
+                        >
+                            <MenuDiv>Edit Expiration</MenuDiv>
+                        </Menu>
+                    </EditDiv>
+                </TDStyled>
+                {this.props.category !== 'group' && (
+                    <TDStyled color={color} align={left}>
+                        <EditDiv>
+                            {member.reviewReminder
+                                ? this.localDate.getLocalDate(
+                                      member.reviewReminder,
+                                      this.props.timeZone,
+                                      this.props.timeZone
+                                  )
+                                : 'N/A'}
+                            <Menu
+                                placement='bottom-start'
+                                trigger={
+                                    <span>
+                                        <Icon
+                                            icon={'edit'}
+                                            onClick={clickEditReviewReminder}
+                                            color={colors.icons}
+                                            isLink
+                                            size={'1.25em'}
+                                            verticalAlign={'text-bottom'}
+                                        />
+                                    </span>
+                                }
+                            >
+                                <MenuDiv>Edit Review Reminder</MenuDiv>
+                            </Menu>
+                        </EditDiv>
+                    </TDStyled>
+                )}
+                {this.props.pending && (
+                    <TDStyled color={color} align={left}>
+                        {NameUtils.getPendingStateToDisplay(
+                            member.pendingState
+                        )}
                     </TDStyled>
                 )}
                 <TDStyled color={color} align={center}>
@@ -259,6 +468,30 @@ export default class MemberRow extends React.Component {
             </TrStyled>
         );
 
+        if (this.state.showEdit) {
+            rows.push(
+                <UpdateModal
+                    showPicker={true}
+                    name={this.props.details.memberName}
+                    value={this.state.date}
+                    placeholder={'N/A'}
+                    isOpen={this.state.showEdit}
+                    cancel={clickEditDateCancel}
+                    submit={
+                        this.state.dateType === EDITABLE_DATE_ENUM.EXPIRATION
+                            ? submitEditExpiration
+                            : submitEditReviewReminder
+                    }
+                    key={this.props.details.memberName + '-edit'}
+                    showJustification={this.props.justificationRequired}
+                    message={`Are you sure you want to update the ${this.state.dateType.toLowerCase()} date for `}
+                    onJustification={this.saveJustification}
+                    onDateChange={this.onDateChange}
+                    errorMessage={this.state.errorMessage}
+                />
+            );
+        }
+
         if (this.state.showDelete) {
             rows.push(
                 <DeleteModal
@@ -280,3 +513,46 @@ export default class MemberRow extends React.Component {
         return rows;
     }
 }
+
+const mapDispatchToProps = (dispatch) => ({
+    deleteMember: (
+        domainName,
+        collectionName,
+        category,
+        memberName,
+        auditRef,
+        pending,
+        _csrf
+    ) =>
+        dispatch(
+            deleteMember(
+                domainName,
+                collectionName,
+                category,
+                memberName,
+                auditRef,
+                pending,
+                _csrf
+            )
+        ),
+    editMember: (
+        domainName,
+        collectionName,
+        category,
+        member,
+        auditRef,
+        _csrf
+    ) =>
+        dispatch(
+            editMember(
+                domainName,
+                collectionName,
+                category,
+                member,
+                auditRef,
+                _csrf
+            )
+        ),
+});
+
+export default connect(null, mapDispatchToProps)(MemberRow);

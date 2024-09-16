@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Oath Holdings, Inc
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@ package com.yahoo.athenz.auth;
 
 import org.testng.annotations.Test;
 
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 import java.security.cert.X509Certificate;
 import java.util.Date;
 import java.util.EnumSet;
@@ -56,6 +56,11 @@ public class AuthorityTest {
             }
 
             @Override
+            public boolean isAttributeRevocable(String attribute) {
+                return attribute.equals("local");
+            }
+
+            @Override
             public Date getDateAttribute(String username, String attribute) {
                 return ("expiry".equals(attribute)) ? new Date() : null;
             }
@@ -63,6 +68,11 @@ public class AuthorityTest {
             @Override
             public String getUserEmail(String username) {
                 return username + "@example.com";
+            }
+
+            @Override
+            public String getUserManager(String username) {
+                return username + "-manager";
             }
         };
 
@@ -80,9 +90,12 @@ public class AuthorityTest {
 
         assertTrue(authority.isAttributeSet("john", "local"));
         assertFalse(authority.isAttributeSet("john", "remote"));
+        assertTrue(authority.isAttributeRevocable("local"));
+        assertFalse(authority.isAttributeRevocable("remote"));
         assertNull(authority.getDateAttribute("john", "review"));
         assertNotNull(authority.getDateAttribute("john", "expiry"));
         assertEquals(authority.getUserEmail("john"), "john@example.com");
+        assertEquals(authority.getUserManager("john"), "john-manager");
         assertEquals(authority.getID(), "Auth-ID");
     }
 
@@ -120,6 +133,7 @@ public class AuthorityTest {
         assertNull(authority.authenticate("creds", "127.0.0.1", "GET", null));
         assertTrue(authority.booleanAttributesSupported().isEmpty());
         assertFalse(authority.isAttributeSet("john", "remote"));
+        assertTrue(authority.isAttributeRevocable("remove"));
         assertTrue(authority.dateAttributesSupported().isEmpty());
         assertNull(authority.getDateAttribute("john", "review"));
         assertNull(authority.getUserEmail("john"), "john@example.com");

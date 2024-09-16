@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Oath Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,6 @@ import org.testng.annotations.Test;
 
 import java.util.*;
 
-@SuppressWarnings({"EqualsWithItself", "EqualsBetweenInconvertibleTypes"})
 public class SSHCertificateTest {
 
     @Test
@@ -31,17 +30,24 @@ public class SSHCertificateTest {
 
         SSHCertRequestData data1 = new SSHCertRequestData();
         data1.setPublicKey("publickey1");
+        data1.setDestinations(Arrays.asList("dest1", "dest2"));
+        data1.setPrincipals(Collections.singletonList("principal1"));
+        data1.setSources(Collections.singletonList("src1"));
+        data1.setTouchPublicKey("publickey2");
+        data1.setCaPubKeyAlgo(3);
+        data1.setCommand("command");
 
         SSHCertRequestData data2 = new SSHCertRequestData();
         data2.setPublicKey("publickey1");
-
-        assertEquals(data1, data1);
-        assertEquals(data1, data2);
-
         data2.setDestinations(Arrays.asList("dest1", "dest2"));
         data2.setPrincipals(Collections.singletonList("principal1"));
         data2.setSources(Collections.singletonList("src1"));
         data2.setTouchPublicKey("publickey2");
+        data2.setCaPubKeyAlgo(3);
+        data2.setCommand("command");
+
+        assertEquals(data1, data1);
+        assertEquals(data1, data2);
 
         // verify getters
         assertEquals("publickey1", data2.getPublicKey());
@@ -49,50 +55,60 @@ public class SSHCertificateTest {
         assertEquals(Collections.singletonList("principal1"), data2.getPrincipals());
         assertEquals(Collections.singletonList("src1"), data2.getSources());
         assertEquals("publickey2", data2.getTouchPublicKey());
+        assertEquals(data2.getCaPubKeyAlgo().intValue(), 3);
+        assertEquals(data2.getCommand(), "command");
 
+        data1.setPrincipals(Collections.singletonList("principal2"));
         assertNotEquals(data2, data1);
-
+        data1.setPrincipals(null);
+        assertNotEquals(data2, data1);
         data1.setPrincipals(Collections.singletonList("principal1"));
-        assertNotEquals(data2, data1);
-
-        data1.setSources(null);
-        assertNotEquals(data2, data1);
+        assertEquals(data2, data1);
 
         data1.setSources(Collections.singletonList("src1a"));
         assertNotEquals(data2, data1);
-
+        data1.setSources(null);
+        assertNotEquals(data2, data1);
         data1.setSources(Collections.singletonList("src1"));
-        assertNotEquals(data2, data1);
-
-        data1.setDestinations(null);
-        assertNotEquals(data2, data1);
+        assertEquals(data2, data1);
 
         data1.setDestinations(Collections.singletonList("dest1"));
         assertNotEquals(data2, data1);
-
+        data1.setDestinations(null);
+        assertNotEquals(data2, data1);
         data1.setDestinations(Arrays.asList("dest1", "dest2"));
-        assertNotEquals(data2, data1);
-
-        data1.setPublicKey(null);
-        assertNotEquals(data2, data1);
+        assertEquals(data2, data1);
 
         data1.setPublicKey("publickey1a");
         assertNotEquals(data2, data1);
-
+        data1.setPublicKey(null);
+        assertNotEquals(data2, data1);
         data1.setPublicKey("publickey1");
-        assertNotEquals(data2, data1);
-
-        data1.setTouchPublicKey(null);
-        assertNotEquals(data2, data1);
+        assertEquals(data2, data1);
 
         data1.setTouchPublicKey("publickey2a");
         assertNotEquals(data2, data1);
-
+        data1.setTouchPublicKey(null);
+        assertNotEquals(data2, data1);
         data1.setTouchPublicKey("publickey2");
         assertEquals(data2, data1);
 
-        assertNotEquals(data1, null);
-        assertNotEquals("data", data2);
+        data1.setCommand("command1");
+        assertNotEquals(data2, data1);
+        data1.setCommand(null);
+        assertNotEquals(data2, data1);
+        data1.setCommand("command");
+        assertEquals(data2, data1);
+
+        data1.setCaPubKeyAlgo(2);
+        assertNotEquals(data2, data1);
+        data1.setCaPubKeyAlgo(null);
+        assertNotEquals(data2, data1);
+        data1.setCaPubKeyAlgo(3);
+        assertEquals(data2, data1);
+
+        assertNotEquals(null, data2);
+        assertNotEquals("data1", data1);
     }
 
     @Test
@@ -114,6 +130,8 @@ public class SSHCertificateTest {
         meta2.setInstanceId("id");
         meta2.setPrevCertValidFrom(Timestamp.fromMillis(100));
         meta2.setPrevCertValidTo(Timestamp.fromMillis(200));
+        meta2.setTransId("id1");
+        meta2.setKeyIdPrincipals(Collections.singletonList("principal1"));
 
         //getters
         assertEquals("req", meta2.getRequestor());
@@ -125,6 +143,8 @@ public class SSHCertificateTest {
         assertEquals("athenz.api", meta2.getAthenzService());
         assertEquals(Timestamp.fromMillis(100), meta2.getPrevCertValidFrom());
         assertEquals(Timestamp.fromMillis(200), meta2.getPrevCertValidTo());
+        assertEquals("id1", meta2.getTransId());
+        assertEquals(Collections.singletonList("principal1"), meta2.getKeyIdPrincipals());
 
         assertNotEquals(meta2, meta1);
 
@@ -138,9 +158,26 @@ public class SSHCertificateTest {
         meta1.setInstanceId("id");
         meta1.setPrevCertValidFrom(Timestamp.fromMillis(100));
         meta1.setPrevCertValidTo(Timestamp.fromMillis(200));
+        meta1.setTransId("id1");
+        meta1.setKeyIdPrincipals(Collections.singletonList("principal1"));
+
         assertEquals(meta1, meta2);
 
         // now process each attribute and verify matching
+
+        meta1.setTransId("id2");
+        assertNotEquals(meta2, meta1);
+        meta1.setTransId(null);
+        assertNotEquals(meta2, meta1);
+        meta1.setTransId("id1");
+        assertEquals(meta2, meta1);
+
+        meta1.setKeyIdPrincipals(Collections.singletonList("principal2"));
+        assertNotEquals(meta2, meta1);
+        meta1.setKeyIdPrincipals(null);
+        assertNotEquals(meta2, meta1);
+        meta1.setKeyIdPrincipals(Collections.singletonList("principal1"));
+        assertEquals(meta2, meta1);
 
         meta1.setRequestor("req2");
         assertNotEquals(meta2, meta1);
@@ -222,49 +259,54 @@ public class SSHCertificateTest {
         SSHCertRequest req1 = new SSHCertRequest();
         SSHCertRequest req2 = new SSHCertRequest();
 
+        req1.setCertRequestData(new SSHCertRequestData());
+        req1.setCertRequestMeta(new SSHCertRequestMeta());
+        req1.setCsr("csr");
+        req1.setAttestationData("data");
+
+        req2.setCertRequestData(new SSHCertRequestData());
+        req2.setCertRequestMeta(new SSHCertRequestMeta());
+        req2.setCsr("csr");
+        req2.setAttestationData("data");
+
+        assertEquals(req1.getCertRequestData(), new SSHCertRequestData());
+        assertEquals(req1.getCertRequestMeta(), new SSHCertRequestMeta());
+        assertEquals(req1.getCsr(), "csr");
+        assertEquals(req1.getAttestationData(), "data");
+
         assertEquals(req1, req2);
         assertEquals(req1, req1);
 
-        SSHCertRequestMeta meta1 = new SSHCertRequestMeta();
-        SSHCertRequestMeta meta2 = new SSHCertRequestMeta();
+        req1.setAttestationData("data2");
+        assertNotEquals(req2, req1);
+        req1.setAttestationData(null);
+        assertNotEquals(req2, req1);
+        req1.setAttestationData("data");
+        assertEquals(req2, req1);
 
-        meta1.setRequestor("req1");
-        meta2.setRequestor("req2");
+        req1.setCsr("csr2");
+        assertNotEquals(req2, req1);
+        req1.setCsr(null);
+        assertNotEquals(req2, req1);
+        req1.setCsr("csr");
+        assertEquals(req2, req1);
 
-        SSHCertRequestData data1 = new SSHCertRequestData();
-        SSHCertRequestData data2 = new SSHCertRequestData();
+        req1.setCertRequestData(new SSHCertRequestData().setCommand("command"));
+        assertNotEquals(req2, req1);
+        req1.setCertRequestData(null);
+        assertNotEquals(req2, req1);
+        req1.setCertRequestData(new SSHCertRequestData());
+        assertEquals(req2, req1);
 
-        data1.setPublicKey("publickey1");
-        data2.setPublicKey("publickey2");
+        req1.setCertRequestMeta(new SSHCertRequestMeta().setCertType("host"));
+        assertNotEquals(req2, req1);
+        req1.setCertRequestMeta(null);
+        assertNotEquals(req2, req1);
+        req1.setCertRequestMeta(new SSHCertRequestMeta());
+        assertEquals(req2, req1);
 
-        req1.setCsr("csr1");
-        assertEquals("csr1", req1.getCsr());
-
-        req1.setCertRequestData(data1);
-        assertEquals(data1, req1.getCertRequestData());
-
-        req1.setCertRequestMeta(meta1);
-        assertEquals(meta1, req1.getCertRequestMeta());
-
-        req2.setCertRequestData(data2);
-        req2.setCertRequestMeta(meta2);
-
-        assertNotEquals(req1, req2);
-
-        data2.setPublicKey("publickey1");
-        assertNotEquals(req1, req2);
-
-        meta2.setRequestor("req1");
-        assertNotEquals(req1, req2);
-
-        req2.setCsr("csr2");
-        assertNotEquals(req1, req2);
-
-        req2.setCsr("csr1");
-        assertEquals(req1, req2);
-
-        assertNotEquals(null, req1);
-        assertNotEquals("data", req1);
+        assertNotEquals(null, req2);
+        assertNotEquals("req1", req1);
     }
 
     @Test
@@ -318,30 +360,34 @@ public class SSHCertificateTest {
         SSHCertificates certs1 = new SSHCertificates();
         SSHCertificates certs2 = new SSHCertificates();
 
-        assertEquals(certs1, certs2);
-        assertEquals(certs1, certs1);
-
         SSHCertificate cert = new SSHCertificate();
         cert.setCertificate("cert");
 
         certs1.setCertificates(Collections.singletonList(cert));
-        assertEquals(Collections.singletonList(cert), certs1.getCertificates());
-
-        assertNotEquals(certs1, certs2);
+        certs1.setCertificateSigner("signer");
 
         certs2.setCertificates(Collections.singletonList(cert));
-        assertEquals(certs1, certs2);
-
         certs2.setCertificateSigner("signer");
-        assertNotEquals(certs1, certs2);
 
-        assertEquals("signer", certs2.getCertificateSigner());
-
-        certs1.setCertificateSigner("signer2");
-        assertNotEquals(certs1, certs2);
-
-        certs1.setCertificateSigner("signer");
         assertEquals(certs1, certs2);
+        assertEquals(certs1, certs1);
+
+        assertEquals(Collections.singletonList(cert), certs1.getCertificates());
+        assertEquals(certs1.getCertificateSigner(), "signer");
+
+        certs1.setCertificateSigner("signer1");
+        assertNotEquals(certs2, certs1);
+        certs1.setCertificateSigner(null);
+        assertNotEquals(certs2, certs1);
+        certs1.setCertificateSigner("signer");
+        assertEquals(certs2, certs1);
+
+        certs1.setCertificates(Collections.emptyList());
+        assertNotEquals(certs2, certs1);
+        certs1.setCertificates(null);
+        assertNotEquals(certs2, certs1);
+        certs1.setCertificates(Collections.singletonList(cert));
+        assertEquals(certs2, certs1);
 
         assertNotEquals(certs2, null);
         assertNotEquals("certs", certs1);

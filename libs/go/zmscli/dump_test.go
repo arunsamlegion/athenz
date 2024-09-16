@@ -1,4 +1,4 @@
-// Copyright 2016 Yahoo Inc.
+// Copyright The Athenz Authors
 // Licensed under the terms of the Apache version 2.0 license. See LICENSE file for terms.
 
 package zmscli
@@ -7,24 +7,6 @@ import (
 	"bytes"
 	"testing"
 )
-
-func TestLocalName(t *testing.T) {
-
-	local := localName("coretech:role.role1", ":role.")
-	if local != "role1" {
-		t.Error("coretech:role.role1 didn't return role1 with prefix :role.")
-	}
-
-	local = localName("coretech:role.role1.role2", ":role.")
-	if local != "role1.role2" {
-		t.Error("coretech:role.role1.role2 didn't return role1.role2 with prefix :role.")
-	}
-
-	local = localName("coretech.service1", ":service.")
-	if local != "coretech.service1" {
-		t.Error("coretech.service1 didn't return service1 with prefix :service.")
-	}
-}
 
 func TestDisplayObjectName(t *testing.T) {
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Oath Holdings Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,6 +14,10 @@
  * limitations under the License.
  */
 package com.yahoo.athenz.auth.token.jwts;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.math.BigInteger;
 import java.security.AlgorithmParameters;
@@ -30,6 +34,13 @@ public class Key {
 
     private static final Map<String, String> EC_CURVE_ALIASES = createCurveAliasMap();
 
+    private static final ObjectMapper JSON_MAPPER = initJsonMapper();
+
+    static ObjectMapper initJsonMapper() {
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        return mapper;
+    }
     private String alg;
     private String e;
     private String kid;
@@ -149,5 +160,9 @@ public class Key {
                 throw new NoSuchAlgorithmException(kty);
         }
         return publicKey;
+    }
+    
+    public static Key fromString(String jwkStr) throws JsonProcessingException {
+        return JSON_MAPPER.readValue(jwkStr, Key.class);
     }
 }

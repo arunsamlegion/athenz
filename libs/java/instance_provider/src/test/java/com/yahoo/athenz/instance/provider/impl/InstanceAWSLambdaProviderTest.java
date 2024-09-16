@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Yahoo Holdings, Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
 package com.yahoo.athenz.instance.provider.impl;
 
 import static org.testng.Assert.assertNull;
-import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertEquals;
 
 import java.util.HashMap;
@@ -43,8 +42,7 @@ public class InstanceAWSLambdaProviderTest {
     public void testInitializeDefaults() {
         InstanceAWSLambdaProvider provider = new InstanceAWSLambdaProvider();
         provider.initialize("provider", "com.yahoo.athenz.instance.provider.impl.InstanceAWSLambdaProvider", null, null);
-        assertNull(provider.awsPublicKey);
-        assertEquals(provider.bootTimeOffset, 300000);
+        assertEquals(provider.getTimeOffsetInMilli(), 300000);
         provider.close();
     }
     
@@ -52,13 +50,12 @@ public class InstanceAWSLambdaProviderTest {
     public void testInitialize() {
         
         InstanceAWSLambdaProvider provider = new InstanceAWSLambdaProvider();
-        System.setProperty(InstanceAWSProvider.AWS_PROP_PUBLIC_CERT, "src/test/resources/aws_public.cert");
+        System.setProperty(InstanceAWSUtils.AWS_PROP_PUBLIC_CERT, "src/test/resources/aws_public.cert");
         System.setProperty(InstanceAWSProvider.AWS_PROP_BOOT_TIME_OFFSET, "60");
         provider.initialize("provider", "com.yahoo.athenz.instance.provider.impl.InstanceAWSLambdaProvider", null, null);
-        assertNotNull(provider.awsPublicKey);
-        assertEquals(provider.bootTimeOffset, 60000);
+        assertEquals(provider.getTimeOffsetInMilli(), 60000);
         provider.close();
-        System.clearProperty(InstanceAWSProvider.AWS_PROP_PUBLIC_CERT);
+        System.clearProperty(InstanceAWSUtils.AWS_PROP_PUBLIC_CERT);
         System.clearProperty(InstanceAWSProvider.AWS_PROP_BOOT_TIME_OFFSET);
     }
     
@@ -67,7 +64,7 @@ public class InstanceAWSLambdaProviderTest {
         
         System.setProperty(InstanceAWSProvider.AWS_PROP_DNS_SUFFIX, "athenz.cloud");
         MockInstanceAWSLambdaProvider provider = new MockInstanceAWSLambdaProvider();
-        System.setProperty(InstanceAWSProvider.AWS_PROP_PUBLIC_CERT, "src/test/resources/aws_public.cert");
+        System.setProperty(InstanceAWSUtils.AWS_PROP_PUBLIC_CERT, "src/test/resources/aws_public.cert");
         provider.initialize("provider", "com.yahoo.athenz.instance.provider.impl.InstanceAWSLambdaProvider", null, null);
         
         InstanceConfirmation confirmation = new InstanceConfirmation()
@@ -89,7 +86,7 @@ public class InstanceAWSLambdaProviderTest {
         
         System.setProperty(InstanceAWSProvider.AWS_PROP_DNS_SUFFIX, "athenz.cloud");
         MockInstanceAWSLambdaProvider provider = new MockInstanceAWSLambdaProvider();
-        System.setProperty(InstanceAWSProvider.AWS_PROP_PUBLIC_CERT, "src/test/resources/aws_public.cert");
+        System.setProperty(InstanceAWSUtils.AWS_PROP_PUBLIC_CERT, "src/test/resources/aws_public.cert");
         provider.initialize("provider", "com.yahoo.athenz.instance.provider.impl.InstanceAWSLambdaProvider", null, null);
         
         InstanceConfirmation confirmation = new InstanceConfirmation()

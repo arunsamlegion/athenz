@@ -16,8 +16,8 @@
 import React from 'react';
 import styled from '@emotion/styled';
 import { colors } from '../denali/styles';
-import RuleRow from './RuleRow';
 import Icon from '../denali/icons/Icon';
+import RuleRow from './RuleRow';
 
 const StyleTable = styled.table`
     width: 100%;
@@ -62,7 +62,7 @@ const TableHeadStyledRoleName = styled.th`
     word-break: break-all;
 `;
 
-const TableCaptionStyled = styled.caption`
+const TableThStyled = styled.th`
     height: 25px;
     margin-left: 10px;
     margin-top: 10px;
@@ -71,6 +71,7 @@ const TableCaptionStyled = styled.caption`
     vertical-align: middle;
     word-break: break-all;
     display: block;
+    font-weight: lighter;
 `;
 
 const LeftMarginSpan = styled.span`
@@ -82,7 +83,6 @@ export default class RuleTable extends React.Component {
     constructor(props) {
         super(props);
         this.api = props.api;
-
         this.state = {
             expanded: true,
         };
@@ -126,11 +126,11 @@ export default class RuleTable extends React.Component {
                     details={item}
                     idx={i}
                     color={color}
-                    api={this.api}
                     key={key}
                     onUpdateSuccess={this.props.onSubmit}
                     _csrf={this.props._csrf}
-                    justificationRequired={this.props.justificationRequired}
+                    pageFeatureFlag={this.props.pageFeatureFlag}
+                    api={this.api}
                 />
             );
         });
@@ -139,7 +139,35 @@ export default class RuleTable extends React.Component {
             return (
                 <StyleTable data-testid='segmentation-rule-table'>
                     <thead>
-                        <TableCaptionStyled>
+                        <tr>
+                            <TableThStyled>
+                                <LeftMarginSpan>
+                                    <Icon
+                                        icon={
+                                            this.state.expanded
+                                                ? arrowup
+                                                : arrowdown
+                                        }
+                                        onClick={expandRules}
+                                        color={colors.icons}
+                                        isLink
+                                        size={'1.25em'}
+                                        verticalAlign={'text-bottom'}
+                                    />
+                                </LeftMarginSpan>
+                                {`${caption} (${length})`}
+                            </TableThStyled>
+                        </tr>
+                    </thead>
+                </StyleTable>
+            );
+        }
+
+        return (
+            <StyleTable data-testid='segmentation-rule-table'>
+                <thead>
+                    <tr>
+                        <TableThStyled>
                             <LeftMarginSpan>
                                 <Icon
                                     icon={
@@ -155,28 +183,8 @@ export default class RuleTable extends React.Component {
                                 />
                             </LeftMarginSpan>
                             {`${caption} (${length})`}
-                        </TableCaptionStyled>
-                    </thead>
-                </StyleTable>
-            );
-        }
-
-        return (
-            <StyleTable data-testid='segmentation-rule-table'>
-                <thead>
-                    <TableCaptionStyled>
-                        <LeftMarginSpan>
-                            <Icon
-                                icon={this.state.expanded ? arrowup : arrowdown}
-                                onClick={expandRules}
-                                color={colors.icons}
-                                isLink
-                                size={'1.25em'}
-                                verticalAlign={'text-bottom'}
-                            />
-                        </LeftMarginSpan>
-                        {`${caption} (${length})`}
-                    </TableCaptionStyled>
+                        </TableThStyled>
+                    </tr>
                     <tr>
                         <TableHeadStyledRoleName align={left}>
                             Identifier
@@ -195,6 +203,7 @@ export default class RuleTable extends React.Component {
                             {inbound ? 'Source Port' : 'Destination Port'}
                         </TableHeadStyled>
                         <TableHeadStyled align={left}>Layer</TableHeadStyled>
+                        <TableHeadStyled align={left}>Scope</TableHeadStyled>
                         <TableHeadStyled align={center}>
                             Enforcement State
                         </TableHeadStyled>

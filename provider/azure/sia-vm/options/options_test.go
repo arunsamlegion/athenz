@@ -1,5 +1,5 @@
 //
-// Copyright 2020 Verizon Media
+// Copyright The Athenz Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,12 +18,12 @@ package options
 
 import (
 	"fmt"
+	"github.com/AthenZ/athenz/provider/azure/sia-vm/data/attestation"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/AthenZ/athenz/provider/azure/sia-vm/data/attestation"
-	"io/ioutil"
 	"log"
 	"os"
+	"os/exec"
 	"os/user"
 	"strconv"
 	"strings"
@@ -59,7 +59,8 @@ func TestOptionsNoConfig(t *testing.T) {
 		Document:          nil,
 	}
 
-	opts, e := NewOptions([]byte{}, &identityDocument, "/tmp", "1.0.0", "", "", "zts-azure-domain", "US", "azure.provider", os.Stdout)
+	ztsAzureDomains := []string{"zts-azure-domain"}
+	opts, e := NewOptions([]byte{}, &identityDocument, "/tmp", "1.0.0", "", "", ztsAzureDomains, "US", "azure.provider")
 	require.Nilf(t, e, "error should be empty, error: %v", e)
 	require.NotNil(t, opts, "should be able to get Options")
 
@@ -67,7 +68,7 @@ func TestOptionsNoConfig(t *testing.T) {
 	assert.True(t, len(opts.Services) == 1)
 	assert.True(t, opts.Domain == "athenz")
 	assert.True(t, opts.Name == "athenz.hockey")
-	assert.True(t, assertService(opts.Services[0], Service{Name: "hockey", Uid: 0, Gid: 0}))
+	assert.True(t, assertService(opts.Services[0], Service{Name: "hockey", Uid: idCommandId("-u"), Gid: idCommandId("-g")}))
 }
 
 // TestOptionsWithConfig test the scenario when /etc/sia/sia_config is present
@@ -77,7 +78,9 @@ func TestOptionsWithConfig(t *testing.T) {
   		"service": "api",
   		"services": {
     		"api": {},
-    		"ui": {},
+			"ui": {
+				"user": "root"
+			},
 			"yamas": {
 				"user": "nobody",
 				"group": "sys"
@@ -105,7 +108,8 @@ func TestOptionsWithConfig(t *testing.T) {
 		Document:          nil,
 	}
 
-	opts, e := NewOptions([]byte(config), &identityDocument, "/tmp", "1.0.0", "", "", "zts-azure-domain", "US", "azure.provider", os.Stdout)
+	ztsAzureDomains := []string{"zts-azure-domain"}
+	opts, e := NewOptions([]byte(config), &identityDocument, "/tmp", "1.0.0", "", "", ztsAzureDomains, "US", "azure.provider")
 	require.Nilf(t, e, "error should be empty, error: %v", e)
 	require.NotNil(t, opts, "should be able to get Options")
 
@@ -116,7 +120,7 @@ func TestOptionsWithConfig(t *testing.T) {
 
 	// Zeroth service should be the one from "service" key, the remaining are from "services" in no particular order
 	assert.True(t, assertService(opts.Services[0], Service{Name: "api", User: "nobody", Uid: getUid("nobody"), Gid: getUserGid("nobody")}))
-	assert.True(t, assertInServices(opts.Services[1:], Service{Name: "ui"}))
+	assert.True(t, assertInServices(opts.Services[1:], Service{Name: "ui", User: "root", Uid: 0, Gid: 0}))
 	assert.True(t, assertInServices(opts.Services[1:], Service{Name: "yamas", User: "nobody", Uid: getUid("nobody"), Group: "sys", Gid: getGid(t, "sys")}))
 }
 
@@ -150,7 +154,8 @@ func TestOptionsNoService(t *testing.T) {
 		Document:          nil,
 	}
 
-	_, e := NewOptions([]byte(config), &identityDocument, "/tmp", "1.0.0", "", "", "zts-azure-domain", "US", "azure.provider", os.Stdout)
+	ztsAzureDomains := []string{"zts-azure-domain"}
+	_, e := NewOptions([]byte(config), &identityDocument, "/tmp", "1.0.0", "", "", ztsAzureDomains, "US", "azure.provider")
 	require.NotNilf(t, e, "error should be thrown, error: %v", e)
 
 	config = `{
@@ -168,7 +173,7 @@ func TestOptionsNoService(t *testing.T) {
   		]
 	}`
 
-	_, e = NewOptions([]byte(config), &identityDocument, "/tmp", "1.0.0", "", "", "zts-azure-domain", "US", "azure.provider", os.Stdout)
+	_, e = NewOptions([]byte(config), &identityDocument, "/tmp", "1.0.0", "", "", ztsAzureDomains, "US", "azure.provider")
 	require.NotNilf(t, e, "error should be thrown, error: %v", e)
 }
 
@@ -199,7 +204,8 @@ func TestOptionsNoServices(t *testing.T) {
 		Document:          nil,
 	}
 
-	opts, e := NewOptions([]byte(config), &identityDocument, "/tmp", "1.0.0", "", "", "zts-azure-domain", "US", "azure.provider", os.Stdout)
+	ztsAzureDomains := []string{"zts-azure-domain"}
+	opts, e := NewOptions([]byte(config), &identityDocument, "/tmp", "1.0.0", "", "", ztsAzureDomains, "US", "azure.provider")
 	require.Nilf(t, e, "error should not be thrown, error: %v", e)
 
 	// Make sure one service is set
@@ -210,21 +216,22 @@ func TestOptionsNoServices(t *testing.T) {
 }
 
 func assertService(expected Service, actual Service) bool {
-	log.Printf("expected: %+v", expected)
-	log.Printf("actual: %+v", actual)
+	log.Printf("expected: %+v\n", expected)
+	log.Printf("actual: %+v\n", actual)
 	return expected.Name == actual.Name &&
 		expected.User == actual.User &&
 		expected.Uid == actual.Uid &&
 		expected.Group == actual.Group &&
 		expected.Gid == actual.Gid &&
-		expected.Filename == actual.Filename
+		expected.KeyFilename == actual.KeyFilename &&
+		expected.CertFilename == actual.CertFilename
 }
 
 func assertInServices(svcs []Service, actual Service) bool {
-	log.Printf("svcs passed: %+v", svcs)
-	log.Printf("actual: %+v", actual)
+	log.Printf("svcs passed: %+v\n", svcs)
+	log.Printf("actual: %+v\n", actual)
 	for _, s := range svcs {
-		if s.Name == actual.Name && s.User == actual.User && s.Uid == actual.Uid && s.Group == actual.Group && s.Gid == actual.Gid && s.Filename == actual.Filename {
+		if s.Name == actual.Name && s.User == actual.User && s.Uid == actual.Uid && s.Group == actual.Group && s.Gid == actual.Gid && s.KeyFilename == actual.KeyFilename && s.CertFilename == actual.CertFilename {
 			return true
 		}
 
@@ -245,7 +252,7 @@ func getUserGid(name string) int {
 }
 
 func getGid(t *testing.T, group string) int {
-	out, err := ioutil.ReadFile("/etc/group")
+	out, err := os.ReadFile("/etc/group")
 	require.Nil(t, err)
 
 	for _, line := range strings.Split(string(out), "\n") {
@@ -259,4 +266,17 @@ func getGid(t *testing.T, group string) int {
 
 	require.FailNow(t, fmt.Sprintf("Unable to find group: %q", group))
 	return 0
+}
+
+func idCommandId(arg string) int {
+	out, err := exec.Command("id", arg).Output()
+	if err != nil {
+		log.Fatalf("Cannot exec 'id %s': %v\n", arg, err)
+	}
+	s := strings.Trim(string(out), "\n\r ")
+	id, err := strconv.Atoi(s)
+	if err != nil {
+		log.Fatalf("Unexpected UID/GID format in user record: %s\n", string(out))
+	}
+	return id
 }

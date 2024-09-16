@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Yahoo Holdings, Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
@@ -58,17 +57,17 @@ public class KeyRefresher {
      * 3) pass those proxies into the Utils.BuildSSLContext method
      * 4) use that SSLContext when starting a server
      * 5) once server is started, call startup() (in this class)
-     *
+     * <p>
      *  at this point, when the private/public keys / trustStore files change, it will automatically
      *  update the SSL context so any new connections will use the new values, and no old connections
      *  will fail.  So presumably when those connections die (from expiring TTL values) they will create
      *  new connections and leverage the new values.  No interruption to the service will be experienced.
-     *
+     * <p>
      * Once created, it needs to be turned on using the startup() method.  It will then
      * wake up once an hour and check the various public/private keys and trust store files
      * to see if they have been updated.  If so, it will automatically update the SSL context
      * correlating to the client/server that the *ManagerProxy objects are tied to.
-     *
+     * <p>
      * If you want to stop this thread, you need to call the shutdown() method
      *
      * @param athenzPublicCert the file path to public certificate file
@@ -81,7 +80,6 @@ public class KeyRefresher {
     public KeyRefresher(final String athenzPublicCert, final String athenzPrivateKey, final TrustStore trustStore,
             final KeyManagerProxy keyManagerProxy, final TrustManagerProxy trustManagerProxy) throws NoSuchAlgorithmException {
         this(athenzPublicCert, athenzPrivateKey, trustStore, keyManagerProxy, trustManagerProxy, null);
-        
     }
     
     /**
@@ -127,7 +125,8 @@ public class KeyRefresher {
             // run loop contents here
             while (!shutdown) {
                 try {
-                    if (haveFilesBeenChanged(trustStore.getFilePath(), lastTrustManagerChecksum)) {
+                    if (trustStore != null && trustManagerProxy != null
+                            && haveFilesBeenChanged(trustStore.getFilePath(), lastTrustManagerChecksum)) {
                         trustManagerProxy.setTrustManager(trustStore.getTrustManagers());
                         if (LOGGER.isDebugEnabled()) {
                             LOGGER.debug("KeyRefresher detected changes. Reloaded Trust Managers");
@@ -217,14 +216,14 @@ public class KeyRefresher {
             return false;
         }
 
-        try (InputStream is = Files.newInputStream(path);
-             DigestInputStream digestInputStream = new DigestInputStream(is, md)) {
-            //noinspection StatementWithEmptyBody
-            while (digestInputStream.read() != -1) {
-                // do nothing, just read until the EoF
+        try (InputStream is = Files.newInputStream(path)) {
+            byte[] buffer = new byte[1024];
+            int read;
+            while ((read = is.read(buffer)) > 0) {
+                md.update(buffer, 0, read);
             }
         } catch (IOException ex) {
-            //this is best effort, if we couldn't read the file, assume its the same
+            //this is best effort, if we couldn't read the file, assume it's the same
             LOGGER.warn("Error reading file {}", filePath, ex);
             return false;
         }

@@ -20,9 +20,6 @@ exports[`AddPolicy should render 1`] = `
   -webkit-box-align: flex-start;
   -ms-flex-align: flex-start;
   align-items: flex-start;
-  display: -webkit-box;
-  display: -webkit-flex;
-  display: -ms-flexbox;
   display: flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -55,9 +52,6 @@ exports[`AddPolicy should render 1`] = `
 
 .emotion-11 {
   box-sizing: border-box;
-  display: -webkit-inline-box;
-  display: -webkit-inline-flex;
-  display: -ms-inline-flexbox;
   display: inline-flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -155,9 +149,6 @@ exports[`AddPolicy should render 1`] = `
 }
 
 .emotion-21 {
-  display: -webkit-inline-box;
-  display: -webkit-inline-flex;
-  display: -ms-inline-flexbox;
   display: inline-flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -263,6 +254,13 @@ exports[`AddPolicy should render 1`] = `
   width: 8px;
 }
 
+.emotion-24>input[type='radio']:disabled:checked+label:after {
+  color: #d5d5d5;
+  border: 2px solid #d5d5d5;
+  background-color: #d5d5d5;
+  cursor: not-allowed;
+}
+
 .emotion-43 {
   position: relative;
   width: 100%;
@@ -278,9 +276,6 @@ exports[`AddPolicy should render 1`] = `
 
 .emotion-46 {
   box-sizing: border-box;
-  display: -webkit-inline-box;
-  display: -webkit-inline-flex;
-  display: -ms-inline-flexbox;
   display: inline-flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -382,9 +377,6 @@ exports[`AddPolicy should render 1`] = `
   -webkit-box-align: center;
   -ms-flex-align: center;
   align-items: center;
-  display: -webkit-box;
-  display: -webkit-flex;
-  display: -ms-flexbox;
   display: flex;
   height: 36px;
   position: absolute;
@@ -395,6 +387,118 @@ exports[`AddPolicy should render 1`] = `
   fill: #d5d5d5;
   cursor: pointer;
   vertical-align: text-bottom;
+}
+
+.emotion-62 {
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  box-sizing: border-box;
+  display: inline-block;
+  height: 16px;
+  line-height: 16px;
+  margin: 3px;
+  outline: 0;
+  position: relative;
+  vertical-align: middle;
+}
+
+.emotion-62>input[type='checkbox'] {
+  box-sizing: border-box;
+  cursor: pointer;
+  display: inline-block;
+  position: absolute;
+  top: 0;
+  visibility: hidden;
+}
+
+.emotion-62>input[type='checkbox']+label {
+  box-sizing: border-box;
+  cursor: pointer;
+  font-family: Helvetica,Arial,sans-serif;
+  font-size: 14px;
+  font-weight: 300;
+  height: 16px;
+  line-height: 16px;
+  padding: 0 10px 0 0;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.emotion-62>input[type='checkbox']+label:before {
+  background: #fff;
+  border: 2px solid rgba(54,151,242,0.5);
+  border-radius: 2px;
+  box-sizing: border-box;
+  content: '';
+  cursor: pointer;
+  display: inline-block;
+  height: 16px;
+  line-height: 16px;
+  margin: 0px 3px -3px 0px;
+  -webkit-transition: all 0.25s ease-in;
+  transition: all 0.25s ease-in;
+  width: 16px;
+}
+
+.emotion-62>input[type='checkbox']:hover+label:before {
+  border: 2px solid #3697f2;
+}
+
+.emotion-62>input[type='checkbox']:focus+label:before {
+  border: 2px solid rgba(54,151,242,0.5);
+}
+
+.emotion-62>input[type='checkbox'][data-partial='true']+label:before,
+.emotion-62>input[type='checkbox']:checked+label:before {
+  border: 2px solid #3697f2;
+}
+
+.emotion-62>input[type='checkbox']:disabled+label {
+  color: #d5d5d5;
+  cursor: not-allowed;
+}
+
+.emotion-62>input[type='checkbox']:disabled+label:before {
+  border: 2px solid #d5d5d5;
+}
+
+.emotion-62>input[type='checkbox']:checked:not([data-partial='true'])+label:before {
+  background: #3697f2;
+}
+
+.emotion-62>input[type='checkbox'][data-partial='true']+label:after {
+  border: solid #3697f2;
+  border-width: 2px 0 0 0;
+  box-sizing: border-box;
+  content: '';
+  cursor: pointer;
+  height: 16px;
+  line-height: 16px;
+  left: 4px;
+  opacity: 1;
+  position: absolute;
+  top: 7px;
+  width: 8px;
+}
+
+.emotion-62>input[type='checkbox']:checked:not([data-partial='true'])+label:after {
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  box-sizing: border-box;
+  content: '';
+  cursor: pointer;
+  display: block;
+  height: 9px;
+  line-height: 16px;
+  left: 6px;
+  opacity: 1;
+  position: absolute;
+  top: 3px;
+  -webkit-transform: rotate(45deg);
+  -moz-transform: rotate(45deg);
+  -ms-transform: rotate(45deg);
+  transform: rotate(45deg);
+  width: 4.5px;
 }
 
 <div
@@ -511,7 +615,7 @@ exports[`AddPolicy should render 1`] = `
             data-testid="input-node"
             id="rule-action"
             name="rule-action"
-            placeholder="Rule Action (Case Sensitive)"
+            placeholder="Rule Action"
             value=""
           />
           <div
@@ -560,11 +664,11 @@ exports[`AddPolicy should render 1`] = `
             <div
               class="input-icon"
             >
-              
               <svg
                 class="emotion-47"
                 data-testid="icon"
                 height="24px"
+                id=""
                 viewBox="0 0 1024 1024"
                 width="24px"
               >
@@ -605,13 +709,37 @@ exports[`AddPolicy should render 1`] = `
             data-testid="input-node"
             id="rule-resource"
             name="rule-resource"
-            placeholder="Rule Resource (Case Sensitive)"
+            placeholder="Rule Resource"
             value=""
           />
           <div
             class="message"
             data-testid="message"
           />
+        </div>
+      </div>
+    </div>
+    <div
+      class="emotion-4 emotion-5"
+    >
+      <div
+        class="emotion-9 emotion-10"
+      >
+        <div
+          class="emotion-62 denali-checkbox"
+          data-testid="checkbox-wrapper"
+        >
+          <input
+            data-partial="false"
+            id="checkbox-case-sensitivenew-policy"
+            name="checkbox-case-sensitivenew-policy"
+            type="checkbox"
+          />
+          <label
+            for="checkbox-case-sensitivenew-policy"
+          >
+            Case Sensitive Action and Resource
+          </label>
         </div>
       </div>
     </div>
@@ -639,9 +767,6 @@ exports[`AddPolicy should render fail to submit policy name is required 1`] = `
   -webkit-box-align: flex-start;
   -ms-flex-align: flex-start;
   align-items: flex-start;
-  display: -webkit-box;
-  display: -webkit-flex;
-  display: -ms-flexbox;
   display: flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -674,9 +799,6 @@ exports[`AddPolicy should render fail to submit policy name is required 1`] = `
 
 .emotion-11 {
   box-sizing: border-box;
-  display: -webkit-inline-box;
-  display: -webkit-inline-flex;
-  display: -ms-inline-flexbox;
   display: inline-flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -774,9 +896,6 @@ exports[`AddPolicy should render fail to submit policy name is required 1`] = `
 }
 
 .emotion-21 {
-  display: -webkit-inline-box;
-  display: -webkit-inline-flex;
-  display: -ms-inline-flexbox;
   display: inline-flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -882,6 +1001,13 @@ exports[`AddPolicy should render fail to submit policy name is required 1`] = `
   width: 8px;
 }
 
+.emotion-24>input[type='radio']:disabled:checked+label:after {
+  color: #d5d5d5;
+  border: 2px solid #d5d5d5;
+  background-color: #d5d5d5;
+  cursor: not-allowed;
+}
+
 .emotion-43 {
   position: relative;
   width: 100%;
@@ -897,9 +1023,6 @@ exports[`AddPolicy should render fail to submit policy name is required 1`] = `
 
 .emotion-46 {
   box-sizing: border-box;
-  display: -webkit-inline-box;
-  display: -webkit-inline-flex;
-  display: -ms-inline-flexbox;
   display: inline-flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -1001,9 +1124,6 @@ exports[`AddPolicy should render fail to submit policy name is required 1`] = `
   -webkit-box-align: center;
   -ms-flex-align: center;
   align-items: center;
-  display: -webkit-box;
-  display: -webkit-flex;
-  display: -ms-flexbox;
   display: flex;
   height: 36px;
   position: absolute;
@@ -1014,6 +1134,118 @@ exports[`AddPolicy should render fail to submit policy name is required 1`] = `
   fill: #d5d5d5;
   cursor: pointer;
   vertical-align: text-bottom;
+}
+
+.emotion-62 {
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  box-sizing: border-box;
+  display: inline-block;
+  height: 16px;
+  line-height: 16px;
+  margin: 3px;
+  outline: 0;
+  position: relative;
+  vertical-align: middle;
+}
+
+.emotion-62>input[type='checkbox'] {
+  box-sizing: border-box;
+  cursor: pointer;
+  display: inline-block;
+  position: absolute;
+  top: 0;
+  visibility: hidden;
+}
+
+.emotion-62>input[type='checkbox']+label {
+  box-sizing: border-box;
+  cursor: pointer;
+  font-family: Helvetica,Arial,sans-serif;
+  font-size: 14px;
+  font-weight: 300;
+  height: 16px;
+  line-height: 16px;
+  padding: 0 10px 0 0;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.emotion-62>input[type='checkbox']+label:before {
+  background: #fff;
+  border: 2px solid rgba(54,151,242,0.5);
+  border-radius: 2px;
+  box-sizing: border-box;
+  content: '';
+  cursor: pointer;
+  display: inline-block;
+  height: 16px;
+  line-height: 16px;
+  margin: 0px 3px -3px 0px;
+  -webkit-transition: all 0.25s ease-in;
+  transition: all 0.25s ease-in;
+  width: 16px;
+}
+
+.emotion-62>input[type='checkbox']:hover+label:before {
+  border: 2px solid #3697f2;
+}
+
+.emotion-62>input[type='checkbox']:focus+label:before {
+  border: 2px solid rgba(54,151,242,0.5);
+}
+
+.emotion-62>input[type='checkbox'][data-partial='true']+label:before,
+.emotion-62>input[type='checkbox']:checked+label:before {
+  border: 2px solid #3697f2;
+}
+
+.emotion-62>input[type='checkbox']:disabled+label {
+  color: #d5d5d5;
+  cursor: not-allowed;
+}
+
+.emotion-62>input[type='checkbox']:disabled+label:before {
+  border: 2px solid #d5d5d5;
+}
+
+.emotion-62>input[type='checkbox']:checked:not([data-partial='true'])+label:before {
+  background: #3697f2;
+}
+
+.emotion-62>input[type='checkbox'][data-partial='true']+label:after {
+  border: solid #3697f2;
+  border-width: 2px 0 0 0;
+  box-sizing: border-box;
+  content: '';
+  cursor: pointer;
+  height: 16px;
+  line-height: 16px;
+  left: 4px;
+  opacity: 1;
+  position: absolute;
+  top: 7px;
+  width: 8px;
+}
+
+.emotion-62>input[type='checkbox']:checked:not([data-partial='true'])+label:after {
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  box-sizing: border-box;
+  content: '';
+  cursor: pointer;
+  display: block;
+  height: 9px;
+  line-height: 16px;
+  left: 6px;
+  opacity: 1;
+  position: absolute;
+  top: 3px;
+  -webkit-transform: rotate(45deg);
+  -moz-transform: rotate(45deg);
+  -ms-transform: rotate(45deg);
+  transform: rotate(45deg);
+  width: 4.5px;
 }
 
 <div
@@ -1130,7 +1362,7 @@ exports[`AddPolicy should render fail to submit policy name is required 1`] = `
             data-testid="input-node"
             id="rule-action"
             name="rule-action"
-            placeholder="Rule Action (Case Sensitive)"
+            placeholder="Rule Action"
             value=""
           />
           <div
@@ -1155,7 +1387,7 @@ exports[`AddPolicy should render fail to submit policy name is required 1`] = `
         <div
           aria-expanded="false"
           aria-haspopup="listbox"
-          aria-labelledby="downshift-1-label"
+          aria-labelledby="downshift-0-label"
           class="emotion-43 denali-input-dropdown emotion-44 emotion-45"
           data-testid="input-dropdown"
           role="combobox"
@@ -1166,11 +1398,11 @@ exports[`AddPolicy should render fail to submit policy name is required 1`] = `
           >
             <input
               aria-autocomplete="list"
-              aria-labelledby="downshift-1-label"
+              aria-labelledby="downshift-0-label"
               autocomplete="off"
               autocorrect="off"
               data-testid="input-node"
-              id="downshift-1-input"
+              id="downshift-0-input"
               name="rule-role"
               placeholder="Select Role"
               spellcheck="false"
@@ -1179,11 +1411,11 @@ exports[`AddPolicy should render fail to submit policy name is required 1`] = `
             <div
               class="input-icon"
             >
-              
               <svg
                 class="emotion-47"
                 data-testid="icon"
                 height="24px"
+                id=""
                 viewBox="0 0 1024 1024"
                 width="24px"
               >
@@ -1224,13 +1456,37 @@ exports[`AddPolicy should render fail to submit policy name is required 1`] = `
             data-testid="input-node"
             id="rule-resource"
             name="rule-resource"
-            placeholder="Rule Resource (Case Sensitive)"
+            placeholder="Rule Resource"
             value=""
           />
           <div
             class="message"
             data-testid="message"
           />
+        </div>
+      </div>
+    </div>
+    <div
+      class="emotion-4 emotion-5"
+    >
+      <div
+        class="emotion-9 emotion-10"
+      >
+        <div
+          class="emotion-62 denali-checkbox"
+          data-testid="checkbox-wrapper"
+        >
+          <input
+            data-partial="false"
+            id="checkbox-case-sensitivenew-policy"
+            name="checkbox-case-sensitivenew-policy"
+            type="checkbox"
+          />
+          <label
+            for="checkbox-case-sensitivenew-policy"
+          >
+            Case Sensitive Action and Resource
+          </label>
         </div>
       </div>
     </div>
@@ -1258,9 +1514,6 @@ exports[`AddPolicy should render failed to submit action is required 1`] = `
   -webkit-box-align: flex-start;
   -ms-flex-align: flex-start;
   align-items: flex-start;
-  display: -webkit-box;
-  display: -webkit-flex;
-  display: -ms-flexbox;
   display: flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -1293,9 +1546,6 @@ exports[`AddPolicy should render failed to submit action is required 1`] = `
 
 .emotion-11 {
   box-sizing: border-box;
-  display: -webkit-inline-box;
-  display: -webkit-inline-flex;
-  display: -ms-inline-flexbox;
   display: inline-flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -1393,9 +1643,6 @@ exports[`AddPolicy should render failed to submit action is required 1`] = `
 }
 
 .emotion-21 {
-  display: -webkit-inline-box;
-  display: -webkit-inline-flex;
-  display: -ms-inline-flexbox;
   display: inline-flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -1501,6 +1748,13 @@ exports[`AddPolicy should render failed to submit action is required 1`] = `
   width: 8px;
 }
 
+.emotion-24>input[type='radio']:disabled:checked+label:after {
+  color: #d5d5d5;
+  border: 2px solid #d5d5d5;
+  background-color: #d5d5d5;
+  cursor: not-allowed;
+}
+
 .emotion-43 {
   position: relative;
   width: 100%;
@@ -1516,9 +1770,6 @@ exports[`AddPolicy should render failed to submit action is required 1`] = `
 
 .emotion-46 {
   box-sizing: border-box;
-  display: -webkit-inline-box;
-  display: -webkit-inline-flex;
-  display: -ms-inline-flexbox;
   display: inline-flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -1620,9 +1871,6 @@ exports[`AddPolicy should render failed to submit action is required 1`] = `
   -webkit-box-align: center;
   -ms-flex-align: center;
   align-items: center;
-  display: -webkit-box;
-  display: -webkit-flex;
-  display: -ms-flexbox;
   display: flex;
   height: 36px;
   position: absolute;
@@ -1633,6 +1881,118 @@ exports[`AddPolicy should render failed to submit action is required 1`] = `
   fill: #d5d5d5;
   cursor: pointer;
   vertical-align: text-bottom;
+}
+
+.emotion-62 {
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  box-sizing: border-box;
+  display: inline-block;
+  height: 16px;
+  line-height: 16px;
+  margin: 3px;
+  outline: 0;
+  position: relative;
+  vertical-align: middle;
+}
+
+.emotion-62>input[type='checkbox'] {
+  box-sizing: border-box;
+  cursor: pointer;
+  display: inline-block;
+  position: absolute;
+  top: 0;
+  visibility: hidden;
+}
+
+.emotion-62>input[type='checkbox']+label {
+  box-sizing: border-box;
+  cursor: pointer;
+  font-family: Helvetica,Arial,sans-serif;
+  font-size: 14px;
+  font-weight: 300;
+  height: 16px;
+  line-height: 16px;
+  padding: 0 10px 0 0;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.emotion-62>input[type='checkbox']+label:before {
+  background: #fff;
+  border: 2px solid rgba(54,151,242,0.5);
+  border-radius: 2px;
+  box-sizing: border-box;
+  content: '';
+  cursor: pointer;
+  display: inline-block;
+  height: 16px;
+  line-height: 16px;
+  margin: 0px 3px -3px 0px;
+  -webkit-transition: all 0.25s ease-in;
+  transition: all 0.25s ease-in;
+  width: 16px;
+}
+
+.emotion-62>input[type='checkbox']:hover+label:before {
+  border: 2px solid #3697f2;
+}
+
+.emotion-62>input[type='checkbox']:focus+label:before {
+  border: 2px solid rgba(54,151,242,0.5);
+}
+
+.emotion-62>input[type='checkbox'][data-partial='true']+label:before,
+.emotion-62>input[type='checkbox']:checked+label:before {
+  border: 2px solid #3697f2;
+}
+
+.emotion-62>input[type='checkbox']:disabled+label {
+  color: #d5d5d5;
+  cursor: not-allowed;
+}
+
+.emotion-62>input[type='checkbox']:disabled+label:before {
+  border: 2px solid #d5d5d5;
+}
+
+.emotion-62>input[type='checkbox']:checked:not([data-partial='true'])+label:before {
+  background: #3697f2;
+}
+
+.emotion-62>input[type='checkbox'][data-partial='true']+label:after {
+  border: solid #3697f2;
+  border-width: 2px 0 0 0;
+  box-sizing: border-box;
+  content: '';
+  cursor: pointer;
+  height: 16px;
+  line-height: 16px;
+  left: 4px;
+  opacity: 1;
+  position: absolute;
+  top: 7px;
+  width: 8px;
+}
+
+.emotion-62>input[type='checkbox']:checked:not([data-partial='true'])+label:after {
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  box-sizing: border-box;
+  content: '';
+  cursor: pointer;
+  display: block;
+  height: 9px;
+  line-height: 16px;
+  left: 6px;
+  opacity: 1;
+  position: absolute;
+  top: 3px;
+  -webkit-transform: rotate(45deg);
+  -moz-transform: rotate(45deg);
+  -ms-transform: rotate(45deg);
+  transform: rotate(45deg);
+  width: 4.5px;
 }
 
 <div
@@ -1749,7 +2109,7 @@ exports[`AddPolicy should render failed to submit action is required 1`] = `
             data-testid="input-node"
             id="rule-action"
             name="rule-action"
-            placeholder="Rule Action (Case Sensitive)"
+            placeholder="Rule Action"
             value=""
           />
           <div
@@ -1774,7 +2134,7 @@ exports[`AddPolicy should render failed to submit action is required 1`] = `
         <div
           aria-expanded="false"
           aria-haspopup="listbox"
-          aria-labelledby="downshift-2-label"
+          aria-labelledby="downshift-0-label"
           class="emotion-43 denali-input-dropdown emotion-44 emotion-45"
           data-testid="input-dropdown"
           role="combobox"
@@ -1785,11 +2145,11 @@ exports[`AddPolicy should render failed to submit action is required 1`] = `
           >
             <input
               aria-autocomplete="list"
-              aria-labelledby="downshift-2-label"
+              aria-labelledby="downshift-0-label"
               autocomplete="off"
               autocorrect="off"
               data-testid="input-node"
-              id="downshift-2-input"
+              id="downshift-0-input"
               name="rule-role"
               placeholder="Select Role"
               spellcheck="false"
@@ -1798,11 +2158,11 @@ exports[`AddPolicy should render failed to submit action is required 1`] = `
             <div
               class="input-icon"
             >
-              
               <svg
                 class="emotion-47"
                 data-testid="icon"
                 height="24px"
+                id=""
                 viewBox="0 0 1024 1024"
                 width="24px"
               >
@@ -1843,13 +2203,37 @@ exports[`AddPolicy should render failed to submit action is required 1`] = `
             data-testid="input-node"
             id="rule-resource"
             name="rule-resource"
-            placeholder="Rule Resource (Case Sensitive)"
+            placeholder="Rule Resource"
             value=""
           />
           <div
             class="message"
             data-testid="message"
           />
+        </div>
+      </div>
+    </div>
+    <div
+      class="emotion-4 emotion-5"
+    >
+      <div
+        class="emotion-9 emotion-10"
+      >
+        <div
+          class="emotion-62 denali-checkbox"
+          data-testid="checkbox-wrapper"
+        >
+          <input
+            data-partial="false"
+            id="checkbox-case-sensitivenew-policy"
+            name="checkbox-case-sensitivenew-policy"
+            type="checkbox"
+          />
+          <label
+            for="checkbox-case-sensitivenew-policy"
+          >
+            Case Sensitive Action and Resource
+          </label>
         </div>
       </div>
     </div>
@@ -1877,9 +2261,6 @@ exports[`AddPolicy should render failed to submit role name is required 1`] = `
   -webkit-box-align: flex-start;
   -ms-flex-align: flex-start;
   align-items: flex-start;
-  display: -webkit-box;
-  display: -webkit-flex;
-  display: -ms-flexbox;
   display: flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -1912,9 +2293,6 @@ exports[`AddPolicy should render failed to submit role name is required 1`] = `
 
 .emotion-11 {
   box-sizing: border-box;
-  display: -webkit-inline-box;
-  display: -webkit-inline-flex;
-  display: -ms-inline-flexbox;
   display: inline-flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -2012,9 +2390,6 @@ exports[`AddPolicy should render failed to submit role name is required 1`] = `
 }
 
 .emotion-21 {
-  display: -webkit-inline-box;
-  display: -webkit-inline-flex;
-  display: -ms-inline-flexbox;
   display: inline-flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -2120,6 +2495,13 @@ exports[`AddPolicy should render failed to submit role name is required 1`] = `
   width: 8px;
 }
 
+.emotion-24>input[type='radio']:disabled:checked+label:after {
+  color: #d5d5d5;
+  border: 2px solid #d5d5d5;
+  background-color: #d5d5d5;
+  cursor: not-allowed;
+}
+
 .emotion-43 {
   position: relative;
   width: 100%;
@@ -2135,9 +2517,6 @@ exports[`AddPolicy should render failed to submit role name is required 1`] = `
 
 .emotion-46 {
   box-sizing: border-box;
-  display: -webkit-inline-box;
-  display: -webkit-inline-flex;
-  display: -ms-inline-flexbox;
   display: inline-flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -2239,9 +2618,6 @@ exports[`AddPolicy should render failed to submit role name is required 1`] = `
   -webkit-box-align: center;
   -ms-flex-align: center;
   align-items: center;
-  display: -webkit-box;
-  display: -webkit-flex;
-  display: -ms-flexbox;
   display: flex;
   height: 36px;
   position: absolute;
@@ -2252,6 +2628,118 @@ exports[`AddPolicy should render failed to submit role name is required 1`] = `
   fill: #d5d5d5;
   cursor: pointer;
   vertical-align: text-bottom;
+}
+
+.emotion-62 {
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  box-sizing: border-box;
+  display: inline-block;
+  height: 16px;
+  line-height: 16px;
+  margin: 3px;
+  outline: 0;
+  position: relative;
+  vertical-align: middle;
+}
+
+.emotion-62>input[type='checkbox'] {
+  box-sizing: border-box;
+  cursor: pointer;
+  display: inline-block;
+  position: absolute;
+  top: 0;
+  visibility: hidden;
+}
+
+.emotion-62>input[type='checkbox']+label {
+  box-sizing: border-box;
+  cursor: pointer;
+  font-family: Helvetica,Arial,sans-serif;
+  font-size: 14px;
+  font-weight: 300;
+  height: 16px;
+  line-height: 16px;
+  padding: 0 10px 0 0;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.emotion-62>input[type='checkbox']+label:before {
+  background: #fff;
+  border: 2px solid rgba(54,151,242,0.5);
+  border-radius: 2px;
+  box-sizing: border-box;
+  content: '';
+  cursor: pointer;
+  display: inline-block;
+  height: 16px;
+  line-height: 16px;
+  margin: 0px 3px -3px 0px;
+  -webkit-transition: all 0.25s ease-in;
+  transition: all 0.25s ease-in;
+  width: 16px;
+}
+
+.emotion-62>input[type='checkbox']:hover+label:before {
+  border: 2px solid #3697f2;
+}
+
+.emotion-62>input[type='checkbox']:focus+label:before {
+  border: 2px solid rgba(54,151,242,0.5);
+}
+
+.emotion-62>input[type='checkbox'][data-partial='true']+label:before,
+.emotion-62>input[type='checkbox']:checked+label:before {
+  border: 2px solid #3697f2;
+}
+
+.emotion-62>input[type='checkbox']:disabled+label {
+  color: #d5d5d5;
+  cursor: not-allowed;
+}
+
+.emotion-62>input[type='checkbox']:disabled+label:before {
+  border: 2px solid #d5d5d5;
+}
+
+.emotion-62>input[type='checkbox']:checked:not([data-partial='true'])+label:before {
+  background: #3697f2;
+}
+
+.emotion-62>input[type='checkbox'][data-partial='true']+label:after {
+  border: solid #3697f2;
+  border-width: 2px 0 0 0;
+  box-sizing: border-box;
+  content: '';
+  cursor: pointer;
+  height: 16px;
+  line-height: 16px;
+  left: 4px;
+  opacity: 1;
+  position: absolute;
+  top: 7px;
+  width: 8px;
+}
+
+.emotion-62>input[type='checkbox']:checked:not([data-partial='true'])+label:after {
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  box-sizing: border-box;
+  content: '';
+  cursor: pointer;
+  display: block;
+  height: 9px;
+  line-height: 16px;
+  left: 6px;
+  opacity: 1;
+  position: absolute;
+  top: 3px;
+  -webkit-transform: rotate(45deg);
+  -moz-transform: rotate(45deg);
+  -ms-transform: rotate(45deg);
+  transform: rotate(45deg);
+  width: 4.5px;
 }
 
 <div
@@ -2368,7 +2856,7 @@ exports[`AddPolicy should render failed to submit role name is required 1`] = `
             data-testid="input-node"
             id="rule-action"
             name="rule-action"
-            placeholder="Rule Action (Case Sensitive)"
+            placeholder="Rule Action"
             value=""
           />
           <div
@@ -2393,7 +2881,7 @@ exports[`AddPolicy should render failed to submit role name is required 1`] = `
         <div
           aria-expanded="false"
           aria-haspopup="listbox"
-          aria-labelledby="downshift-3-label"
+          aria-labelledby="downshift-0-label"
           class="emotion-43 denali-input-dropdown emotion-44 emotion-45"
           data-testid="input-dropdown"
           role="combobox"
@@ -2404,11 +2892,11 @@ exports[`AddPolicy should render failed to submit role name is required 1`] = `
           >
             <input
               aria-autocomplete="list"
-              aria-labelledby="downshift-3-label"
+              aria-labelledby="downshift-0-label"
               autocomplete="off"
               autocorrect="off"
               data-testid="input-node"
-              id="downshift-3-input"
+              id="downshift-0-input"
               name="rule-role"
               placeholder="Select Role"
               spellcheck="false"
@@ -2417,11 +2905,11 @@ exports[`AddPolicy should render failed to submit role name is required 1`] = `
             <div
               class="input-icon"
             >
-              
               <svg
                 class="emotion-47"
                 data-testid="icon"
                 height="24px"
+                id=""
                 viewBox="0 0 1024 1024"
                 width="24px"
               >
@@ -2462,13 +2950,37 @@ exports[`AddPolicy should render failed to submit role name is required 1`] = `
             data-testid="input-node"
             id="rule-resource"
             name="rule-resource"
-            placeholder="Rule Resource (Case Sensitive)"
+            placeholder="Rule Resource"
             value=""
           />
           <div
             class="message"
             data-testid="message"
           />
+        </div>
+      </div>
+    </div>
+    <div
+      class="emotion-4 emotion-5"
+    >
+      <div
+        class="emotion-9 emotion-10"
+      >
+        <div
+          class="emotion-62 denali-checkbox"
+          data-testid="checkbox-wrapper"
+        >
+          <input
+            data-partial="false"
+            id="checkbox-case-sensitivenew-policy"
+            name="checkbox-case-sensitivenew-policy"
+            type="checkbox"
+          />
+          <label
+            for="checkbox-case-sensitivenew-policy"
+          >
+            Case Sensitive Action and Resource
+          </label>
         </div>
       </div>
     </div>

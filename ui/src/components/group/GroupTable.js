@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,6 @@ const TableHeadStyled = styled.th`
     border-bottom: 2px solid #d5d5d5;
     color: #9a9a9a;
     font-weight: 600;
-    font-size: 0.8rem;
     padding-bottom: 5px;
     vertical-align: top;
     text-transform: uppercase;
@@ -43,7 +42,6 @@ const TableHeadStyledGroupName = styled.th`
     border-bottom: 2px solid #d5d5d5;
     color: #9a9a9a;
     font-weight: 600;
-    font-size: 0.8rem;
     padding-bottom: 5px;
     vertical-align: top;
     text-transform: uppercase;
@@ -51,34 +49,17 @@ const TableHeadStyledGroupName = styled.th`
     word-break: break-all;
 `;
 
+// we dont connect it to the store because we want to use the groups from the props after filter by search
 export default class GroupTable extends React.Component {
     constructor(props) {
         super(props);
-        this.api = props.api;
-
-        this.state = {
-            groups: props.groups || [],
-        };
     }
 
-    componentDidUpdate = (prevProps) => {
-        if (prevProps.domain !== this.props.domain) {
-            this.setState({
-                rows: {},
-            });
-        } else if (prevProps.groups !== this.props.groups) {
-            this.setState({
-                groups: this.props.groups || [],
-            });
-        }
-    };
-
     render() {
-        const { domain } = this.props;
+        const { domain, groups } = this.props;
         let rows = [];
-
-        if (this.props.groups && this.props.groups.length > 0) {
-            rows = this.props.groups
+        if (groups && groups.length > 0) {
+            rows = groups
                 .sort((a, b) => {
                     return a.name.localeCompare(b.name);
                 })
@@ -90,14 +71,13 @@ export default class GroupTable extends React.Component {
                             idx={i}
                             domain={domain}
                             color={color}
-                            api={this.api}
                             key={item.name}
                             onUpdateSuccess={this.props.onSubmit}
+                            timeZone={this.props.timeZone}
                             _csrf={this.props._csrf}
                             justificationRequired={
                                 this.props.justificationRequired
                             }
-                            userProfileLink={this.props.userProfileLink}
                             newGroup={this.props.newGroup}
                         />
                     );
@@ -107,27 +87,31 @@ export default class GroupTable extends React.Component {
         return (
             <StyleTable key='group-table' data-testid='grouptable'>
                 <colgroup>
-                    <col style={{ width: 30 + '%' }} />
-                    <col style={{ width: 15 + '%' }} />
-                    <col style={{ width: 15 + '%' }} />
-                    <col style={{ width: 8 + '%' }} />
-                    <col style={{ width: 8 + '%' }} />
-                    <col style={{ width: 8 + '%' }} />
-                    <col style={{ width: 8 + '%' }} />
-                    <col style={{ width: 8 + '%' }} />
+                    <col style={{ width: 25 + '%' }} />
+                    <col style={{ width: 13 + '%' }} />
+                    <col style={{ width: 13 + '%' }} />
+                    <col style={{ width: 7 + '%' }} />
+                    <col style={{ width: 7 + '%' }} />
+                    <col style={{ width: 7 + '%' }} />
+                    <col style={{ width: 7 + '%' }} />
+                    <col style={{ width: 7 + '%' }} />
+                    <col style={{ width: 7 + '%' }} />
+                    <col style={{ width: 7 + '%' }} />
                 </colgroup>
                 <thead>
                     <tr>
                         <TableHeadStyledGroupName align={'left'}>
                             Group
                         </TableHeadStyledGroupName>
-                        <TableHeadStyled>Modified Date</TableHeadStyled>
-                        <TableHeadStyled>Reviewed Date</TableHeadStyled>
-                        <TableHeadStyled>Members</TableHeadStyled>
-                        <TableHeadStyled>Roles</TableHeadStyled>
-                        <TableHeadStyled>Settings</TableHeadStyled>
-                        <TableHeadStyled>History</TableHeadStyled>
-                        <TableHeadStyled>Delete</TableHeadStyled>
+                        <TableHeadStyled align={'left'}>Modified Date</TableHeadStyled>
+                        <TableHeadStyled align={'left'}>Reviewed Date</TableHeadStyled>
+                        <TableHeadStyled align={'left'}>Members</TableHeadStyled>
+                        <TableHeadStyled align={'center'}>Roles</TableHeadStyled>
+                        <TableHeadStyled align={'center'}>Review</TableHeadStyled>
+                        <TableHeadStyled align={'center'}>Tags</TableHeadStyled>
+                        <TableHeadStyled align={'center'}>Settings</TableHeadStyled>
+                        <TableHeadStyled align={'center'}>History</TableHeadStyled>
+                        <TableHeadStyled align={'center'}>Delete</TableHeadStyled>
                     </tr>
                 </thead>
                 <tbody>{rows}</tbody>

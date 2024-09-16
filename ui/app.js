@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,10 @@
 process.chdir(__dirname);
 const https = require('https');
 const express = require('express');
+const { constants } = require('crypto');
 const next = require('next');
 const appConfig = require('./src/config/config')();
 const secrets = require('./src/server/secrets');
-const appRoutes = require('./src/routes');
 const handlers = {
     api: require('./src/server/handlers/api'),
     passportAuth: require('./src/server/handlers/passportAuth'),
@@ -45,15 +45,50 @@ Promise.all([nextApp.prepare(), secrets.load(appConfig)])
             handlers.secure(expressApp, appConfig, secrets);
             handlers.passportAuth.auth(expressApp, appConfig, secrets);
             handlers.routes.route(expressApp, appConfig, secrets);
-            expressApp.use(appRoutes.getRequestHandler(nextApp));
+            expressApp.use(function (req, res, next) {
+                let err = null;
+                try {
+                    decodeURIComponent(req.path);
+                } catch (e) {
+                    err = e;
+                }
+                if (err) {
+                    return nextApp.render(req, res, `/_error`, req.query);
+                }
+                next();
+            });
+            expressApp.get('/athenz/', (req, res) => {
+                return nextApp.render(req, res, `/index`, req.query);
+            });
+            expressApp.get('/athenz/*', (req, res) => {
+                return nextApp.render(
+                    req,
+                    res,
+                    `${req.path.substring(7)}`,
+                    req.query
+                );
+            });
+            expressApp.get('/', (req, res) => {
+                return nextApp.render(req, res, `/index`, req.query);
+            });
+            expressApp.get('*', (req, res) => {
+                return nextApp.render(req, res, `${req.path}`, req.query);
+            });
 
             const server = https.createServer(
                 {
                     cert: secrets.serverCert,
                     key: secrets.serverKey,
+                    secureOptions:
+                        constants.SSL_OP_NO_TLSv1 | constants.SSL_OP_NO_TLSv1_1,
+                    ciphers: appConfig.serverCipherSuites,
                 },
                 expressApp
             );
+            server.on('secureConnection', (tlsSocket) => {
+                // catch all handler emitted on that socket
+                tlsSocket.disableRenegotiation();
+            });
             server.listen(appConfig.port, (err) => {
                 if (err) {
                     throw err;

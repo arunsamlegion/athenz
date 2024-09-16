@@ -1,13 +1,16 @@
-# Copyright Verizon Media. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+# Copyright The Athenz Authors. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 ---
 
 shared:
-  image: openjdk:8
+  image: eclipse-temurin:11-jdk-focal
   annotations:
     screwdriver.cd/cpu: 8
     screwdriver.cd/ram: 16
     screwdriver.cd/disk: HIGH
     screwdriver.cd/timeout: 120
+    screwdriver.cd/dockerEnabled: true
+    screwdriver.cd/dockerCpu: TURBO
+    screwdriver.cd/dockerRam: HIGH
   environment:
     USER_SHELL_BIN: /bin/bash
   
@@ -36,3 +39,4 @@ jobs:
       - GPG_KEYNAME
       - GPG_PASSPHRASE
       - GPG_ENCPHRASE
+      - PUBLISH_SKIP_PACKAGES

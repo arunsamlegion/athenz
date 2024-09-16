@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,11 @@ public class CertificateIdentityExceptionTest {
 
         ex = new CertificateIdentityException("err msg");
         assertEquals(ex.getMessage(), "err msg");
+        assertTrue(ex.isReportError());
+
+        ex = new CertificateIdentityException("err msg2", false);
+        assertEquals(ex.getMessage(), "err msg2");
+        assertFalse(ex.isReportError());
 
         Throwable t = new Throwable();
         ex = new CertificateIdentityException(t);

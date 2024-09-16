@@ -1,8 +1,6 @@
-FROM athenz-conf AS athenz-conf
+FROM athenz/athenz-cli-util AS athenz-utils
 
-FROM athenz-cli-util AS athenz-utils
-
-FROM adoptopenjdk/openjdk8:alpine-jre
+FROM eclipse-temurin:11-jre-focal
 # date -u +'%Y-%m-%dT%H:%M:%SZ'
 ARG BUILD_DATE
 # git rev-parse --short HEAD
@@ -15,10 +13,8 @@ LABEL org.label-schema.description="Athenz bootstrap setup ENV"
 LABEL org.label-schema.url="https://www.athenz.io/"
 LABEL org.label-schema.vcs-url="https://github.com/AthenZ/athenz"
 LABEL org.label-schema.vcs-ref=$VCS_REF
-# LABEL maintainer "YJ Athenz Team <>"
 
-
-COPY --from=athenz-conf /usr/bin/athenz-conf /usr/bin/athenz-conf
+COPY --from=athenz-utils /usr/bin/athenz-conf /usr/bin/athenz-conf
 COPY --from=athenz-utils /usr/bin/zms-cli /usr/bin/zms-cli
 COPY --from=athenz-utils /usr/bin/zts-accesstoken /usr/bin/zts-accesstoken
 COPY --from=athenz-utils /usr/bin/zts-svccert /usr/bin/zts-svccert
@@ -26,15 +22,11 @@ COPY --from=athenz-utils /usr/bin/zts-rolecert /usr/bin/zts-rolecert
 
 # coreutils: base64
 # ncurses: tput
-RUN apk update && \
-    apk add --no-cache coreutils && \
-    apk add --no-cache ncurses && \
-    apk add --no-cache git && \
-    apk add --no-cache curl && \
-    apk add --no-cache tree && \
-    apk add --no-cache openssl && \
-    apk add --no-cache jq && \
-    rm -rf /var/cache/apk/*
+RUN apt-get update && \
+    apt-get -y install coreutils libncurses5-dev libncursesw5-dev \
+    git curl tree openssl jq && \
+    rm -rf /var/cache/apt/* && \
+    git config --system --add safe.directory /athenz
 
 # RUN mkdir /athenz
 WORKDIR /athenz

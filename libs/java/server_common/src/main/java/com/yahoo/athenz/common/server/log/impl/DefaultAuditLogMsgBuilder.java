@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 package com.yahoo.athenz.common.server.log.impl;
 
 import java.time.Instant;
+import java.util.Objects;
 
 import com.fasterxml.uuid.EthernetAddress;
 import com.fasterxml.uuid.Generators;
@@ -370,10 +371,7 @@ public class DefaultAuditLogMsgBuilder implements AuditLogMsgBuilder {
 
     @Override
     public String whoFullName() {
-        if (this.whoFullName == null) {
-            return NULL_STR;
-        }
-        return this.whoFullName;
+        return Objects.requireNonNullElse(this.whoFullName, NULL_STR);
     }
 
 }

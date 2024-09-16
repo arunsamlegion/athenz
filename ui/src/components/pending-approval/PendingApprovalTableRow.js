@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import FlatPicker from '../flatpicker/FlatPicker';
 import Icon from '../denali/icons/Icon';
 import DateUtils from '../utils/DateUtils';
 import NameUtils from '../utils/NameUtils';
+import { PENDING_STATE_ENUM } from '../constants/constants';
 
 const TableTd = styled.td`
     text-align: left;
@@ -70,8 +71,7 @@ const FlatPickrInputDiv = styled.div`
         border-image: initial;
         border-radius: 2px;
         flex: 1 0 auto;
-        margin: 0px;
-        margin-top: 5px;
+        margin: 5px 7px 0px 0px;
         outline: none;
         padding: 0.6em 12px;
         transition: background-color 0.2s ease-in-out 0s,
@@ -91,8 +91,8 @@ const ApproveTd = styled.td`
     word-break: break-all;
     text-align: center;
     position: absolute;
-    width: 11em;
-    right: 11em;
+    width: 6em;
+    right: 6em;
     height: 96px;
     background-color: ${(props) => props.color};
     padding: 5px 0px 5px 14px;
@@ -104,7 +104,7 @@ const RejectTd = styled.td`
     text-align: center;
     border-right: none;
     position: absolute;
-    width: 11em;
+    width: 6em;
     right: 0em;
     height: 96px;
     background-color: ${(props) => props.color};
@@ -148,6 +148,9 @@ export default class PendingApprovalTableRow extends React.Component {
         let rejectOnClick = this.props.checked
             ? () => {}
             : this.props.pendingDecision.bind(this, key, false);
+        let shouldDisplayFlatPicker =
+            this.props.pendingState !== PENDING_STATE_ENUM.DELETE &&
+            this.props.category !== 'group';
         return (
             <TableRow
                 color={this.props.color}
@@ -168,8 +171,15 @@ export default class PendingApprovalTableRow extends React.Component {
                         }}
                     />
                 </TableTd>
-                <TableTdDomain>{this.props.domainName}</TableTdDomain>
+                {this.props.view === 'admin' && (
+                    <TableTdDomain>{this.props.domainName}</TableTdDomain>
+                )}
                 <TableTd>{this.props.category}</TableTd>
+                <TableTd>
+                    {NameUtils.getPendingStateToDisplay(
+                        this.props.pendingState
+                    )}
+                </TableTd>
                 <TableTd>{this.props.roleName}</TableTd>
                 <TableTdText>
                     <p>{this.props.memberNameFull}</p>
@@ -191,8 +201,8 @@ export default class PendingApprovalTableRow extends React.Component {
                 <TableTd>
                     {this.dateUtils.getLocalDate(
                         this.props.requestTime,
-                        'UTC',
-                        'UTC'
+                        this.props.timeZone,
+                        this.props.timeZone
                     )}
                 </TableTd>
                 <TableTd>
@@ -211,7 +221,7 @@ export default class PendingApprovalTableRow extends React.Component {
                     ) : null}
                 </TableTd>
                 <TableTd>
-                    {this.props.category !== 'group' && (
+                    {shouldDisplayFlatPicker && (
                         <FlatPickrInputDiv disabled={this.props.checked}>
                             <FlatPicker
                                 id={fpExpiryKey}
@@ -219,15 +229,14 @@ export default class PendingApprovalTableRow extends React.Component {
                                     this.props.dateChange(key, date, 'expiry');
                                 }}
                                 disabled={this.props.checked}
-                                clearExpiry={this.props.clearExpiry}
                                 value={this.props.requestedExpiry}
-                                nomargin={true}
+                                minDate={this.props.requestedExpiry}
                             />
                         </FlatPickrInputDiv>
                     )}
                 </TableTd>
                 <TableTd>
-                    {this.props.category !== 'group' && (
+                    {shouldDisplayFlatPicker && (
                         <FlatPickrInputDiv disabled={this.props.checked}>
                             <FlatPicker
                                 id={fpReviewReminderKey}
@@ -240,9 +249,8 @@ export default class PendingApprovalTableRow extends React.Component {
                                 }}
                                 placeholder={'Reminder (Optional)'}
                                 disabled={this.props.checked}
-                                clearReviewReminder={this.props.reviewReminder}
                                 value={this.props.requestedReviewReminder}
-                                nomargin={true}
+                                minDate={this.props.requestedReviewReminder}
                             />
                         </FlatPickrInputDiv>
                     )}

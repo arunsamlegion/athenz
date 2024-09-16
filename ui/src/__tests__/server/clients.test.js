@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,6 +34,9 @@ describe('clients test', () => {
             zms: 'test',
             userFilePath: 'data',
             userFileName: 'users.json',
+            msd: 'test',
+            ums: 'test',
+            zts: 'test',
         };
 
         clients.load(config, {}).catch((err) => {

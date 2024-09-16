@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
 set -eu
 set -o pipefail
@@ -41,17 +41,26 @@ if ! docker network inspect "${DOCKER_NETWORK}" > /dev/null 2>&1; then
 fi
 
 echo '2. start UI' | colored_cat g
+if [ ${ENABLE_LOCAL_BUILD_UI:-} ]; then
+    EXTRA_ARGS="-v ${UI_ASSY_DIR}/src:/opt/athenz/ui/src"
+fi
 docker run -d -h "${UI_HOST}" \
     -p "${UI_PORT}:${UI_CONTAINER_PORT}" \
     --dns="${DOCKER_DNS}" \
     --network="${DOCKER_NETWORK}" \
     --user "$(id -u):$(id -g)" \
+    -v "/tmp/:/.npm/" \
     -v "${DOCKER_DIR}/ui/var/keys:/opt/athenz/ui/keys" \
     -v "${DOCKER_DIR}/ui/conf:/opt/athenz/ui/conf/ui_server" \
     -v "${DOCKER_DIR}/logs/ui:/opt/athenz/ui/logs/ui_server" \
+    -v "${DOCKER_DIR}/ui/conf/extended-config.js:/opt/athenz/ui/src/config/extended-config.js" \
+    -e 'NODE_TLS_REJECT_UNAUTHORIZED=0' \
+    -e "ZTS_LOGIN_URL=https://localhost:${ZTS_PORT}/zts/v1/" \
+    -e "DEBUG=AthenzUI:*" \
     -e "PORT=${UI_CONTAINER_PORT}" \
     -e "UI_CONF_PATH=/opt/athenz/ui/conf/ui_server" \
     -e "ZMS_SERVER_URL=https://${ZMS_HOST}:${ZMS_PORT}/zms/v1/" \
+    ${EXTRA_ARGS:-} \
     --name "${UI_HOST}" athenz/athenz-ui:latest
 # wait for UI to be ready
 until docker run --rm --entrypoint curl \

@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Oath Holdings Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ import static org.testng.Assert.assertFalse;
 
 public class HostnameResolverTest {
 
-    class TestHostnameResolver implements HostnameResolver {
+    static class TestHostnameResolver implements HostnameResolver {
     }
 
     @Test

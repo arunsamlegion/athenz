@@ -1,5 +1,5 @@
 /*
- *  Copyright 2020 Verizon Media
+ *  Copyright The Athenz Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -30,7 +30,6 @@ import java.util.HashSet;
 import java.util.Set;
 
 import static com.yahoo.athenz.common.ServerCommonConsts.USER_DOMAIN_PREFIX;
-import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.testng.AssertJUnit.assertEquals;
 import static org.testng.AssertJUnit.assertTrue;
@@ -51,6 +50,8 @@ public class DomainRoleMembersFetcherTest {
         adminRole.setRoleMembers(Arrays.asList(roleMember1, roleMember2));
         domainData.setRoles(Collections.singletonList(adminRole));
         Mockito.when(dbsvc.getRolesByDomain(eq("domain1"))).thenReturn(domainData.getRoles());
+        Mockito.when(dbsvc.getRole("domain1", "admin", Boolean.FALSE, Boolean.TRUE, Boolean.FALSE))
+                .thenReturn(adminRole);
 
         DomainRoleMembersFetcher domainRoleMembersFetcher = new DomainRoleMembersFetcher(
                 dbsvc,

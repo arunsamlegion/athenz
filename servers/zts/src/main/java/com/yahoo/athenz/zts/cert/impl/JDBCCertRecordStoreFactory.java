@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Yahoo Holdings, Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,12 +35,11 @@ public class JDBCCertRecordStoreFactory implements CertRecordStoreFactory {
         final String jdbcUser = System.getProperty(ZTSConsts.ZTS_PROP_CERT_JDBC_USER);
         final String password = System.getProperty(ZTSConsts.ZTS_PROP_CERT_JDBC_PASSWORD, "");
         final String jdbcAppName = System.getProperty(ZTSConsts.ZTS_PROP_CERT_JDBC_APP_NAME, JDBC);
+        final String jdbcKeygroupName = System.getProperty(ZTSConsts.ZTS_PROP_CERT_JDBC_KEYGROUP_NAME, "");
 
-        String jdbcPassword = keyStore.getApplicationSecret(jdbcAppName, password);
-            
         Properties props = new Properties();
         props.setProperty(ZTSConsts.DB_PROP_USER, jdbcUser);
-        props.setProperty(ZTSConsts.DB_PROP_PASSWORD, jdbcPassword);
+        props.setProperty(ZTSConsts.DB_PROP_PASSWORD, String.valueOf(keyStore.getSecret(jdbcAppName, jdbcKeygroupName, password)));
         props.setProperty(ZTSConsts.DB_PROP_VERIFY_SERVER_CERT,
                 System.getProperty(ZTSConsts.ZTS_PROP_CERT_JDBC_VERIFY_SERVER_CERT, "false"));
         props.setProperty(ZTSConsts.DB_PROP_USE_SSL,

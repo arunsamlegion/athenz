@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 package com.yahoo.athenz.zms.store.impl.jdbc;
 
 import com.yahoo.athenz.common.server.db.PoolableDataSource;
+import com.yahoo.athenz.zms.DomainOptions;
 import com.yahoo.athenz.zms.ResourceException;
 import com.yahoo.athenz.zms.store.ObjectStore;
 import com.yahoo.athenz.zms.store.ObjectStoreConnection;
@@ -28,7 +29,12 @@ public class JDBCObjectStore implements ObjectStore {
     private int opTimeout = 60; //in seconds
     private int roleTagsLimit;
     private int domainTagsLimit;
-    
+    private int groupTagsLimit;
+    private int serviceTagsLimit;
+    private int policyTagsLimit;
+    private DomainOptions domainOptions;
+    private final Object synchronizer = new Object();
+
     public JDBCObjectStore(PoolableDataSource rwSrc, PoolableDataSource roSrc) {
         this.rwSrc = rwSrc;
         this.roSrc = roSrc;
@@ -47,8 +53,10 @@ public class JDBCObjectStore implements ObjectStore {
         try {
             PoolableDataSource src = readWrite ? rwSrc : roSrc;
             JDBCConnection jdbcConn = new JDBCConnection(src.getConnection(), autoCommit);
+            jdbcConn.setObjectSynchronizer(synchronizer);
             jdbcConn.setOperationTimeout(opTimeout);
-            jdbcConn.setTagLimit(domainTagsLimit, roleTagsLimit);
+            jdbcConn.setTagLimit(domainTagsLimit, roleTagsLimit, groupTagsLimit, policyTagsLimit, serviceTagsLimit);
+            jdbcConn.setDomainOptions(domainOptions);
             return jdbcConn;
         } catch (Exception ex) {
             
@@ -73,9 +81,17 @@ public class JDBCObjectStore implements ObjectStore {
     }
 
     @Override
-    public void setTagLimit(int domainLimit, int roleLimit) {
+    public void setDomainOptions(DomainOptions domainOptions) {
+        this.domainOptions = domainOptions;
+    }
+
+    @Override
+    public void setTagLimit(int domainLimit, int roleLimit, int groupLimit, int policyLimit, int serviceLimit) {
         this.domainTagsLimit = domainLimit;
         this.roleTagsLimit = roleLimit;
+        this.groupTagsLimit = groupLimit;
+        this.policyTagsLimit = policyLimit;
+        this.serviceTagsLimit = serviceLimit;
     }
     
     /**

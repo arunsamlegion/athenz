@@ -1,4 +1,4 @@
-// Copyright 2016 Yahoo Inc.
+// Copyright The Athenz Authors
 // Licensed under the terms of the Apache version 2.0 license. See LICENSE file for terms.
 
 package zmscli
@@ -90,7 +90,7 @@ func (cli Zms) SetDomainTemplate(dn string, templateArgs []string) (*string, err
 		} else {
 			param := zms.TemplateParam{
 				Name:  zms.SimpleName(value[0:idx]),
-				Value: zms.CompoundName(value[idx+1:]),
+				Value: value[idx+1:],
 			}
 			templateParams = append(templateParams, &param)
 		}

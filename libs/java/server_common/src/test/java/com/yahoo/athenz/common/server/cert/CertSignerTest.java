@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Oath Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,8 +41,13 @@ public class CertSignerTest {
 
         assertNull(signer.generateX509Certificate("csr", "client", 60));
         assertNull(signer.generateX509Certificate("aws", "us-west-2", "csr", "client", 60));
+        assertNull(signer.generateX509Certificate("aws", "us-west-2", "csr", "client", 60,
+                Priority.Unspecified_priority));
+        assertNull(signer.generateX509Certificate("aws", "us-west-2", "csr", "client", 60,
+                Priority.Unspecified_priority, "keyid"));
         assertNull(signer.getCACertificate());
         assertNull(signer.getCACertificate("aws"));
+        assertNull(signer.getCACertificate("aws", "keyid"));
         assertEquals(signer.getMaxCertExpiryTimeMins(), 0);
         signer.close();
     }
@@ -53,8 +58,13 @@ public class CertSignerTest {
         CertSigner signer = Mockito.mock(CertSigner.class);
         Mockito.when(signer.generateX509Certificate("csr", "client", 100)).thenReturn("cert");
         Mockito.when(signer.generateX509Certificate("aws", "us-west-2", "csr", "client", 100)).thenReturn("cert1");
+        Mockito.when(signer.generateX509Certificate("aws", "us-west-2", "csr", "client", 100, Priority.High))
+                .thenReturn("cert2");
+        Mockito.when(signer.generateX509Certificate("aws", "us-west-2", "csr", "client", 100, Priority.High, "keyid"))
+                .thenReturn("cert2-keyid");
         Mockito.when(signer.getCACertificate()).thenReturn("ca-cert");
         Mockito.when(signer.getCACertificate("aws")).thenReturn("ca-cert1");
+        Mockito.when(signer.getCACertificate("aws", "keyid")).thenReturn("ca-cert1-keyid");
         Mockito.when(signer.getMaxCertExpiryTimeMins()).thenReturn(60);
 
         CertSignerFactory factory = () -> signer;
@@ -63,10 +73,23 @@ public class CertSignerTest {
         assertNotNull(testSigner);
         assertEquals("cert", testSigner.generateX509Certificate("csr", "client", 100));
         assertEquals("cert1", testSigner.generateX509Certificate("aws", "us-west-2", "csr", "client", 100));
+        assertEquals("cert2", testSigner.generateX509Certificate("aws", "us-west-2", "csr", "client", 100,
+                Priority.High));
+        assertEquals("cert2-keyid", testSigner.generateX509Certificate("aws", "us-west-2", "csr", "client", 100,
+                Priority.High, "keyid"));
         assertEquals("ca-cert", testSigner.getCACertificate());
         assertEquals("ca-cert1", testSigner.getCACertificate("aws"));
+        assertEquals("ca-cert1-keyid", testSigner.getCACertificate("aws", "keyid"));
         assertEquals(60, testSigner.getMaxCertExpiryTimeMins());
 
         testSigner.close();
+    }
+
+    @Test
+    public void testPriority() {
+        assertEquals(Priority.Unspecified_priority.getPriorityValue(), 0);
+        assertEquals(Priority.High.getPriorityValue(), 5);
+        assertEquals(Priority.Medium.getPriorityValue(), 10);
+        assertEquals(Priority.Low.getPriorityValue(), 15);
     }
 }

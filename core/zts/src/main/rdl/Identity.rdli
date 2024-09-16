@@ -1,4 +1,4 @@
-// Copyright 2016 Yahoo Inc.
+// Copyright The Athenz Authors
 // Licensed under the terms of the Apache version 2.0 license. See LICENSE file for terms.
 
 include "Names.tdl";
@@ -9,6 +9,8 @@ type InstanceRefreshRequest Struct {
      String csr; //Cert CSR signed by the service's private key (public key registered in ZMS)
      Int32 expiryTime (optional); //in minutes how long token should be valid for
      String keyId (optional); //public key identifier
+     SimpleName namespace (optional); //spiffe/k8s namespace value
+     SimpleName cloud (optional); //optional cloud name where the instance is bootstrapped. e.g. aws / gcp / azure / openstack etc.
 }
 
 // Refresh Service tokens into TLS Certificate
@@ -24,5 +26,6 @@ resource Identity POST "/instance/{domain}/{service}/refresh" {
         ResourceError NOT_FOUND;
         ResourceError UNAUTHORIZED;
         ResourceError INTERNAL_SERVER_ERROR;
+        ResourceError TOO_MANY_REQUESTS;
     }
 }

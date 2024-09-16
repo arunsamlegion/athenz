@@ -1,5 +1,5 @@
 /*
- * Copyright Athenz Authors
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,8 +20,7 @@ import org.testng.annotations.Test;
 
 import javax.net.ssl.SSLContext;
 
-import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.fail;
+import static org.testng.Assert.*;
 
 public class InstanceProviderTest {
 
@@ -48,6 +47,9 @@ public class InstanceProviderTest {
 
         provider.setPrivateKey(null, null, null);
         provider.setHostnameResolver(null);
+        provider.setRolesProvider(null);
+        provider.setExternalCredentialsProvider(null);
+        provider.setPubKeysProvider(null);
 
         assertEquals(provider.getProviderScheme(), InstanceProvider.Scheme.UNKNOWN);
 

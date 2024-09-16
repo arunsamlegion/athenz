@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,8 @@
 jest.mock('fs');
 const userServiceImpl = require('../../../server/services/userServiceImpl');
 const MOCK_FILE_INFO = {
-    'data/users.json': '[{"is_human": 1, "login": "testuser", "gecos":"full name", "enabled_status": 1}]',
+    'data/users.json':
+        '[{"is_human": 1, "login": "testuser", "gecos":"full name", "enabled_status": 1}]',
 };
 
 describe('userServiceImpl test', () => {
@@ -31,9 +32,11 @@ describe('userServiceImpl test', () => {
         });
     });
     test('should fail fetch on invalid file', () => {
-        userServiceImpl.fetchUpdatedUsers('data', 'users1.json').catch((err) => {
-            expect(err).not.toBeNull();
-        });
+        userServiceImpl
+            .fetchUpdatedUsers('data', 'users1.json')
+            .catch((err) => {
+                expect(err).not.toBeNull();
+            });
     });
     test('should check user update', () => {
         userServiceImpl.checkUsersUpdate('data', 'users.json').then((size) => {
@@ -41,8 +44,10 @@ describe('userServiceImpl test', () => {
         });
     });
     test('should fail user update on invalid file', () => {
-        userServiceImpl.checkUsersUpdate('data', 'users1.json').then((message) => {
-            expect(message).not.toBeNull();
-        });
+        userServiceImpl
+            .checkUsersUpdate('data', 'users1.json')
+            .then((message) => {
+                expect(message).not.toBeNull();
+            });
     });
 });

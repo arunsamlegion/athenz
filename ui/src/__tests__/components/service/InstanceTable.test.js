@@ -14,32 +14,34 @@
  * limitations under the License.
  */
 import React from 'react';
-import { render } from '@testing-library/react';
 import InstanceTable from '../../../components/service/InstanceTable';
 import API from '../../../api';
+import { renderWithRedux } from '../../../tests_utils/ComponentsTestUtils';
 
 describe('InstanceTable', () => {
     it('should render', () => {
-        let domain = "test.domain";
-        let _csrf = '_csrfToken';
-        let api = API();
-        let instances = [{
-            "domainName": null,
-            "serviceName": null,
-            "uuid": "host1",
-            "ipAddresses": [
-                "host1"
-            ],
-            "provider": "aws",
-            "updateTime": "2021-03-28T21:38:27.070Z"
-        }];
-        const { getByTestId } = render(
+        const domain = 'test.domain';
+        const _csrf = '_csrfToken';
+        const api = API();
+        const timeZone = 'UTC';
+        const instances = [
+            {
+                domainName: null,
+                serviceName: null,
+                uuid: 'host1',
+                ipAddresses: ['host1'],
+                provider: 'aws',
+                updateTime: '2021-03-28T21:38:27.070Z',
+            },
+        ];
+        const { getByTestId } = renderWithRedux(
             <InstanceTable
                 instances={instances}
                 api={api}
                 domain={domain}
                 _csrf={_csrf}
                 category={'dynamic'}
+                timeZone={timeZone}
             />
         );
         const instanceTable = getByTestId('instancetable');

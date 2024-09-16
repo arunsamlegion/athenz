@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
 # Determine our run-time directory
 
@@ -18,16 +18,6 @@ ADMIN_FULLNAME=$4
 if [ ! -f "$ZMS_CERT" ] ; then
   echo "unable to access zms public certificate: $ZMS_CERT"
   exit 1
-fi
-
-if [ ! -f "$ADMIN_USERNAME" ] ; then
-  echo "Admin User Name not found, setting to empty. Edit src/config/users_data.json to add user name"
-  ADMIN_USERNAME="";
-fi
-
-if [ ! -f "$ADMIN_FULLNAME" ] ; then
-  echo "Admin Full Name not found, setting to empty. Edit src/config/users_data.json to add full name"
-  ADMIN_FULLNAME="";
 fi
 
 # Generate Athenz UI Server Private Key
@@ -68,5 +58,9 @@ if [ "$HOST_PLATFORM" != 'darwin' ] ; then
 elif [ "$HOST_PLATFORM" == 'darwin' ] ; then
   cat /dev/urandom | env LC_CTYPE=C tr -dc a-zA-Z0-9 | head -c 16 > "$ROOT"/keys/cookie-session
 fi
+
+echo "Creating a dummy token file"
+sudo mkdir -p /var/lib/sia/tokens/msd-api-access/ && sudo chown -R "$(id -u)":"$(id -g)" /var/lib/sia/tokens/msd-api-access
+touch /var/lib/sia/tokens/msd-api-access/msd-api-access-token
 
 echo "Athenz UI Dev Environment setup complete"

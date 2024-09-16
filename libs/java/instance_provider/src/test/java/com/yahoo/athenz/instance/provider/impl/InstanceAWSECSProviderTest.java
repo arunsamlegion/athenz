@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Yahoo Holdings, Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  */
 package com.yahoo.athenz.instance.provider.impl;
 
-import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
@@ -45,8 +44,7 @@ public class InstanceAWSECSProviderTest {
     public void testInitializeDefaults() {
         InstanceAWSECSProvider provider = new InstanceAWSECSProvider();
         provider.initialize("provider", "com.yahoo.athenz.instance.provider.impl.InstanceAWSECSProvider", null, null);
-        assertNull(provider.awsPublicKey);
-        assertEquals(provider.bootTimeOffset, 0);
+        assertEquals((long)provider.bootTimeOffsetSeconds.get(), 0);
         provider.close();
     }
     
@@ -57,7 +55,7 @@ public class InstanceAWSECSProviderTest {
         StringBuilder privateIp = new StringBuilder(64);
 
         MockInstanceAWSECSProvider provider = new MockInstanceAWSECSProvider();
-        System.setProperty(InstanceAWSProvider.AWS_PROP_PUBLIC_CERT, "src/test/resources/aws_public.cert");
+        System.setProperty(InstanceAWSUtils.AWS_PROP_PUBLIC_CERT, "src/test/resources/aws_public.cert");
         provider.initialize("athenz.aws-ecs.us-west-2", "com.yahoo.athenz.instance.provider.impl.InstanceAWSECSProvider", null, null);
         
         String bootTime = Timestamp.fromMillis(System.currentTimeMillis() - 1000000).toString();
@@ -98,17 +96,17 @@ public class InstanceAWSECSProviderTest {
 
         AWSAttestationData data = new AWSAttestationData();
         data.setTaskid("task1234");
-        assertEquals(provider.getInstanceId(data, null), "task1234");
+        assertEquals(provider.getInstanceId(data, null, "id-1234"), "task1234");
         
         data.setTaskid(null);
         Struct doc = new Struct();
         doc.put(InstanceAWSProvider.ATTR_INSTANCE_ID, "data1234");
-        assertEquals(provider.getInstanceId(data, doc), "data1234");
+        assertEquals(provider.getInstanceId(data, doc, "data1234"), "data1234");
 
         data.setTaskid("");
-        assertEquals(provider.getInstanceId(data, doc), "data1234");
+        assertEquals(provider.getInstanceId(data, doc, "id-1234"), "id-1234");
         
         data.setTaskid("task1234");
-        assertEquals(provider.getInstanceId(data, doc), "task1234");
+        assertEquals(provider.getInstanceId(data, doc, "id-1234"), "task1234");
     }
 }

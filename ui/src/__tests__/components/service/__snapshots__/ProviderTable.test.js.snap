@@ -25,7 +25,6 @@ exports[`ProviderTable should render 1`] = `
   border-bottom: 2px solid #d5d5d5;
   color: #9a9a9a;
   font-weight: 600;
-  font-size: 0.8rem;
   padding-bottom: 5px;
   vertical-align: top;
   text-transform: uppercase;
@@ -38,7 +37,6 @@ exports[`ProviderTable should render 1`] = `
   border-bottom: 2px solid #d5d5d5;
   color: #9a9a9a;
   font-weight: 600;
-  font-size: 0.8rem;
   padding-bottom: 5px;
   vertical-align: top;
   text-transform: uppercase;
@@ -116,6 +114,7 @@ exports[`ProviderTable should render 1`] = `
               class="emotion-16"
               data-testid="icon"
               height="1.25em"
+              id=""
               viewBox="0 0 1024 1024"
               width="1.25em"
             >
@@ -144,16 +143,6 @@ exports[`ProviderTable should render again if allow provider succeeds 1`] = `
 `;
 
 exports[`ProviderTable should render error if allow api throws error 1`] = `
-<div
-  data-testid="error-message"
-  name="red600"
-  style="color: rgb(208, 17, 17); display: inline-block;"
->
-  Failed to fetch template details.
-</div>
-`;
-
-exports[`ProviderTable should render error if there is error in providers 1`] = `
 <div
   data-testid="error-message"
   name="red600"

@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,8 +37,8 @@ public class KeyStoreJwkKeyResolver implements SigningKeyResolver {
 
     private static final String SYS_AUTH_DOMAIN = "sys.auth";
 
-    private KeyStore keyStore = null;
-    private SigningKeyResolver jwksResolver = null;
+    private final KeyStore keyStore;
+    private final SigningKeyResolver jwksResolver;
 
     /**
      * @param  keyStore key store get the JWT public keys
@@ -56,7 +56,6 @@ public class KeyStoreJwkKeyResolver implements SigningKeyResolver {
     }
 
     @Override
-    @SuppressWarnings("rawtypes")
     public Key resolveSigningKey(JwsHeader header, Claims claims) {
         String keyId = header.getKeyId();
         if (keyId == null || keyId.isEmpty()) {
@@ -104,7 +103,6 @@ public class KeyStoreJwkKeyResolver implements SigningKeyResolver {
     }
 
     @Override
-    @SuppressWarnings("rawtypes")
     public Key resolveSigningKey(JwsHeader header, String plaintext) {
         // JSON Web Encryption (JWE) not supported
         return null;

@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Yahoo Holdings, Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,19 +16,26 @@
 package com.yahoo.athenz.instance.provider.impl;
 
 import com.amazonaws.services.securitytoken.AWSSecurityTokenService;
+import com.yahoo.athenz.auth.KeyStore;
 
-@SuppressWarnings("unused")
+import javax.net.ssl.SSLContext;
+
 public class MockInstanceAWSECSProvider extends InstanceAWSECSProvider {
 
-    boolean signatureResult = true;
     boolean identityResult = true;
     boolean identitySuper = false;
     AWSSecurityTokenService stsClient;
-    
-    void setSignatureResult(boolean value) {
-        signatureResult = value;
+
+    @Override
+    public void initialize(String provider, String providerEndpoint, SSLContext sslContext, KeyStore keyStore) {
+        super.initialize(provider, providerEndpoint, sslContext, keyStore);
+        awsUtils = new MockInstanceAWSUtils();
     }
-    
+
+    void setSignatureResult(boolean value) {
+        ((MockInstanceAWSUtils) awsUtils).setSignatureResult(value);
+    }
+
     void setIdentityResult(boolean value) {
         identityResult = value;
     }
@@ -39,11 +46,6 @@ public class MockInstanceAWSECSProvider extends InstanceAWSECSProvider {
     
     void setStsClient(AWSSecurityTokenService client) {
         stsClient = client;
-    }
-    
-    @Override
-    public boolean validateAWSSignature(final String document, final String signature, StringBuilder errMsg) {
-        return signatureResult;
     }
     
     @Override

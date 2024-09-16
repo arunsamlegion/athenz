@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+import { PENDING_STATE_ENUM } from '../constants/constants';
+
 class NameUtils {
     static getShortName(key, name) {
         const idx = name.lastIndexOf(key);
@@ -27,6 +29,11 @@ class NameUtils {
         return resource.includes(':') ? resource : `${domainId}:${resource}`;
     }
 
+    static getRoleAssertionName(role, domainId) {
+        role = role.trim();
+        return role.includes(':role.') ? role : `${domainId}:role.${role}`;
+    }
+
     static getFlatPickrKey(key) {
         return key.replace(/\./g, '_').replace(/\W/g, '_');
     }
@@ -37,6 +44,17 @@ class NameUtils {
             .split(',')
             .map((n) => n.trim())
             .filter((n) => n);
+    }
+
+    static getPendingStateToDisplay(pendingState) {
+        switch (pendingState) {
+            case PENDING_STATE_ENUM.ADD:
+                return 'adding member';
+            case PENDING_STATE_ENUM.DELETE:
+                return 'deleting member';
+            default:
+                return '';
+        }
     }
 }
 

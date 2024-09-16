@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,8 +20,8 @@ import static com.yahoo.athenz.common.server.rest.ResourceException.INTERNAL_SER
 import static com.yahoo.athenz.common.server.rest.ResourceException.symbolForCode;
 
 public class StatusCheckException extends Exception {
-    private int httpCode;
-    private String msg;
+    private final int httpCode;
+    private final String msg;
 
     public StatusCheckException() {
         this.httpCode = INTERNAL_SERVER_ERROR;

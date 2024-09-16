@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Yahoo Holdings, Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  */
 package com.oath.auth;
 
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.security.KeyStore;
 
@@ -34,7 +33,7 @@ class JavaKeyStoreProvider implements KeyStoreProvider {
     }
 
     @Override
-    public KeyStore provide() throws FileNotFoundException, IOException, KeyRefresherException {
+    public KeyStore provide() throws IOException, KeyRefresherException {
         return Utils.getKeyStore(jksFilePath, password);
     }
 }

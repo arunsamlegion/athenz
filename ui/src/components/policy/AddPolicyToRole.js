@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,17 @@ import React from 'react';
 import AddModal from '../modal/AddModal';
 import AddRuleForRoleForm from './AddRuleForRoleForm';
 import RequestUtils from '../utils/RequestUtils';
+import { addPolicy } from '../../redux/thunks/policies';
+import { connect } from 'react-redux';
 
-export default class AddPolicyToRole extends React.Component {
+export class AddPolicyToRole extends React.Component {
     constructor(props) {
         super(props);
-        this.api = this.props.api;
         this.onSubmit = this.onSubmit.bind(this);
         this.onChange = this.onChange.bind(this);
         this.state = {
             showModal: !!this.props.showAddPolicy,
+            case: false,
         };
     }
 
@@ -51,7 +53,7 @@ export default class AddPolicyToRole extends React.Component {
             return;
         }
 
-        this.api
+        this.props
             .addPolicy(
                 this.props.domain,
                 this.state.name,
@@ -59,6 +61,7 @@ export default class AddPolicyToRole extends React.Component {
                 this.state.resource,
                 this.state.action,
                 this.state.effect,
+                this.state.case,
                 this.props._csrf
             )
             .then((data) => {
@@ -86,7 +89,6 @@ export default class AddPolicyToRole extends React.Component {
                 errorMessage={this.state.errorMessage}
                 sections={
                     <AddRuleForRoleForm
-                        api={this.api}
                         domain={this.props.domain}
                         onChange={this.onChange}
                         isPolicy={true}
@@ -96,3 +98,30 @@ export default class AddPolicyToRole extends React.Component {
         );
     }
 }
+
+const mapDispatchToProps = (dispatch) => ({
+    addPolicy: (
+        domain,
+        policyName,
+        role,
+        resource,
+        action,
+        effect,
+        caseSensitive,
+        _csrf
+    ) =>
+        dispatch(
+            addPolicy(
+                domain,
+                policyName,
+                role,
+                resource,
+                action,
+                effect,
+                caseSensitive,
+                _csrf
+            )
+        ),
+});
+
+export default connect(null, mapDispatchToProps)(AddPolicyToRole);

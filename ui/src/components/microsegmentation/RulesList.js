@@ -18,8 +18,21 @@ import styled from '@emotion/styled';
 import Button from '../denali/Button';
 import { MODAL_TIME_OUT } from '../constants/constants';
 import RequestUtils from '../utils/RequestUtils';
-import RuleTable from './RuleTable';
+import { DnToggle } from '@denali-design/react';
+// import 'denali-css/css/denali.css';
+import { connect } from 'react-redux';
+import {
+    selectInboundOutboundList,
+    selectInboundOutboundListWithFilter,
+} from '../../redux/selectors/microsegmentation';
 import AddSegmentation from './AddSegmentation';
+import RuleTable from './RuleTable';
+import { getInboundOutbound } from '../../redux/thunks/microsegmentation';
+import GroupTable from './GroupTable';
+import { selectDomainAuditEnabled } from '../../redux/selectors/domainData';
+import { selectIsLoading } from '../../redux/selectors/loading';
+import { selectFeatureFlag } from '../../redux/selectors/domains';
+import { ReduxPageLoader } from '../denali/ReduxPageLoader';
 
 const MembersSectionDiv = styled.div`
     margin: 20px;
@@ -34,16 +47,22 @@ const AddContainerDiv = styled.div`
     float: right;
 `;
 
-export default class RulesList extends React.Component {
+const StyledToggleDiv = styled.div`
+    margin-right: 10px;
+`;
+
+class RulesList extends React.Component {
     constructor(props) {
         super(props);
         this.api = props.api;
         this.state = {
-            segmentationData: props.data,
             errorMessage: null,
             showAddSegmentation: false,
+            tabularView: true,
+            graphicalView: false,
         };
         this.toggleAddSegmentation = this.toggleAddSegmentation.bind(this);
+        this.toggleView = this.toggleView.bind(this);
         this.closeModal = this.closeModal.bind(this);
         this.reloadData = this.reloadData.bind(this);
     }
@@ -54,12 +73,29 @@ export default class RulesList extends React.Component {
         });
     }
 
-    reloadData() {
-        this.api
-            .getInboundOutbound(this.props.domain)
-            .then((data) => {
+    toggleView(evt) {
+        switch (evt.target.name) {
+            case 'tabular':
                 this.setState({
-                    segmentationData: data,
+                    tabularView: true,
+                    graphicalView: false,
+                });
+                break;
+            case 'graphical':
+                this.setState({
+                    tabularView: false,
+                    graphicalView: true,
+                });
+                break;
+        }
+    }
+
+    reloadData() {
+        this.props
+            .getInboundOutbound(this.props.domain)
+            .then(() => {
+                this.setState({
+                    // segmentationData: this.props.data,
                     showAddSegmentation: false,
                     showAddStaticInstances: false,
                 });
@@ -85,6 +121,7 @@ export default class RulesList extends React.Component {
 
     render() {
         const { domain } = this.props;
+
         let addSegmentationButton = '';
         let addSegmentation = this.state.showAddSegmentation ? (
             <AddSegmentation
@@ -95,6 +132,7 @@ export default class RulesList extends React.Component {
                 _csrf={this.props._csrf}
                 showAddSegment={this.state.showAddSegmentation}
                 justificationRequired={this.props.isDomainAuditEnabled}
+                pageFeatureFlag={this.props.pageFeatureFlag}
             />
         ) : (
             ''
@@ -102,6 +140,28 @@ export default class RulesList extends React.Component {
 
         addSegmentationButton = (
             <AddContainerDiv>
+                <StyledToggleDiv>
+                    <DnToggle isRadioToggle isSmall>
+                        <DnToggle.RadioItem
+                            defaultChecked={this.state.tabularView}
+                            id='tabular'
+                            isDisabled={false}
+                            name='tabular'
+                            radioLabel='Tabular'
+                            radioValue='tabular'
+                            onChange={this.toggleView}
+                        />
+                        <DnToggle.RadioItem
+                            defaultChecked={this.state.graphicalView}
+                            id='graphical'
+                            isDisabled={false}
+                            name='graphical'
+                            radioLabel='Graphical'
+                            radioValue='graphical'
+                            onChange={this.toggleView}
+                        />
+                    </DnToggle>
+                </StyledToggleDiv>
                 <div>
                     <Button secondary onClick={this.toggleAddSegmentation}>
                         Add ACL Policy
@@ -111,10 +171,18 @@ export default class RulesList extends React.Component {
             </AddContainerDiv>
         );
 
-        let showInbound = this.state.segmentationData.inbound.length > 0;
-        let showOutbound = this.state.segmentationData.outbound.length > 0;
+        let showInbound =
+            this.props.data &&
+            this.props.data.inbound?.length > 0 &&
+            this.state.tabularView;
+        let showOutbound =
+            this.props.data &&
+            this.props.data.outbound?.length > 0 &&
+            this.state.tabularView;
 
-        return (
+        return this.props.isLoading.length !== 0 ? (
+            <ReduxPageLoader message={'Loading microsegmentation data'} />
+        ) : (
             <MembersSectionDiv data-testid='segmentation-data-list'>
                 {addSegmentationButton}
 
@@ -122,12 +190,12 @@ export default class RulesList extends React.Component {
                     <RuleTable
                         category={'inbound'}
                         domain={domain}
-                        api={this.api}
                         _csrf={this.props._csrf}
                         onSubmit={this.reloadData}
-                        data={this.state.segmentationData.inbound}
+                        data={this.props.data.inbound}
                         caption='Inbound'
-                        justificationRequired={this.props.isDomainAuditEnabled}
+                        pageFeatureFlag={this.props.pageFeatureFlag}
+                        api={this.api}
                     />
                 ) : null}
                 <br />
@@ -135,21 +203,48 @@ export default class RulesList extends React.Component {
                     <RuleTable
                         category={'outbound'}
                         domain={domain}
-                        api={this.api}
                         _csrf={this.props._csrf}
                         onSubmit={this.reloadData}
-                        data={this.state.segmentationData.outbound}
+                        data={this.props.data.outbound}
                         caption='Outbound'
-                        justificationRequired={this.props.isDomainAuditEnabled}
+                        pageFeatureFlag={this.props.pageFeatureFlag}
+                        api={this.api}
                     />
                 ) : null}
-                {!showInbound && !showOutbound ? (
+                {!showInbound && !showOutbound && this.state.tabularView ? (
                     <div>
                         Use the Add ACL Policy button to add inbound and
                         outbound rules.
                     </div>
                 ) : null}
+                {this.state.graphicalView && (
+                    <GroupTable
+                        domain={domain}
+                        api={this.api}
+                        _csrf={this.props._csrf}
+                        onSubmit={this.reloadData}
+                        data={this.props.data}
+                    />
+                )}
             </MembersSectionDiv>
         );
     }
 }
+
+const mapStateToProps = (state, props) => {
+    return {
+        ...props,
+        isLoading: selectIsLoading(state),
+        data: props.filterByService
+            ? selectInboundOutboundListWithFilter(state, props.filterByService)
+            : selectInboundOutboundList(state),
+        isDomainAuditEnabled: selectDomainAuditEnabled(state),
+    };
+};
+
+const mapDispatchToProps = (dispatch) => ({
+    getInboundOutbound: (domainName) =>
+        dispatch(getInboundOutbound(domainName)),
+});
+
+export default connect(mapStateToProps, mapDispatchToProps)(RulesList);

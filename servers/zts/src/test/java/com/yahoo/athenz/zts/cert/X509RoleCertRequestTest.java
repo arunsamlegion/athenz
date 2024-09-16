@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Oath Holdings Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -228,6 +228,28 @@ public class X509RoleCertRequestTest {
         X509RoleCertRequest certReq = new X509RoleCertRequest(csr);
         assertFalse(certReq.validate("athenz.production", null, null));
         assertFalse(certReq.validate("athenz.api", null, null));
+    }
+
+    @Test
+    public void testValidateSpiffeURIWithoutTrustDomain() throws IOException {
+
+        Path path = Paths.get("src/test/resources/spiffe_role.csr");
+        String csr = new String(Files.readAllBytes(path));
+
+        X509RoleCertRequest certReq = new X509RoleCertRequest(csr);
+        assertTrue(certReq.validateSpiffeURI("coretech", "api"));
+        assertFalse(certReq.validateSpiffeURI("coretech", "backend"));
+    }
+
+    @Test
+    public void testValidateSpiffeURIWithTrustDomain() throws IOException {
+
+        Path path = Paths.get("src/test/resources/spiffe_role_trust_domain.csr");
+        String csr = new String(Files.readAllBytes(path));
+
+        X509RoleCertRequest certReq = new X509RoleCertRequest(csr);
+        assertTrue(certReq.validateSpiffeURI("coretech", "api"));
+        assertFalse(certReq.validateSpiffeURI("coretech", "backend"));
     }
 }
 

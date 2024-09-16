@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,10 +14,12 @@
  * limitations under the License.
  */
 import moment from 'moment-timezone';
+import StringUtils from './StringUtils';
 
 class DateUtils {
     constructor() {
         this.dateFormat = 'YYYY-MM-DD HH:mm zz';
+        this.stringUtils = new StringUtils();
     }
 
     getLocalDate(currentDate, currentTimezone, newTimezone) {
@@ -46,6 +48,12 @@ class DateUtils {
         return inputDay >= minusSevenDays;
     }
 
+    isExpired(dateToCheck, currentTimezone) {
+        return moment().isAfter(
+            moment(dateToCheck, 'YYYY-MM-DDTHH:mm:ss.SSSZ', currentTimezone)
+        )
+    }
+
     getCurrentTimeZone() {
         return Intl.DateTimeFormat().resolvedOptions().timeZone;
     }
@@ -57,6 +65,20 @@ class DateUtils {
             return new Date(ux).toISOString();
         }
         return '';
+    }
+
+    isBeforeCurrenTime(selectedDate) {
+        let d1 = new Date(selectedDate);
+        let d2 = new Date();
+
+        if (d1.getTime() < d2.getTime()) {
+            return true;
+        }
+        return false;
+    }
+
+    validateDate(date) {
+        return !this.stringUtils.isEmpty(date) && this.isBeforeCurrenTime(date);
     }
 }
 

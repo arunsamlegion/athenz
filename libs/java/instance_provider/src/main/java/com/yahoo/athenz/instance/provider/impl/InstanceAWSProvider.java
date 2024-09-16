@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Yahoo Holdings, Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,11 @@
  */
 package com.yahoo.athenz.instance.provider.impl;
 
-import java.io.File;
-import java.security.PublicKey;
-import java.security.cert.X509Certificate;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 
+import com.yahoo.athenz.common.server.util.config.dynamic.DynamicConfigCsv;
+import com.yahoo.athenz.common.server.util.config.dynamic.DynamicConfigLong;
 import org.eclipse.jetty.util.StringUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,8 +32,6 @@ import com.amazonaws.services.securitytoken.AWSSecurityTokenServiceClientBuilder
 import com.amazonaws.services.securitytoken.model.GetCallerIdentityRequest;
 import com.amazonaws.services.securitytoken.model.GetCallerIdentityResult;
 import com.yahoo.athenz.auth.KeyStore;
-import com.yahoo.athenz.auth.util.Crypto;
-import com.yahoo.athenz.auth.util.CryptoException;
 import com.yahoo.athenz.instance.provider.InstanceConfirmation;
 import com.yahoo.athenz.instance.provider.InstanceProvider;
 import com.yahoo.athenz.instance.provider.ResourceException;
@@ -44,6 +40,8 @@ import com.yahoo.rdl.Struct;
 import com.yahoo.rdl.Timestamp;
 
 import javax.net.ssl.*;
+
+import static com.yahoo.athenz.common.server.util.config.ConfigManagerSingleton.CONFIG_MANAGER;
 
 public class InstanceAWSProvider implements InstanceProvider {
 
@@ -55,19 +53,27 @@ public class InstanceAWSProvider implements InstanceProvider {
     static final String ATTR_INSTANCE_ID  = "instanceId";
     static final String ATTR_PRIVATE_IP   = "privateIp";
 
-    static final String AWS_PROP_PUBLIC_CERT      = "athenz.zts.aws_public_cert";
-    static final String AWS_PROP_BOOT_TIME_OFFSET = "athenz.zts.aws_boot_time_offset";
-    static final String AWS_PROP_DNS_SUFFIX       = "athenz.zts.aws_dns_suffix";
-    static final String AWS_PROP_REGION_NAME      = "athenz.zts.aws_region_name";
+    static final String AWS_PROP_BOOT_TIME_OFFSET  = "athenz.zts.aws_boot_time_offset";
+    static final String AWS_PROP_DNS_SUFFIX        = "athenz.zts.aws_dns_suffix";
+    static final String AWS_PROP_REGION_NAME       = "athenz.zts.aws_region_name";
+    static final String AWS_PROP_EKS_DNS_SUFFIX    = "athenz.zts.aws_eks_dns_suffix";
+    static final String AWS_PROP_EKS_CLUSTER_NAMES = "athenz.zts.aws_eks_cluster_names";
 
     static final String AWS_PROP_CERT_VALIDITY_STS_ONLY = "athenz.zts.aws_cert_validity_sts_only";
 
-    PublicKey awsPublicKey = null;      // AWS public key for validating instance documents
-    long bootTimeOffset;                // boot time offset in milliseconds
-    long certValidityTime;              // cert validity for STS creds only case
+    DynamicConfigLong bootTimeOffsetSeconds; // boot time offset in seconds
+    DynamicConfigCsv eksClusterNames;        // list of eks cluster names
+
+    long certValidityTime;                   // cert validity for STS creds only case
     boolean supportRefresh = false;
     String awsRegion;
-    String dnsSuffix = null;
+    Set<String> dnsSuffixes = null;
+    List<String> eksDnsSuffixes = null;
+    InstanceAWSUtils awsUtils = null;
+
+    public long getTimeOffsetInMilli() {
+        return bootTimeOffsetSeconds.get() * 1000;
+    }
 
     @Override
     public Scheme getProviderScheme() {
@@ -77,32 +83,33 @@ public class InstanceAWSProvider implements InstanceProvider {
     @Override
     public void initialize(String provider, String providerEndpoint, SSLContext sslContext,
             KeyStore keyStore) {
-        
-        String awsCertFileName = System.getProperty(AWS_PROP_PUBLIC_CERT, "");
-        if (!awsCertFileName.isEmpty()) {
-            File awsCertFile = new File(awsCertFileName);
-            X509Certificate awsCert = Crypto.loadX509Certificate(awsCertFile);
-            awsPublicKey = awsCert.getPublicKey();
-        }
-        
-        if (awsPublicKey == null) {
-            LOGGER.error("AWS Public Key not specified - no instance requests will be authorized");
-        }
-        
+
+        // create our helper object to validate aws documents
+
+        awsUtils = new InstanceAWSUtils();
+
         // how long the instance must be booted in the past before we
         // stop validating the instance requests
-        
+
         long timeout = TimeUnit.SECONDS.convert(5, TimeUnit.MINUTES);
-        bootTimeOffset = 1000 * Long.parseLong(
-                System.getProperty(AWS_PROP_BOOT_TIME_OFFSET, Long.toString(timeout)));
-        
+        bootTimeOffsetSeconds = new DynamicConfigLong(CONFIG_MANAGER, AWS_PROP_BOOT_TIME_OFFSET, timeout);
+
+        // get our dynamic list of eks cluster names
+
+        eksClusterNames = new DynamicConfigCsv(CONFIG_MANAGER, AWS_PROP_EKS_CLUSTER_NAMES, null);
+
         // determine the dns suffix. if this is not specified we'll
-        // rejecting all entries
-        
-        dnsSuffix = System.getProperty(AWS_PROP_DNS_SUFFIX);
-        if (dnsSuffix == null || dnsSuffix.isEmpty()) {
+        // be rejecting all entries
+
+        dnsSuffixes = new HashSet<>();
+        final String dnsSuffix = System.getProperty(AWS_PROP_DNS_SUFFIX);
+        if (StringUtil.isEmpty(dnsSuffix)) {
             LOGGER.error("AWS DNS Suffix not specified - no instance requests will be authorized");
+        } else {
+            dnsSuffixes.addAll(Arrays.asList(dnsSuffix.split(",")));
         }
+
+        eksDnsSuffixes = InstanceUtils.processK8SDnsSuffixList(AWS_PROP_EKS_DNS_SUFFIX);
 
         // default certificate expiry for requests without instance
         // identity document
@@ -115,6 +122,18 @@ public class InstanceAWSProvider implements InstanceProvider {
         awsRegion = System.getProperty(AWS_PROP_REGION_NAME);
     }
 
+    protected Set<String> getDnsSuffixes() {
+        return dnsSuffixes;
+    }
+
+    protected List<String> getEksDnsSuffixes() {
+        return eksDnsSuffixes;
+    }
+
+    protected List<String> getEksClusterNames() {
+        return eksClusterNames.getStringsList();
+    }
+
     public ResourceException error(String message) {
         return error(ResourceException.FORBIDDEN, message);
     }
@@ -123,7 +142,7 @@ public class InstanceAWSProvider implements InstanceProvider {
         LOGGER.error(message);
         return new ResourceException(errorCode, message);
     }
-    
+
     boolean validateAWSAccount(final String awsAccount, final String docAccount, StringBuilder errMsg) {
         
         if (!awsAccount.equalsIgnoreCase(docAccount)) {
@@ -162,36 +181,13 @@ public class InstanceAWSProvider implements InstanceProvider {
         
         return true;
     }
-    
-    boolean validateAWSSignature(final String document, final String signature, StringBuilder errMsg) {
-        
-        if (signature == null || signature.isEmpty()) {
-            errMsg.append("AWS instance document signature is empty");
-            return false;
-        }
-        
-        if (awsPublicKey == null) {
-            errMsg.append("AWS Public key is not available");
-            return false;
-        }
-        
-        boolean valid = false;
-        try {
-            valid = Crypto.validatePKCS7Signature(document, signature, awsPublicKey);
-        } catch (CryptoException ex) {
-            errMsg.append("verifyInstanceDocument: unable to verify AWS instance document: ");
-            errMsg.append(ex.getMessage());
-        }
-        
-        return valid;
-    }
-    
-    boolean validateAWSDocument(final String provider, AWSAttestationData info,
+
+    protected boolean validateAWSDocument(final String provider, AWSAttestationData info,
             final String awsAccount, final String instanceId, boolean checkTime,
             StringBuilder privateIp, StringBuilder errMsg) {
         
         final String document = info.getDocument();
-        if (!validateAWSSignature(document, info.getSignature(), errMsg)) {
+        if (!awsUtils.validateAWSSignature(document, info.getSignature(), errMsg)) {
             return false;
         }
         
@@ -216,7 +212,7 @@ public class InstanceAWSProvider implements InstanceProvider {
         
         // verify the request has the expected account id
         
-        final String infoInstanceId = getInstanceId(info, instanceDocument);
+        final String infoInstanceId = getInstanceId(info, instanceDocument, instanceId);
         if (!validateAWSInstanceId(instanceId, infoInstanceId, errMsg)) {
             return false;
         }
@@ -233,7 +229,7 @@ public class InstanceAWSProvider implements InstanceProvider {
         return !checkTime || validateInstanceBootTime(instanceDocument, errMsg);
     }
     
-    String getInstanceId(AWSAttestationData info, Struct instanceDocument) {
+    protected String getInstanceId(AWSAttestationData info, Struct instanceDocument, final String reqInstanceId) {
         return instanceDocument.getString(ATTR_INSTANCE_ID);
     }
     
@@ -241,14 +237,14 @@ public class InstanceAWSProvider implements InstanceProvider {
         
         // first check to see if the boot time enforcement is enabled
         
-        if (bootTimeOffset <= 0) {
+        if (getTimeOffsetInMilli() <= 0) {
             return true;
         }
         
         Timestamp bootTime = Timestamp.fromString(instanceDocument.getString(ATTR_PENDING_TIME));
-        if (bootTime.millis() < System.currentTimeMillis() - bootTimeOffset) {
+        if (bootTime.millis() < System.currentTimeMillis() - getTimeOffsetInMilli()) {
             errMsg.append("Instance boot time is not recent enough: ");
-            errMsg.append(bootTime.toString());
+            errMsg.append(bootTime);
             return false;
         }
         
@@ -274,20 +270,20 @@ public class InstanceAWSProvider implements InstanceProvider {
         }
         
         // validate that the domain/service given in the confirmation
-        // request match the attestation data
+        // request match the attestation data. the role can represent
+        // either one of two formats: <domain>.<service> or <service>.
+        // with just the <service> format we already verify the <domain>
+        // component based on the aws account id in the arn
         
         final String serviceName = instanceDomain + "." + instanceService;
-        if (!serviceName.equals(info.getRole())) {
+        if (!(serviceName.equals(info.getRole()) || instanceService.equals(info.getRole()))) {
             throw error("Service name mismatch: " + info.getRole() + " vs. " + serviceName);
         }
         
         // validate the certificate host names
         
         StringBuilder instanceId = new StringBuilder(256);
-        if (!InstanceUtils.validateCertRequestSanDnsNames(instanceAttributes, instanceDomain,
-                instanceService, dnsSuffix, instanceId)) {
-            throw error("Unable to validate certificate request hostnames");
-        }
+        validateSanDnsNames(instanceAttributes, instanceDomain, instanceService, instanceId);
         
         // validate our document against given signature if one is provided
         // if there is no instance document then we're going to ask ZTS not
@@ -300,14 +296,13 @@ public class InstanceAWSProvider implements InstanceProvider {
             StringBuilder errMsg = new StringBuilder(256);
             if (!validateAWSDocument(confirmation.getProvider(), info, awsAccount,
                     instanceId.toString(), true, privateIp, errMsg)) {
-                LOGGER.error("validateAWSDocument: {}", errMsg.toString());
-                throw error("Unable to validate AWS document: " + errMsg.toString());
+                throw error("Unable to validate AWS document: " + errMsg);
             }
         }
             
         // set the attributes to be returned to the ZTS server
 
-        setConfirmationAttributes(confirmation, instanceDocumentCreds, privateIp.toString());
+        setConfirmationAttributes(confirmation, instanceDocumentCreds, privateIp.toString(), instanceId.toString());
 
         // verify that the temporary credentials specified in the request
         // can be used to assume the given role thus verifying the
@@ -343,25 +338,25 @@ public class InstanceAWSProvider implements InstanceProvider {
         // object has an associated aws account id
         
         final String awsAccount = InstanceUtils.getInstanceProperty(instanceAttributes, ZTS_INSTANCE_AWS_ACCOUNT);
-        if (awsAccount == null) {
+        if (StringUtil.isEmpty(awsAccount)) {
             throw error("Unable to extract AWS Account id");
         }
 
-        // extract the instance id as well
-
-        final String instanceId = InstanceUtils.getInstanceProperty(instanceAttributes,
-                InstanceProvider.ZTS_INSTANCE_ID);
-        if (instanceId == null) {
-            throw error("Unable to extract Instance Id");
-        }
-
         // validate that the domain/service given in the confirmation
-        // request match the attestation data
-        
+        // request match the attestation data. the role can represent
+        // either one of two formats: <domain>.<service> or <service>.
+        // with just the <service> format we already verify the <domain>
+        // component based on the aws account id in the arn
+
         final String serviceName = instanceDomain + "." + instanceService;
-        if (!serviceName.equals(info.getRole())) {
+        if (!(serviceName.equals(info.getRole()) || instanceService.equals(info.getRole()))) {
             throw error("Service name mismatch: " + info.getRole() + " vs. " + serviceName);
         }
+
+        // validate the certificate host names
+
+        StringBuilder instanceId = new StringBuilder(256);
+        validateSanDnsNames(instanceAttributes, instanceDomain, instanceService, instanceId);
 
         // validate our document against given signature if one is provided
         // if there is no instance document then we're going to ask ZTS not
@@ -372,15 +367,14 @@ public class InstanceAWSProvider implements InstanceProvider {
         if (instanceDocumentCreds) {
             StringBuilder errMsg = new StringBuilder(256);
             if (!validateAWSDocument(confirmation.getProvider(), info, awsAccount,
-                    instanceId, false, privateIp, errMsg)) {
-                LOGGER.error("validateAWSDocument: {}", errMsg.toString());
-                throw error("Unable to validate AWS document: " + errMsg.toString());
+                    instanceId.toString(), false, privateIp, errMsg)) {
+                throw error("Unable to validate AWS document: " + errMsg);
             }
         }
 
         // set the attributes to be returned to the ZTS server
 
-        setConfirmationAttributes(confirmation, instanceDocumentCreds, privateIp.toString());
+        setConfirmationAttributes(confirmation, instanceDocumentCreds, privateIp.toString(), instanceId.toString());
         
         // verify that the temporary credentials specified in the request
         // can be used to assume the given role thus verifying the
@@ -392,9 +386,18 @@ public class InstanceAWSProvider implements InstanceProvider {
         
         return confirmation;
     }
-    
-    void setConfirmationAttributes(InstanceConfirmation confirmation, boolean instanceDocumentCreds,
-                                   final String privateIp) {
+
+    public void validateSanDnsNames(final Map<String, String> instanceAttributes, final String instanceDomain,
+                                    final String instanceService, StringBuilder instanceId) {
+        if (!InstanceUtils.validateCertRequestSanDnsNames(instanceAttributes, instanceDomain,
+                instanceService, getDnsSuffixes(), getEksDnsSuffixes(), getEksClusterNames(),
+                true, instanceId, null)) {
+            throw error("Unable to validate certificate request hostnames");
+        }
+    }
+
+    protected void setConfirmationAttributes(InstanceConfirmation confirmation, boolean instanceDocumentCreds,
+            final String privateIp, final String instanceId) {
 
         Map<String, String> attributes = new HashMap<>();
         attributes.put(InstanceProvider.ZTS_CERT_SSH, Boolean.toString(instanceDocumentCreds));
@@ -403,6 +406,9 @@ public class InstanceAWSProvider implements InstanceProvider {
         }
         if (!privateIp.isEmpty()) {
             attributes.put(InstanceProvider.ZTS_INSTANCE_PRIVATE_IP, privateIp);
+        }
+        if (!instanceId.isEmpty()) {
+            attributes.put(InstanceProvider.ZTS_ATTESTED_SSH_CERT_PRINCIPALS, instanceId);
         }
         confirmation.setAttributes(attributes);
     }

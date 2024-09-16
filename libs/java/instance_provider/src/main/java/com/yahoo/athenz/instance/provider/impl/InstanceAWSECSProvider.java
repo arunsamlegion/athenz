@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Yahoo Holdings, Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 package com.yahoo.athenz.instance.provider.impl;
 
 import com.yahoo.athenz.auth.KeyStore;
+import com.yahoo.athenz.common.server.util.config.dynamic.DynamicConfigLong;
 import com.yahoo.rdl.Struct;
 
 import javax.net.ssl.*;
@@ -32,8 +33,8 @@ public class InstanceAWSECSProvider extends InstanceAWSProvider {
         // boot time since we don't know when the container
         // was started and temporary aws iam assume role
         // validation is sufficient
-        
-        bootTimeOffset = 0;
+
+        bootTimeOffsetSeconds = new DynamicConfigLong(0L);
         
         // our ECS provider must validate refresh requests
         
@@ -41,16 +42,13 @@ public class InstanceAWSECSProvider extends InstanceAWSProvider {
     }
     
     @Override
-    String getInstanceId(AWSAttestationData info, Struct instanceDocument) {
+    protected String getInstanceId(AWSAttestationData info, Struct instanceDocument, final String reqInstanceId) {
         
         // we're going to look for container task id first
         // only if that's not present (as backup), we'll
-        // return the instance document id
+        // return the instance request id
         
-        String instanceId = info.getTaskid();
-        if (instanceId == null || instanceId.isEmpty()) {
-            instanceId = instanceDocument.getString(ATTR_INSTANCE_ID);
-        }
-        return instanceId;
+        final String instanceId = info.getTaskid();
+        return (instanceId == null || instanceId.isEmpty()) ? reqInstanceId : instanceId;
     }
 }

@@ -14,22 +14,24 @@
  * limitations under the License.
  */
 import React from 'react';
-import {fireEvent, render} from '@testing-library/react';
-import AddStaticinstances from "../../../components/microsegmentation/AddStaticInstances";
-import API from "../../../api";
+import { fireEvent, render } from '@testing-library/react';
+import AddStaticinstances from '../../../components/microsegmentation/AddStaticInstances';
+import API from '../../../api';
+import { renderWithRedux } from '../../../tests_utils/ComponentsTestUtils';
+import { resetIdCounter } from 'downshift';
 
 describe('AddStaticInstances', () => {
+    beforeEach(() => resetIdCounter());
     it('should render', () => {
         let domain = 'domain';
         const showAddStaticinstances = true;
-        const cancel = function() {};
-        const submit = function() {};
+        const cancel = function () {};
+        const submit = function () {};
         let _csrf = 'csrf';
 
-        const { getByTestId } = render(
+        const { getByTestId } = renderWithRedux(
             <AddStaticinstances
-                api={API()}
-                domain={domain}
+                domainName={domain}
                 onSubmit={submit}
                 onCancel={cancel}
                 _csrf={_csrf}
@@ -43,15 +45,14 @@ describe('AddStaticInstances', () => {
 
     it('should render fail to submit add-segmentation: ResourceType is required', () => {
         const showAddStaticinstances = true;
-        const cancel = function() {};
+        const cancel = function () {};
         const domain = 'domain';
-        let role ='roleName';
-        const submit = function() {};
-        let _csrf = 'csrf';;
-        const { getByTestId, getByText } =  render(
+        let role = 'roleName';
+        const submit = function () {};
+        let _csrf = 'csrf';
+        const { getByTestId, getByText } = renderWithRedux(
             <AddStaticinstances
-                api={API()}
-                domain={domain}
+                domainName={domain}
                 onSubmit={submit}
                 onCancel={cancel}
                 _csrf={_csrf}
@@ -65,5 +66,4 @@ describe('AddStaticInstances', () => {
 
         expect(getByText('Resource Type is required.')).not.toBeNull();
     });
-
 });

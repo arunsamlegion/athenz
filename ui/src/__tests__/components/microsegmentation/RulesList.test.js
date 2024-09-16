@@ -14,50 +14,50 @@
  * limitations under the License.
  */
 import React from 'react';
-import { render } from '@testing-library/react';
-import API from '../../../api';
-import RulesList from "../../../components/microsegmentation/RulesList";
+import { waitFor } from '@testing-library/react';
+import {
+    buildMicrosegmentationForState,
+    getStateWithMicrosegmentation,
+    renderWithRedux,
+} from '../../../tests_utils/ComponentsTestUtils';
+import MockApi from '../../../mock/MockApi';
+import RulesList from '../../../components/microsegmentation/RulesList';
 
 describe('RulesList', () => {
     it('should render', () => {
-        let domain= 'domain';
+        let domain = 'domain';
         let segmentationData = {
-            "inbound": [
+            inbound: [
                 {
-                    "source_service": "serviceA",
-                    "source_port": "1111",
-                    "destination_port": "2222",
-                    "destination_services": [
-                        "serviceB",
-                        "serviceC",
-                        "serviceD"
-                    ],
-                    "layer" : "tcp"
-                }
+                    source_service: 'serviceA',
+                    source_port: '1111',
+                    destination_port: '2222',
+                    destination_services: ['serviceB', 'serviceC', 'serviceD'],
+                    layer: 'tcp',
+                },
             ],
-            "outbound": [
+            outbound: [
                 {
-                    "source_service": "serviceE",
-                    "source_port": "3333",
-                    "destination_port": "4444",
-                    "destination_services": [
-                        "serviceF",
-                        "serviceG",
-                        "serviceH"
-                    ],
-                    "layer" : "udp"
-                }
-            ]
+                    source_service: 'serviceE',
+                    source_port: '3333',
+                    destination_port: '4444',
+                    destination_services: ['serviceF', 'serviceG', 'serviceH'],
+                    layer: 'udp',
+                },
+            ],
         };
-        const { getByTestId } = render(
+
+        const { getByTestId } = renderWithRedux(
             <RulesList
-                api={API()}
                 domain={domain}
-                _csrf={"_csrf"}
+                _csrf={'_csrf'}
                 isDomainAuditEnabled={true}
-                data={segmentationData}
-            />
+            />,
+            getStateWithMicrosegmentation(
+                buildMicrosegmentationForState(segmentationData, domain)
+            )
         );
+
         const rulesList = getByTestId('segmentation-data-list');
 
         expect(rulesList).toMatchSnapshot();

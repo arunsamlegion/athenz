@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,18 +13,5 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-// Add some helpful assertions for `react-testing-library`
-import '@testing-library/jest-dom/extend-expect';
-import jsdom from 'jsdom';
-import { createSerializer } from '@emotion/jest';
-
-const dom = new jsdom.JSDOM('<!doctype html><html><body></body></html>');
-
-expect.addSnapshotSerializer(createSerializer());
-
-// new lines
-global.Node = dom.window.Node;
-require('mutationobserver-shim');
-global.MutationObserver = global.window.MutationObserver;
 
 process.env.APP_ENV = 'unittest';

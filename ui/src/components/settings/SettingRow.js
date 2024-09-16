@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,12 @@ import styled from '@emotion/styled';
 import Switch from '../denali/Switch';
 import Input from '../denali/Input';
 import InputDropdown from '../denali/InputDropdown';
+import InputLabel from '../denali/InputLabel';
 
 const TDStyled = styled.td`
     background-color: ${(props) => props.color};
     text-align: ${(props) => props.align};
+    width: ${(props) => props.width};
     padding: 5px 0 5px 15px;
     vertical-align: middle;
     word-break: break-all;
@@ -30,7 +32,7 @@ const TDStyled = styled.td`
 const TrStyled = styled.tr`
     box-sizing: border-box;
     margin-top: 10px;
-    box-shadow: 0 1px 4px #d9d9d9;
+    box-shadow: ${(props) => (props.inModal ? '' : '0 1px 4px #d9d9d9')};
     border: 1px solid #fff;
     -webkit-border-image: none;
     border-image: none;
@@ -52,19 +54,19 @@ const StyledInputDropDown = styled(InputDropdown)`
     display: block;
 `;
 
+const StyledInputLabel = styled(InputLabel)`
+    font-size: 14px;
+    font-weight: 700;
+`;
+
 export default class SettingRow extends React.Component {
     constructor(props) {
         super(props);
         this.onTimeChange = this.onTimeChange.bind(this);
+        this.onTextInputChange = this.onTextInputChange.bind(this);
         this.onDropDownChange = this.onDropDownChange.bind(this);
         this.toggleSwitchButton = this.toggleSwitchButton.bind(this);
         this.onRadioChange = this.onRadioChange.bind(this);
-        this.saveJustification = this.saveJustification.bind(this);
-        this.api = props.api;
-    }
-
-    saveJustification(val) {
-        this.setState({ deleteJustification: val });
     }
 
     toggleSwitchButton(evt) {
@@ -72,6 +74,10 @@ export default class SettingRow extends React.Component {
     }
 
     onTimeChange(evt) {
+        this.props.onValueChange(this.props.name, evt.target.value);
+    }
+
+    onTextInputChange(evt) {
         this.props.onValueChange(this.props.name, evt.target.value);
     }
 
@@ -102,6 +108,7 @@ export default class SettingRow extends React.Component {
                         value={this.props.value}
                         checked={this.props.value}
                         onChange={this.toggleSwitchButton}
+                        disabled={this.props.disabled || false}
                     />
                 );
             case 'input':
@@ -114,6 +121,19 @@ export default class SettingRow extends React.Component {
                             id={'setting-' + this.props.name}
                             onChange={this.onTimeChange}
                             onKeyPress={this.numRestricted}
+                            value={this.props.value}
+                            disabled={this.props.disabled || false}
+                        />
+                    </StyledDiv>
+                );
+            case 'text':
+                return (
+                    <StyledDiv>
+                        <SettingInput
+                            placeholder={this.props.unit}
+                            fluid
+                            id={'setting-' + this.props.name}
+                            onChange={this.onTextInputChange}
                             value={this.props.value}
                         />
                     </StyledDiv>
@@ -147,21 +167,45 @@ export default class SettingRow extends React.Component {
         let name = this.props.name;
 
         let button = this.getSettingButton();
-
-        rows.push(
-            <TrStyled key={name} data-testid='setting-row'>
-                <TDStyled color={color} align={left}>
-                    {label}
-                </TDStyled>
-                <TDStyled color={color} align={left}>
-                    {button}
-                </TDStyled>
-                <TDStyled color={color} align={left}>
-                    {this.props.desc}
-                </TDStyled>
-            </TrStyled>
-        );
-
+        if (this.props.inModal) {
+            rows.push(
+                <TrStyled
+                    key={name}
+                    data-testid='setting-row'
+                    inModal={this.props.inModal}
+                    title={this.props.tooltip}
+                >
+                    <TDStyled color={color} align={left} width={'17%'}>
+                        <StyledInputLabel>{label}</StyledInputLabel>
+                    </TDStyled>
+                    <TDStyled color={color} align={left} width={'auto'}>
+                        {button}
+                    </TDStyled>
+                    <TDStyled color={color} align={left} width={'auto'}>
+                        {this.props.desc}
+                    </TDStyled>
+                </TrStyled>
+            );
+        } else {
+            rows.push(
+                <TrStyled
+                    key={name}
+                    data-testid='setting-row'
+                    inModal={this.props.inModal}
+                    title={this.props.tooltip}
+                >
+                    <TDStyled color={color} align={left} width={'auto'}>
+                        {label}
+                    </TDStyled>
+                    <TDStyled color={color} align={left} width={'auto'}>
+                        {button}
+                    </TDStyled>
+                    <TDStyled color={color} align={left} width={'auto'}>
+                        {this.props.desc}
+                    </TDStyled>
+                </TrStyled>
+            );
+        }
         return rows;
     }
 }

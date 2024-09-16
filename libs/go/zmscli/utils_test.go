@@ -1,4 +1,4 @@
-// Copyright 2016 Yahoo Inc.
+// Copyright The Athenz Authors
 // Licensed under the terms of the Apache version 2.0 license. See LICENSE file for terms.
 
 package zmscli
@@ -137,5 +137,41 @@ func TestRemoveAll(t *testing.T) {
 	list = cli.RemoveAll(fullList, removeList)
 	if len(list) != 0 {
 		t.Error("Returned list is not empty")
+	}
+}
+
+func TestLocalName(t *testing.T) {
+
+	local := LocalName("coretech:role.role1", ":role.")
+	if local != "role1" {
+		t.Error("coretech:role.role1 didn't return role1 with prefix :role.")
+	}
+
+	local = LocalName("coretech:role.role1.role2", ":role.")
+	if local != "role1.role2" {
+		t.Error("coretech:role.role1.role2 didn't return role1.role2 with prefix :role.")
+	}
+
+	local = LocalName("coretech.service1", ":service.")
+	if local != "coretech.service1" {
+		t.Error("coretech.service1 didn't return service1 with prefix :service.")
+	}
+}
+
+func TestServiceName(t *testing.T) {
+
+	svc := ServiceName("coretech.api")
+	if svc != "api" {
+		t.Error("coretech.api didn't return service name api")
+	}
+
+	svc = ServiceName("coretech.prod.storage")
+	if svc != "storage" {
+		t.Error("coretech.prod.storage didn't return service name storage")
+	}
+
+	svc = ServiceName("coretech")
+	if svc != "coretech" {
+		t.Error("coretech didn't return service name coretech")
 	}
 }

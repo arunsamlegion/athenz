@@ -34,13 +34,13 @@ var (
 )
 
 func StartMetaServer(EndPoint string) {
-	http.HandleFunc("/task", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/v2/metadata", func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, taskMetaData)
 	})
 
 	log.Println("Starting Meta Mock listening on: " + EndPoint)
 	err := http.ListenAndServe(EndPoint, nil)
 	if err != nil {
-		log.Fatal("ListenAndServe: ", err)
+		log.Fatalf("ListenAndServe: %v\n", err)
 	}
 }

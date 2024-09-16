@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,8 @@ package com.yahoo.athenz.zms.store;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.yahoo.athenz.common.server.util.PrincipalUtils;
 import com.yahoo.athenz.zms.*;
-import com.yahoo.athenz.zms.utils.ZMSUtils;
 
 public class AthenzDomain {
 
@@ -96,7 +96,8 @@ public class AthenzDomain {
         return domain;
     }
 
-    public void setRoleMemberPrincipalTypes(final String userDomainPrefix, List<String> addlUserCheckDomainPrefixList) {
+    public void setRoleMemberPrincipalTypes(final String userDomainPrefix, List<String> addlUserCheckDomainPrefixList,
+                                            final String headlessUserDomainPrefix) {
         if (roles == null) {
             return;
         }
@@ -104,8 +105,8 @@ public class AthenzDomain {
             List<RoleMember> roleMembers = role.getRoleMembers();
             if (roleMembers != null) {
                 for (RoleMember roleMember: roleMembers) {
-                    roleMember.setPrincipalType(ZMSUtils.principalType(roleMember.getMemberName(),
-                            userDomainPrefix, addlUserCheckDomainPrefixList).getValue());
+                    roleMember.setPrincipalType(PrincipalUtils.principalType(roleMember.getMemberName(),
+                            userDomainPrefix, addlUserCheckDomainPrefixList, headlessUserDomainPrefix).getValue());
                 }
             }
         }

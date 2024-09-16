@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -107,28 +107,30 @@ const ButtonDiv = styled.div`
     text-align: center;
 `;
 
-class PageLogin extends React.Component {
-    static async getInitialProps(props) {
-        let api = API(props.req);
-        let options = '';
-        let error = '';
+export async function getServerSideProps(context) {
+    let api = API(context.req);
+    let options = '';
+    let error = '';
 
-        await api
-            .getAuthOptions()
-            .then((data) => {
-                options = data;
-            })
-            .catch((err) => {
-                error = err;
-            });
+    await api
+        .getAuthOptions()
+        .then((data) => {
+            options = data;
+        })
+        .catch((err) => {
+            error = err;
+        });
 
-        return {
+    return {
+        props: {
             options,
             error,
-            nonce: props.req.headers.rid,
-        };
-    }
+            nonce: context.req.headers.rid,
+        },
+    };
+}
 
+class PageLogin extends React.Component {
     constructor(props) {
         super(props);
         this.state = {
@@ -170,9 +172,7 @@ class PageLogin extends React.Component {
                             },
                         }).then((response) => {
                             if (response && response.status === 200) {
-                                this.props.router.push(`/`, `/`, {
-                                    getInitialProps: true,
-                                });
+                                this.props.router.push(`/`, `/`);
                             }
                         });
                     }
@@ -188,7 +188,7 @@ class PageLogin extends React.Component {
     render() {
         return (
             <CacheProvider value={this.cache}>
-                <div data-testid='home'>
+                <div data-testid='login'>
                     <Head>
                         <title>Athenz</title>
                     </Head>
@@ -196,9 +196,7 @@ class PageLogin extends React.Component {
                         <NavBar background={'#002339'}>
                             <NavBarItem>
                                 <Link href={PageUtils.homePage()}>
-                                    <a>
-                                        <LogoStyled />
-                                    </a>
+                                    <LogoStyled />
                                 </Link>
                             </NavBarItem>
                         </NavBar>
@@ -260,4 +258,5 @@ class PageLogin extends React.Component {
         );
     }
 }
+
 export default withRouter(PageLogin);

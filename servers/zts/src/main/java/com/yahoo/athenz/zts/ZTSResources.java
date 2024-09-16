@@ -4,11 +4,12 @@
 package com.yahoo.athenz.zts;
 
 import com.yahoo.rdl.*;
-import javax.ws.rs.*;
-import javax.ws.rs.core.*;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import javax.inject.Inject;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.*;
+import jakarta.servlet.ServletContext;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.inject.Inject;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 
@@ -27,7 +28,7 @@ public class ZTSResources {
         int code = ResourceException.OK;
         ResourceContext context = null;
         try {
-            context = this.delegate.newResourceContext(this.request, this.response, "getResourceAccess");
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "getResourceAccess");
             context.authenticate();
             return this.delegate.getResourceAccess(context, action, resource, domain, checkPrincipal);
         } catch (ResourceException e) {
@@ -38,6 +39,8 @@ public class ZTSResources {
             case ResourceException.FORBIDDEN:
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.NOT_FOUND:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.TOO_MANY_REQUESTS:
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.UNAUTHORIZED:
                 throw typedException(code, e, ResourceError.class);
@@ -62,7 +65,7 @@ public class ZTSResources {
         int code = ResourceException.OK;
         ResourceContext context = null;
         try {
-            context = this.delegate.newResourceContext(this.request, this.response, "getResourceAccessExt");
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "getResourceAccessExt");
             context.authenticate();
             return this.delegate.getResourceAccessExt(context, action, resource, domain, checkPrincipal);
         } catch (ResourceException e) {
@@ -73,6 +76,8 @@ public class ZTSResources {
             case ResourceException.FORBIDDEN:
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.NOT_FOUND:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.TOO_MANY_REQUESTS:
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.UNAUTHORIZED:
                 throw typedException(code, e, ResourceError.class);
@@ -95,7 +100,7 @@ public class ZTSResources {
         int code = ResourceException.OK;
         ResourceContext context = null;
         try {
-            context = this.delegate.newResourceContext(this.request, this.response, "getServiceIdentity");
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "getServiceIdentity");
             context.authenticate();
             return this.delegate.getServiceIdentity(context, domainName, serviceName);
         } catch (ResourceException e) {
@@ -104,6 +109,8 @@ public class ZTSResources {
             case ResourceException.BAD_REQUEST:
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.NOT_FOUND:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.TOO_MANY_REQUESTS:
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.UNAUTHORIZED:
                 throw typedException(code, e, ResourceError.class);
@@ -125,7 +132,7 @@ public class ZTSResources {
         int code = ResourceException.OK;
         ResourceContext context = null;
         try {
-            context = this.delegate.newResourceContext(this.request, this.response, "getServiceIdentityList");
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "getServiceIdentityList");
             context.authenticate();
             return this.delegate.getServiceIdentityList(context, domainName);
         } catch (ResourceException e) {
@@ -134,6 +141,8 @@ public class ZTSResources {
             case ResourceException.BAD_REQUEST:
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.NOT_FOUND:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.TOO_MANY_REQUESTS:
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.UNAUTHORIZED:
                 throw typedException(code, e, ResourceError.class);
@@ -157,7 +166,7 @@ public class ZTSResources {
         int code = ResourceException.OK;
         ResourceContext context = null;
         try {
-            context = this.delegate.newResourceContext(this.request, this.response, "getPublicKeyEntry");
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "getPublicKeyEntry");
             context.authenticate();
             return this.delegate.getPublicKeyEntry(context, domainName, serviceName, keyId);
         } catch (ResourceException e) {
@@ -166,6 +175,10 @@ public class ZTSResources {
             case ResourceException.BAD_REQUEST:
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.NOT_FOUND:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.TOO_MANY_REQUESTS:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.UNAUTHORIZED:
                 throw typedException(code, e, ResourceError.class);
             default:
                 System.err.println("*** Warning: undeclared exception (" + code + ") for resource getPublicKeyEntry");
@@ -185,13 +198,17 @@ public class ZTSResources {
         int code = ResourceException.OK;
         ResourceContext context = null;
         try {
-            context = this.delegate.newResourceContext(this.request, this.response, "getHostServices");
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "getHostServices");
             context.authenticate();
             return this.delegate.getHostServices(context, host);
         } catch (ResourceException e) {
             code = e.getCode();
             switch (code) {
             case ResourceException.BAD_REQUEST:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.TOO_MANY_REQUESTS:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.UNAUTHORIZED:
                 throw typedException(code, e, ResourceError.class);
             default:
                 System.err.println("*** Warning: undeclared exception (" + code + ") for resource getHostServices");
@@ -212,7 +229,7 @@ public class ZTSResources {
         int code = ResourceException.OK;
         ResourceContext context = null;
         try {
-            context = this.delegate.newResourceContext(this.request, this.response, "getDomainSignedPolicyData");
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "getDomainSignedPolicyData");
             context.authenticate();
             return this.delegate.getDomainSignedPolicyData(context, domainName, matchingTag);
         } catch (ResourceException e) {
@@ -222,11 +239,51 @@ public class ZTSResources {
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.NOT_FOUND:
                 throw typedException(code, e, ResourceError.class);
+            case ResourceException.TOO_MANY_REQUESTS:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.UNAUTHORIZED:
+                throw typedException(code, e, ResourceError.class);
             default:
                 System.err.println("*** Warning: undeclared exception (" + code + ") for resource getDomainSignedPolicyData");
                 throw typedException(code, e, ResourceError.class);
             }
         } finally {
+            this.delegate.recordMetrics(context, code);
+        }
+    }
+
+    @POST
+    @Path("/domain/{domainName}/policy/signed")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    @Operation(description = "Get a signed policy enumeration from the service, to transfer to a local store. An ETag is generated for the PolicyList that changes when any item in the list changes. If the If-None-Match header is provided, and it matches the ETag that would be returned, then a NOT_MODIFIED response is returned instead of the list.")
+    public Response postSignedPolicyRequest(
+        @Parameter(description = "name of the domain", required = true) @PathParam("domainName") String domainName,
+        @Parameter(description = "policy version request details", required = true) SignedPolicyRequest request,
+        @Parameter(description = "Retrieved from the previous request, this timestamp specifies to the server to return any policies modified since this time", required = true) @HeaderParam("If-None-Match") String matchingTag) {
+        int code = ResourceException.OK;
+        ResourceContext context = null;
+        try {
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "postSignedPolicyRequest");
+            context.authenticate();
+            return this.delegate.postSignedPolicyRequest(context, domainName, request, matchingTag);
+        } catch (ResourceException e) {
+            code = e.getCode();
+            switch (code) {
+            case ResourceException.BAD_REQUEST:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.NOT_FOUND:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.TOO_MANY_REQUESTS:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.UNAUTHORIZED:
+                throw typedException(code, e, ResourceError.class);
+            default:
+                System.err.println("*** Warning: undeclared exception (" + code + ") for resource postSignedPolicyRequest");
+                throw typedException(code, e, ResourceError.class);
+            }
+        } finally {
+            this.delegate.publishChangeMessage(context, code);
             this.delegate.recordMetrics(context, code);
         }
     }
@@ -244,7 +301,7 @@ public class ZTSResources {
         int code = ResourceException.OK;
         ResourceContext context = null;
         try {
-            context = this.delegate.newResourceContext(this.request, this.response, "getRoleToken");
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "getRoleToken");
             context.authenticate();
             return this.delegate.getRoleToken(context, domainName, role, minExpiryTime, maxExpiryTime, proxyForPrincipal);
         } catch (ResourceException e) {
@@ -255,6 +312,8 @@ public class ZTSResources {
             case ResourceException.FORBIDDEN:
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.NOT_FOUND:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.TOO_MANY_REQUESTS:
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.UNAUTHORIZED:
                 throw typedException(code, e, ResourceError.class);
@@ -279,7 +338,7 @@ public class ZTSResources {
         int code = ResourceException.OK;
         ResourceContext context = null;
         try {
-            context = this.delegate.newResourceContext(this.request, this.response, "postRoleCertificateRequest");
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "postRoleCertificateRequest");
             context.authenticate();
             return this.delegate.postRoleCertificateRequest(context, domainName, roleName, req);
         } catch (ResourceException e) {
@@ -291,6 +350,8 @@ public class ZTSResources {
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.NOT_FOUND:
                 throw typedException(code, e, ResourceError.class);
+            case ResourceException.TOO_MANY_REQUESTS:
+                throw typedException(code, e, ResourceError.class);
             case ResourceException.UNAUTHORIZED:
                 throw typedException(code, e, ResourceError.class);
             default:
@@ -298,6 +359,7 @@ public class ZTSResources {
                 throw typedException(code, e, ResourceError.class);
             }
         } finally {
+            this.delegate.publishChangeMessage(context, code);
             this.delegate.recordMetrics(context, code);
         }
     }
@@ -313,7 +375,7 @@ public class ZTSResources {
         int code = ResourceException.OK;
         ResourceContext context = null;
         try {
-            context = this.delegate.newResourceContext(this.request, this.response, "getAccess");
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "getAccess");
             context.authenticate();
             return this.delegate.getAccess(context, domainName, roleName, principal);
         } catch (ResourceException e) {
@@ -324,6 +386,8 @@ public class ZTSResources {
             case ResourceException.FORBIDDEN:
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.NOT_FOUND:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.TOO_MANY_REQUESTS:
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.UNAUTHORIZED:
                 throw typedException(code, e, ResourceError.class);
@@ -346,7 +410,7 @@ public class ZTSResources {
         int code = ResourceException.OK;
         ResourceContext context = null;
         try {
-            context = this.delegate.newResourceContext(this.request, this.response, "getRoleAccess");
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "getRoleAccess");
             context.authenticate();
             return this.delegate.getRoleAccess(context, domainName, principal);
         } catch (ResourceException e) {
@@ -355,6 +419,8 @@ public class ZTSResources {
             case ResourceException.BAD_REQUEST:
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.NOT_FOUND:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.TOO_MANY_REQUESTS:
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.UNAUTHORIZED:
                 throw typedException(code, e, ResourceError.class);
@@ -379,7 +445,7 @@ public class ZTSResources {
         int code = ResourceException.OK;
         ResourceContext context = null;
         try {
-            context = this.delegate.newResourceContext(this.request, this.response, "getTenantDomains");
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "getTenantDomains");
             context.authenticate();
             return this.delegate.getTenantDomains(context, providerDomainName, userName, roleName, serviceName);
         } catch (ResourceException e) {
@@ -388,6 +454,8 @@ public class ZTSResources {
             case ResourceException.BAD_REQUEST:
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.NOT_FOUND:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.TOO_MANY_REQUESTS:
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.UNAUTHORIZED:
                 throw typedException(code, e, ResourceError.class);
@@ -412,7 +480,7 @@ public class ZTSResources {
         int code = ResourceException.OK;
         ResourceContext context = null;
         try {
-            context = this.delegate.newResourceContext(this.request, this.response, "postInstanceRefreshRequest");
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "postInstanceRefreshRequest");
             context.authenticate();
             return this.delegate.postInstanceRefreshRequest(context, domain, service, req);
         } catch (ResourceException e) {
@@ -426,6 +494,8 @@ public class ZTSResources {
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.NOT_FOUND:
                 throw typedException(code, e, ResourceError.class);
+            case ResourceException.TOO_MANY_REQUESTS:
+                throw typedException(code, e, ResourceError.class);
             case ResourceException.UNAUTHORIZED:
                 throw typedException(code, e, ResourceError.class);
             default:
@@ -433,6 +503,7 @@ public class ZTSResources {
                 throw typedException(code, e, ResourceError.class);
             }
         } finally {
+            this.delegate.publishChangeMessage(context, code);
             this.delegate.recordMetrics(context, code);
         }
     }
@@ -449,7 +520,7 @@ public class ZTSResources {
         int code = ResourceException.OK;
         ResourceContext context = null;
         try {
-            context = this.delegate.newResourceContext(this.request, this.response, "getAWSTemporaryCredentials");
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "getAWSTemporaryCredentials");
             context.authenticate();
             return this.delegate.getAWSTemporaryCredentials(context, domainName, role, durationSeconds, externalId);
         } catch (ResourceException e) {
@@ -460,6 +531,8 @@ public class ZTSResources {
             case ResourceException.FORBIDDEN:
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.NOT_FOUND:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.TOO_MANY_REQUESTS:
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.UNAUTHORIZED:
                 throw typedException(code, e, ResourceError.class);
@@ -482,7 +555,7 @@ public class ZTSResources {
         int code = ResourceException.OK;
         ResourceContext context = null;
         try {
-            context = this.delegate.newResourceContext(this.request, this.response, "postInstanceRegisterInformation");
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "postInstanceRegisterInformation");
             context.authenticate();
             return this.delegate.postInstanceRegisterInformation(context, info);
         } catch (ResourceException e) {
@@ -496,6 +569,8 @@ public class ZTSResources {
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.NOT_FOUND:
                 throw typedException(code, e, ResourceError.class);
+            case ResourceException.TOO_MANY_REQUESTS:
+                throw typedException(code, e, ResourceError.class);
             case ResourceException.UNAUTHORIZED:
                 throw typedException(code, e, ResourceError.class);
             default:
@@ -503,6 +578,7 @@ public class ZTSResources {
                 throw typedException(code, e, ResourceError.class);
             }
         } finally {
+            this.delegate.publishChangeMessage(context, code);
             this.delegate.recordMetrics(context, code);
         }
     }
@@ -521,7 +597,7 @@ public class ZTSResources {
         int code = ResourceException.OK;
         ResourceContext context = null;
         try {
-            context = this.delegate.newResourceContext(this.request, this.response, "postInstanceRefreshInformation");
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "postInstanceRefreshInformation");
             context.authenticate();
             return this.delegate.postInstanceRefreshInformation(context, provider, domain, service, instanceId, info);
         } catch (ResourceException e) {
@@ -535,6 +611,8 @@ public class ZTSResources {
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.NOT_FOUND:
                 throw typedException(code, e, ResourceError.class);
+            case ResourceException.TOO_MANY_REQUESTS:
+                throw typedException(code, e, ResourceError.class);
             case ResourceException.UNAUTHORIZED:
                 throw typedException(code, e, ResourceError.class);
             default:
@@ -542,6 +620,7 @@ public class ZTSResources {
                 throw typedException(code, e, ResourceError.class);
             }
         } finally {
+            this.delegate.publishChangeMessage(context, code);
             this.delegate.recordMetrics(context, code);
         }
     }
@@ -558,7 +637,7 @@ public class ZTSResources {
         int code = ResourceException.OK;
         ResourceContext context = null;
         try {
-            context = this.delegate.newResourceContext(this.request, this.response, "getInstanceRegisterToken");
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "getInstanceRegisterToken");
             context.authorize("update", "" + domain + ":service." + service + "", null);
             return this.delegate.getInstanceRegisterToken(context, provider, domain, service, instanceId);
         } catch (ResourceException e) {
@@ -571,6 +650,8 @@ public class ZTSResources {
             case ResourceException.INTERNAL_SERVER_ERROR:
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.NOT_FOUND:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.TOO_MANY_REQUESTS:
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.UNAUTHORIZED:
                 throw typedException(code, e, ResourceError.class);
@@ -586,7 +667,7 @@ public class ZTSResources {
     @DELETE
     @Path("/instance/{provider}/{domain}/{service}/{instanceId}")
     @Produces(MediaType.APPLICATION_JSON)
-    @Operation(description = "Delete the given service instance certificate record thus blocking any future refresh requests from the given instance for this service")
+    @Operation(description = "Delete the given service instance certificate record thus blocking any future refresh requests from the given instance for this service There are two possible authorization checks for this endpoint: 1) domain admin: authorize(\"delete\", \"{domain}:instance.{instanceId}\") the authorized user can remove the instance record from the datastore 2) provider itself: if the identity of the caller is the provider itself then the provider is notifying ZTS that the instance was deleted")
     public void deleteInstanceIdentity(
         @Parameter(description = "the provider service name (i.e. \"aws.us-west-2\", \"paas.manhattan.corp-gq1\")", required = true) @PathParam("provider") String provider,
         @Parameter(description = "the domain of the instance", required = true) @PathParam("domain") String domain,
@@ -595,8 +676,8 @@ public class ZTSResources {
         int code = ResourceException.OK;
         ResourceContext context = null;
         try {
-            context = this.delegate.newResourceContext(this.request, this.response, "deleteInstanceIdentity");
-            context.authorize("delete", "" + domain + ":instance." + instanceId + "", null);
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "deleteInstanceIdentity");
+            context.authenticate();
             this.delegate.deleteInstanceIdentity(context, provider, domain, service, instanceId);
         } catch (ResourceException e) {
             code = e.getCode();
@@ -609,6 +690,8 @@ public class ZTSResources {
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.NOT_FOUND:
                 throw typedException(code, e, ResourceError.class);
+            case ResourceException.TOO_MANY_REQUESTS:
+                throw typedException(code, e, ResourceError.class);
             case ResourceException.UNAUTHORIZED:
                 throw typedException(code, e, ResourceError.class);
             default:
@@ -616,6 +699,7 @@ public class ZTSResources {
                 throw typedException(code, e, ResourceError.class);
             }
         } finally {
+            this.delegate.publishChangeMessage(context, code);
             this.delegate.recordMetrics(context, code);
         }
     }
@@ -629,7 +713,7 @@ public class ZTSResources {
         int code = ResourceException.OK;
         ResourceContext context = null;
         try {
-            context = this.delegate.newResourceContext(this.request, this.response, "getCertificateAuthorityBundle");
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "getCertificateAuthorityBundle");
             context.authenticate();
             return this.delegate.getCertificateAuthorityBundle(context, name);
         } catch (ResourceException e) {
@@ -638,6 +722,8 @@ public class ZTSResources {
             case ResourceException.BAD_REQUEST:
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.NOT_FOUND:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.TOO_MANY_REQUESTS:
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.UNAUTHORIZED:
                 throw typedException(code, e, ResourceError.class);
@@ -659,7 +745,7 @@ public class ZTSResources {
         int code = ResourceException.OK;
         ResourceContext context = null;
         try {
-            context = this.delegate.newResourceContext(this.request, this.response, "getStatus");
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "getStatus");
             context.authenticate();
             return this.delegate.getStatus(context);
         } catch (ResourceException e) {
@@ -668,6 +754,8 @@ public class ZTSResources {
             case ResourceException.BAD_REQUEST:
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.NOT_FOUND:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.TOO_MANY_REQUESTS:
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.UNAUTHORIZED:
                 throw typedException(code, e, ResourceError.class);
@@ -690,7 +778,7 @@ public class ZTSResources {
         int code = ResourceException.OK;
         ResourceContext context = null;
         try {
-            context = this.delegate.newResourceContext(this.request, this.response, "postSSHCertRequest");
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "postSSHCertRequest");
             context.authenticate();
             return this.delegate.postSSHCertRequest(context, certRequest);
         } catch (ResourceException e) {
@@ -702,10 +790,67 @@ public class ZTSResources {
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.INTERNAL_SERVER_ERROR:
                 throw typedException(code, e, ResourceError.class);
+            case ResourceException.TOO_MANY_REQUESTS:
+                throw typedException(code, e, ResourceError.class);
             case ResourceException.UNAUTHORIZED:
                 throw typedException(code, e, ResourceError.class);
             default:
                 System.err.println("*** Warning: undeclared exception (" + code + ") for resource postSSHCertRequest");
+                throw typedException(code, e, ResourceError.class);
+            }
+        } finally {
+            this.delegate.publishChangeMessage(context, code);
+            this.delegate.recordMetrics(context, code);
+        }
+    }
+
+    @GET
+    @Path("/.well-known/openid-configuration")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Operation(description = "")
+    public OpenIDConfig getOpenIDConfig(
+        ) {
+        int code = ResourceException.OK;
+        ResourceContext context = null;
+        try {
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "getOpenIDConfig");
+            return this.delegate.getOpenIDConfig(context);
+        } catch (ResourceException e) {
+            code = e.getCode();
+            switch (code) {
+            case ResourceException.BAD_REQUEST:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.TOO_MANY_REQUESTS:
+                throw typedException(code, e, ResourceError.class);
+            default:
+                System.err.println("*** Warning: undeclared exception (" + code + ") for resource getOpenIDConfig");
+                throw typedException(code, e, ResourceError.class);
+            }
+        } finally {
+            this.delegate.recordMetrics(context, code);
+        }
+    }
+
+    @GET
+    @Path("/.well-known/oauth-authorization-server")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Operation(description = "")
+    public OAuthConfig getOAuthConfig(
+        ) {
+        int code = ResourceException.OK;
+        ResourceContext context = null;
+        try {
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "getOAuthConfig");
+            return this.delegate.getOAuthConfig(context);
+        } catch (ResourceException e) {
+            code = e.getCode();
+            switch (code) {
+            case ResourceException.BAD_REQUEST:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.TOO_MANY_REQUESTS:
+                throw typedException(code, e, ResourceError.class);
+            default:
+                System.err.println("*** Warning: undeclared exception (" + code + ") for resource getOAuthConfig");
                 throw typedException(code, e, ResourceError.class);
             }
         } finally {
@@ -718,21 +863,19 @@ public class ZTSResources {
     @Produces(MediaType.APPLICATION_JSON)
     @Operation(description = "")
     public JWKList getJWKList(
-        @Parameter(description = "flag to indicate ec curve names are restricted to RFC values", required = false) @QueryParam("rfc") @DefaultValue("false") Boolean rfc) {
+        @Parameter(description = "flag to indicate ec curve names are restricted to RFC values", required = false) @QueryParam("rfc") @DefaultValue("false") Boolean rfc,
+        @Parameter(description = "service", required = false) @QueryParam("service") @DefaultValue("zts") String service) {
         int code = ResourceException.OK;
         ResourceContext context = null;
         try {
-            context = this.delegate.newResourceContext(this.request, this.response, "getJWKList");
-            context.authenticate();
-            return this.delegate.getJWKList(context, rfc);
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "getJWKList");
+            return this.delegate.getJWKList(context, rfc, service);
         } catch (ResourceException e) {
             code = e.getCode();
             switch (code) {
             case ResourceException.BAD_REQUEST:
                 throw typedException(code, e, ResourceError.class);
-            case ResourceException.NOT_FOUND:
-                throw typedException(code, e, ResourceError.class);
-            case ResourceException.UNAUTHORIZED:
+            case ResourceException.TOO_MANY_REQUESTS:
                 throw typedException(code, e, ResourceError.class);
             default:
                 System.err.println("*** Warning: undeclared exception (" + code + ") for resource getJWKList");
@@ -747,13 +890,13 @@ public class ZTSResources {
     @Path("/oauth2/token")
     @Consumes("application/x-www-form-urlencoded")
     @Produces(MediaType.APPLICATION_JSON)
-    @Operation(description = "")
+    @Operation(description = "Fetch OAuth2 Access Token")
     public AccessTokenResponse postAccessTokenRequest(
-        @Parameter(description = "", required = true) String request) {
+        @Parameter(description = "token request details include scope", required = true) String request) {
         int code = ResourceException.OK;
         ResourceContext context = null;
         try {
-            context = this.delegate.newResourceContext(this.request, this.response, "postAccessTokenRequest");
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "postAccessTokenRequest");
             context.authenticate();
             return this.delegate.postAccessTokenRequest(context, request);
         } catch (ResourceException e) {
@@ -765,10 +908,58 @@ public class ZTSResources {
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.NOT_FOUND:
                 throw typedException(code, e, ResourceError.class);
+            case ResourceException.TOO_MANY_REQUESTS:
+                throw typedException(code, e, ResourceError.class);
             case ResourceException.UNAUTHORIZED:
                 throw typedException(code, e, ResourceError.class);
             default:
                 System.err.println("*** Warning: undeclared exception (" + code + ") for resource postAccessTokenRequest");
+                throw typedException(code, e, ResourceError.class);
+            }
+        } finally {
+            this.delegate.publishChangeMessage(context, code);
+            this.delegate.recordMetrics(context, code);
+        }
+    }
+
+    @GET
+    @Path("/oauth2/auth")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Operation(description = "Fetch OAuth OpenID Connect ID Token")
+    public Response getOIDCResponse(
+        @Parameter(description = "response type - currently only supporting id tokens - id_token", required = true) @QueryParam("response_type") String responseType,
+        @Parameter(description = "client id - must be valid athenz service identity name", required = true) @QueryParam("client_id") String clientId,
+        @Parameter(description = "redirect uri for the response", required = true) @QueryParam("redirect_uri") String redirectUri,
+        @Parameter(description = "id token scope", required = true) @QueryParam("scope") String scope,
+        @Parameter(description = "optional state claim included in the response location header", required = false) @QueryParam("state") String state,
+        @Parameter(description = "nonce claim included in the id token", required = true) @QueryParam("nonce") String nonce,
+        @Parameter(description = "optional signing key type - RSA or EC. Might be ignored if server doesn't have the requested type configured", required = false) @QueryParam("keyType") String keyType,
+        @Parameter(description = "flag to indicate to use full arn in group claim (e.g. sports:role.deployer instead of deployer)", required = false) @QueryParam("fullArn") @DefaultValue("false") Boolean fullArn,
+        @Parameter(description = "optional expiry period specified in seconds", required = false) @QueryParam("expiryTime") Integer expiryTime,
+        @Parameter(description = "optional output format of json", required = false) @QueryParam("output") String output,
+        @Parameter(description = "flag to indicate to include role name in the audience claim only if we have a single role in response", required = false) @QueryParam("roleInAudClaim") @DefaultValue("false") Boolean roleInAudClaim,
+        @Parameter(description = "flag to indicate that all requested roles/groups in the scope must be present in the response otherwise return an error", required = false) @QueryParam("allScopePresent") @DefaultValue("false") Boolean allScopePresent) {
+        int code = ResourceException.OK;
+        ResourceContext context = null;
+        try {
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "getOIDCResponse");
+            context.authenticate();
+            return this.delegate.getOIDCResponse(context, responseType, clientId, redirectUri, scope, state, nonce, keyType, fullArn, expiryTime, output, roleInAudClaim, allScopePresent);
+        } catch (ResourceException e) {
+            code = e.getCode();
+            switch (code) {
+            case ResourceException.BAD_REQUEST:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.FORBIDDEN:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.NOT_FOUND:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.TOO_MANY_REQUESTS:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.UNAUTHORIZED:
+                throw typedException(code, e, ResourceError.class);
+            default:
+                System.err.println("*** Warning: undeclared exception (" + code + ") for resource getOIDCResponse");
                 throw typedException(code, e, ResourceError.class);
             }
         } finally {
@@ -786,7 +977,7 @@ public class ZTSResources {
         int code = ResourceException.OK;
         ResourceContext context = null;
         try {
-            context = this.delegate.newResourceContext(this.request, this.response, "postRoleCertificateRequestExt");
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "postRoleCertificateRequestExt");
             context.authenticate();
             return this.delegate.postRoleCertificateRequestExt(context, req);
         } catch (ResourceException e) {
@@ -798,10 +989,47 @@ public class ZTSResources {
                 throw typedException(code, e, ResourceError.class);
             case ResourceException.NOT_FOUND:
                 throw typedException(code, e, ResourceError.class);
+            case ResourceException.TOO_MANY_REQUESTS:
+                throw typedException(code, e, ResourceError.class);
             case ResourceException.UNAUTHORIZED:
                 throw typedException(code, e, ResourceError.class);
             default:
                 System.err.println("*** Warning: undeclared exception (" + code + ") for resource postRoleCertificateRequestExt");
+                throw typedException(code, e, ResourceError.class);
+            }
+        } finally {
+            this.delegate.publishChangeMessage(context, code);
+            this.delegate.recordMetrics(context, code);
+        }
+    }
+
+    @GET
+    @Path("/role/cert")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Operation(description = "Fetch all roles that are tagged as requiring role certificates for principal")
+    public RoleAccess getRolesRequireRoleCert(
+        @Parameter(description = "If not present, will return roles for the user making the call", required = false) @QueryParam("principal") String principal) {
+        int code = ResourceException.OK;
+        ResourceContext context = null;
+        try {
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "getRolesRequireRoleCert");
+            context.authenticate();
+            return this.delegate.getRolesRequireRoleCert(context, principal);
+        } catch (ResourceException e) {
+            code = e.getCode();
+            switch (code) {
+            case ResourceException.BAD_REQUEST:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.FORBIDDEN:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.NOT_FOUND:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.TOO_MANY_REQUESTS:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.UNAUTHORIZED:
+                throw typedException(code, e, ResourceError.class);
+            default:
+                System.err.println("*** Warning: undeclared exception (" + code + ") for resource getRolesRequireRoleCert");
                 throw typedException(code, e, ResourceError.class);
             }
         } finally {
@@ -819,7 +1047,7 @@ public class ZTSResources {
         int code = ResourceException.OK;
         ResourceContext context = null;
         try {
-            context = this.delegate.newResourceContext(this.request, this.response, "getWorkloadsByService");
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "getWorkloadsByService");
             context.authenticate();
             return this.delegate.getWorkloadsByService(context, domainName, serviceName);
         } catch (ResourceException e) {
@@ -853,7 +1081,7 @@ public class ZTSResources {
         int code = ResourceException.OK;
         ResourceContext context = null;
         try {
-            context = this.delegate.newResourceContext(this.request, this.response, "getWorkloadsByIP");
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "getWorkloadsByIP");
             context.authenticate();
             return this.delegate.getWorkloadsByIP(context, ip);
         } catch (ResourceException e) {
@@ -888,7 +1116,7 @@ public class ZTSResources {
         int code = ResourceException.OK;
         ResourceContext context = null;
         try {
-            context = this.delegate.newResourceContext(this.request, this.response, "getTransportRules");
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "getTransportRules");
             context.authenticate();
             return this.delegate.getTransportRules(context, domainName, serviceName);
         } catch (ResourceException e) {
@@ -914,6 +1142,74 @@ public class ZTSResources {
     }
 
     @GET
+    @Path("/sys/info")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Operation(description = "Retrieve the server info. Since we're exposing server version details, the request will require authorization")
+    public Info getInfo(
+        ) {
+        int code = ResourceException.OK;
+        ResourceContext context = null;
+        try {
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "getInfo");
+            context.authorize("get", "sys.auth:info", null);
+            return this.delegate.getInfo(context);
+        } catch (ResourceException e) {
+            code = e.getCode();
+            switch (code) {
+            case ResourceException.BAD_REQUEST:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.FORBIDDEN:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.NOT_FOUND:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.TOO_MANY_REQUESTS:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.UNAUTHORIZED:
+                throw typedException(code, e, ResourceError.class);
+            default:
+                System.err.println("*** Warning: undeclared exception (" + code + ") for resource getInfo");
+                throw typedException(code, e, ResourceError.class);
+            }
+        } finally {
+            this.delegate.recordMetrics(context, code);
+        }
+    }
+
+    @POST
+    @Path("/external/{provider}/domain/{domainName}/creds")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    @Operation(description = "request external credentials from the specified provider based on the specified request attributes and the principal's id token (that will be internally generated by ZTS). Based on the provider, the server will carry out internal authorization checks (e.g. is the principal authorized to request a given scope in the credentials).")
+    public ExternalCredentialsResponse postExternalCredentialsRequest(
+        @Parameter(description = "provider name to request credentials from", required = true) @PathParam("provider") String provider,
+        @Parameter(description = "request credentials from account/project associated with this athenz domain", required = true) @PathParam("domainName") String domainName,
+        @Parameter(description = "request object with optional and required attributes", required = true) ExternalCredentialsRequest request) {
+        int code = ResourceException.OK;
+        ResourceContext context = null;
+        try {
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "postExternalCredentialsRequest");
+            context.authenticate();
+            return this.delegate.postExternalCredentialsRequest(context, provider, domainName, request);
+        } catch (ResourceException e) {
+            code = e.getCode();
+            switch (code) {
+            case ResourceException.BAD_REQUEST:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.FORBIDDEN:
+                throw typedException(code, e, ResourceError.class);
+            case ResourceException.UNAUTHORIZED:
+                throw typedException(code, e, ResourceError.class);
+            default:
+                System.err.println("*** Warning: undeclared exception (" + code + ") for resource postExternalCredentialsRequest");
+                throw typedException(code, e, ResourceError.class);
+            }
+        } finally {
+            this.delegate.publishChangeMessage(context, code);
+            this.delegate.recordMetrics(context, code);
+        }
+    }
+
+    @GET
     @Path("/schema")
     @Produces(MediaType.APPLICATION_JSON)
     @Operation(description = "Get RDL Schema")
@@ -922,7 +1218,7 @@ public class ZTSResources {
         int code = ResourceException.OK;
         ResourceContext context = null;
         try {
-            context = this.delegate.newResourceContext(this.request, this.response, "getRdlSchema");
+            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, "getRdlSchema");
             context.authenticate();
             return this.delegate.getRdlSchema(context);
         } catch (ResourceException e) {
@@ -949,7 +1245,7 @@ public class ZTSResources {
     }
 
     @Inject private ZTSHandler delegate;
+    @Context private ServletContext servletContext;
     @Context private HttpServletRequest request;
     @Context private HttpServletResponse response;
-    
 }

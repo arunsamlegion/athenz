@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,15 +19,20 @@ import DateUtils from '../utils/DateUtils';
 import { colors } from '../denali/styles';
 import Icon from '../denali/icons/Icon';
 import styled from '@emotion/styled';
+import { ADD_ROLE_EXPIRATION_PLACEHOLDER } from '../constants/constants';
 
 const DateClearAnchor = styled.a`
     margin-left: -7px;
+    margin-top: 10px !important;
+`;
+
+const Div = styled.div`
+    display: flex;
 `;
 
 export default class FlatPicker extends React.Component {
     constructor(props) {
         super(props);
-        this.datePicker = React.createRef();
         this.clearDate = React.createRef();
         this.dateUtils = new DateUtils();
         this.onChange = this.onChange.bind(this);
@@ -42,7 +47,7 @@ export default class FlatPicker extends React.Component {
             maxDate: this.props.maxDate ? this.props.maxDate : null,
             placeholder: this.props.placeholder
                 ? this.props.placeholder
-                : 'Expiration (Optional)',
+                : ADD_ROLE_EXPIRATION_PLACEHOLDER,
             value: this.props.value
                 ? this.dateUtils.uxDatetimeToRDLTimestamp(this.props.value)
                 : '',
@@ -60,7 +65,7 @@ export default class FlatPicker extends React.Component {
 
     onClose(selectedDates, dateStr, instance) {
         this.onCloseDate = dateStr;
-        if (this.onChangeDate === this.onCloseDate) {
+        if (this.onChangeDate === this.onCloseDate || !this.clearDate.current) {
             if (dateStr !== '') {
                 this.props.onChange(selectedDates);
             }
@@ -73,7 +78,8 @@ export default class FlatPicker extends React.Component {
         if (
             prevProps.clear !== '' &&
             this.props.clear === '' &&
-            !this.props.shouldNotClear
+            !this.props.shouldNotClear &&
+            this.clearDate.current
         ) {
             this.clearDate.current.click();
         }
@@ -96,10 +102,9 @@ export default class FlatPicker extends React.Component {
     render() {
         let fpClass = this.props.id ? 'fp-' + this.props.id : 'flatpickr';
         return (
-            <div className={fpClass}>
+            <Div className={fpClass}>
                 <input
                     type='date'
-                    ref={this.datePicker}
                     data-testid='flatPicker'
                     placeholder={this.state.placeholder}
                     defaultValue={this.state.value}
@@ -129,7 +134,7 @@ export default class FlatPicker extends React.Component {
                         />
                     </DateClearAnchor>
                 )}
-            </div>
+            </Div>
         );
     }
 }

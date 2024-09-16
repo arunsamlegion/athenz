@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,14 +17,14 @@ package com.yahoo.athenz.zpe.match.impl;
 
 import java.util.regex.Pattern;
 
-import com.yahoo.athenz.zpe.AuthZpeClient;
+import com.yahoo.athenz.auth.util.StringUtils;
 import com.yahoo.athenz.zpe.match.ZpeMatch;
 
 public class ZpeMatchRegex implements ZpeMatch {
 
     private Pattern pattern;
     public ZpeMatchRegex(String value) {
-        pattern = Pattern.compile(AuthZpeClient.patternFromGlob(value));
+        pattern = Pattern.compile(StringUtils.patternFromGlob(value));
     }
 
     public boolean matches(String value) {

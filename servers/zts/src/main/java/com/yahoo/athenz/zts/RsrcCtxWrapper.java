@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,13 +19,18 @@ import com.yahoo.athenz.auth.Authority;
 import com.yahoo.athenz.auth.Authorizer;
 import com.yahoo.athenz.auth.Principal;
 import com.yahoo.athenz.common.ServerCommonConsts;
+import com.yahoo.athenz.common.messaging.DomainChangeMessage;
 import com.yahoo.athenz.common.server.rest.Http;
 import com.yahoo.athenz.common.metrics.Metric;
+import jakarta.servlet.ServletContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+
+import java.security.cert.X509Certificate;
+import java.util.List;
 
 public class RsrcCtxWrapper implements ResourceContext {
 
@@ -34,17 +39,17 @@ public class RsrcCtxWrapper implements ResourceContext {
     com.yahoo.athenz.common.server.rest.ResourceContext ctx;
     boolean optionalAuth;
     Metric metric;
-    private Object timerMetric;
-    private String apiName;
+    private final Object timerMetric;
+    private final String apiName;
 
-    public RsrcCtxWrapper(HttpServletRequest request, HttpServletResponse response,
-            Http.AuthorityList authList,  boolean optionalAuth, Authorizer authorizer,
-            Metric metric, Object timerMetric, String apiName) {
+    public RsrcCtxWrapper(ServletContext servletContext, HttpServletRequest request, HttpServletResponse response,
+                          Http.AuthorityList authList, boolean optionalAuth, Authorizer authorizer,
+                          Metric metric, Object timerMetric, String apiName) {
         this.optionalAuth = optionalAuth;
         this.metric = metric;
         this.timerMetric = timerMetric;
         this.apiName = apiName.toLowerCase();
-        ctx = new com.yahoo.athenz.common.server.rest.ResourceContext(request, response,
+        ctx = new com.yahoo.athenz.common.server.rest.ResourceContext(servletContext, request, response,
                 authList, authorizer);
     }
 
@@ -79,6 +84,11 @@ public class RsrcCtxWrapper implements ResourceContext {
     }
 
     @Override
+    public ServletContext servletContext() {
+        return ctx.servletContext();
+    }
+
+    @Override
     public String getApiName() {
         return apiName;
     }
@@ -108,19 +118,46 @@ public class RsrcCtxWrapper implements ResourceContext {
         try {
             ctx.authorize(action, resource, trustedDomain);
         } catch (com.yahoo.athenz.common.server.rest.ResourceException restExc) {
-            logPrincipal(ctx.principal());
+            logPrincipal();
             throwZtsException(restExc);
         }
     }
 
-    public void logPrincipal(final Principal principal) {
+    @Override
+    public void addDomainChangeMessage(DomainChangeMessage domainChangeMsg) {
+    }
+
+    @Override
+    public List<DomainChangeMessage> getDomainChangeMessages() {
+        return null;
+    }
+
+    public String logPrincipal() {
+        final Principal principal = ctx.principal();
         if (principal == null) {
+            return null;
+        }
+        // we'll try our role principal name and if it's not configured
+        // we'll fall back to our service principal name
+        String principalName = principal.getRolePrincipalName();
+        if (principalName == null) {
+            principalName = principal.getFullName();
+        }
+        if (ctx.request() != null) {
+            logPrincipal(principalName);
+            logAuthorityId(principal.getAuthority());
+            logCertificateSerialNumber(principal.getX509Certificate());
+        }
+        return principalName;
+    }
+
+    public void logCertificateSerialNumber(X509Certificate x509Cert) {
+        if (x509Cert == null) {
             return;
         }
-        logPrincipal(principal.getFullName());
-        logAuthorityId(principal.getAuthority());
+        ctx.request().setAttribute(ServerCommonConsts.REQUEST_X509_SERIAL, x509Cert.getSerialNumber().toString());
     }
-    
+
     public void logPrincipal(final String principal) {
         if (principal == null) {
             return;
@@ -133,6 +170,11 @@ public class RsrcCtxWrapper implements ResourceContext {
             return;
         }
         ctx.request().setAttribute(ServerCommonConsts.REQUEST_AUTHORITY_ID, authority.getID());
+    }
+
+    public String getPrincipalDomain() {
+        final Principal principal = ctx.principal();
+        return (principal == null) ? null : principal.getDomain();
     }
 
     public void throwZtsException(com.yahoo.athenz.common.server.rest.ResourceException restExc) {

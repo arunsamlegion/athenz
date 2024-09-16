@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,6 +48,12 @@ public class FileSSHRecordStoreTest {
         assertNotNull(store.getConnection());
         store.setOperationTimeout(100);
         store.clearConnections();
+    }
+
+    @Test
+    public void testEnableNotifications() {
+        FileSSHRecordStore store = new FileSSHRecordStore(new File("/tmp"));
+        assertFalse(store.enableNotifications(null, null, null));
     }
 
     @Test

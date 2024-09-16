@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,13 +22,20 @@ import styled from '@emotion/styled';
 import { colors } from '../denali/styles';
 import AddModal from '../modal/AddModal';
 import DateUtils from '../utils/DateUtils';
-import RequestUtils from '../utils/RequestUtils';
 import {
+    ADD_GROUP_AUDIT_ENABLED_TOOLTIP,
     GROUP_MEMBER_NAME_REGEX,
     GROUP_MEMBER_PLACEHOLDER,
     GROUP_NAME_REGEX,
 } from '../constants/constants';
 import MemberUtils from '../utils/MemberUtils';
+import RegexUtils from '../utils/RegexUtils';
+import { connect } from 'react-redux';
+import { addGroup } from '../../redux/thunks/groups';
+import Switch from '../denali/Switch';
+import { selectDomainAuditEnabled } from '../../redux/selectors/domainData';
+import InputDropdown from '../denali/InputDropdown';
+import { selectAllUsers } from '../../redux/selectors/user';
 
 const SectionDiv = styled.div`
     align-items: flex-start;
@@ -56,7 +63,7 @@ const StyledInput = styled(Input)`
     width: 500px;
 `;
 
-const StyledInputUser = styled(Input)`
+const StyledInputAutoComplete = styled(InputDropdown)`
     margin-top: 5px;
 `;
 
@@ -87,12 +94,24 @@ const StyledButton = styled(Button)`
     width: 125px;
 `;
 
-export default class AddGroup extends React.Component {
+const SliderDiv = styled.div`
+    vertical-align: middle;
+`;
+
+const AuditEnabledLabel = styled.label`
+    color: ${colors.grey600};
+    margin-left: 5px;
+    white-space: nowrap;
+    font: 300 14px HelveticaNeue-Reg, Helvetica, Arial, sans-serif;
+`;
+
+class AddGroup extends React.Component {
     constructor(props) {
         super(props);
-        this.api = props.api;
         this.addMember = this.addMember.bind(this);
         this.onSubmit = this.onSubmit.bind(this);
+        this.toggleAuditEnabled = this.toggleAuditEnabled.bind(this);
+        this.userSearch = this.userSearch.bind(this);
         this.dateUtils = new DateUtils();
         this.state = {
             saving: 'nope',
@@ -100,7 +119,14 @@ export default class AddGroup extends React.Component {
             newMemberName: '',
             members: [],
             justification: '',
+            auditEnabled: false,
         };
+    }
+
+    toggleAuditEnabled() {
+        this.setState({
+            auditEnabled: !this.state.auditEnabled,
+        });
     }
 
     inputChanged(key, evt) {
@@ -114,7 +140,7 @@ export default class AddGroup extends React.Component {
     }
 
     getJustification() {
-        if (this.props.justificationRequired) {
+        if (this.props.isDomainAuditEnabled) {
             return (
                 <SectionDiv>
                     <StyledInputLabel>Justification</StyledInputLabel>
@@ -171,7 +197,7 @@ export default class AddGroup extends React.Component {
         let members = this.state.members;
         // this if is done to avoid [null] condition
         if (members.length === 1) {
-            members = null;
+            members = [];
         } else {
             delete members[idx];
         }
@@ -187,7 +213,7 @@ export default class AddGroup extends React.Component {
             return;
         }
 
-        if (!MemberUtils.matchRegexName(groupName, GROUP_NAME_REGEX)) {
+        if (!RegexUtils.validate(groupName, GROUP_NAME_REGEX)) {
             this.setState({
                 errorMessage:
                     "Group name doesn't match regex: " + GROUP_NAME_REGEX,
@@ -195,35 +221,40 @@ export default class AddGroup extends React.Component {
             return;
         }
 
-        let group = { name: groupName };
-        group.groupMembers =
-            this.state.members.filter((member) => {
-                return member != null || member != undefined;
-            }) || [];
+        let group = {
+            name: groupName,
+            auditEnabled: this.state.auditEnabled,
+        };
+        if (!this.state.auditEnabled) {
+            group.groupMembers =
+                this.state.members.filter((member) => {
+                    return member != null || member != undefined;
+                }) || [];
 
-        if (this.state.newMemberName && this.state.newMemberName !== '') {
-            let names = MemberUtils.getUserNames(
-                this.state.newMemberName,
-                GROUP_MEMBER_NAME_REGEX
-            );
-            names.validUsers.forEach((name) => {
-                group.groupMembers.push({
-                    memberName: name,
+            if (this.state.newMemberName && this.state.newMemberName !== '') {
+                let names = MemberUtils.getUserNames(
+                    this.state.newMemberName,
+                    GROUP_MEMBER_NAME_REGEX
+                );
+                names.validUsers.forEach((name) => {
+                    group.groupMembers.push({
+                        memberName: name,
+                    });
                 });
-            });
-            if (names.invalidUsers.length !== 0) {
-                this.setState({
-                    newMemberName: names.invalidUsers.toString(),
-                    errorMessage:
-                        "Member name doesn't match regex: " +
-                        GROUP_MEMBER_NAME_REGEX,
-                });
-                return;
+                if (names.invalidUsers.length !== 0) {
+                    this.setState({
+                        newMemberName: names.invalidUsers.toString(),
+                        errorMessage:
+                            "Member name doesn't match regex: " +
+                            GROUP_MEMBER_NAME_REGEX,
+                    });
+                    return;
+                }
             }
         }
 
         if (
-            this.props.justificationRequired &&
+            this.props.isDomainAuditEnabled &&
             (this.state.justification === undefined ||
                 this.state.justification.trim() === '')
         ) {
@@ -232,58 +263,35 @@ export default class AddGroup extends React.Component {
             });
             return;
         }
+        let auditRef = this.state.justification ? this.state.justification : ''; // no UX for this
 
-        this.api
-            .listGroups(this.props.domain)
-            .then((groups) => {
-                if (
-                    groups.includes(this.props.domain + ':group.' + groupName)
-                ) {
-                    this.setState({
-                        errorMessage: 'Group already exists.',
-                    });
-                    return;
-                }
-                let auditRef = this.state.justification
-                    ? this.state.justification
-                    : ''; // no UX for this
-                this.api
-                    .addGroup(
-                        this.props.domain,
-                        groupName,
-                        group,
-                        auditRef,
-                        this.props._csrf
-                    )
-                    .then(() => {
-                        this.props.onSubmit(
-                            `${this.props.domain}-${groupName}`,
-                            groupName,
-                            false
-                        );
-                    })
-                    .catch((err) => {
-                        let message = '';
-                        if (err.statusCode === 0) {
-                            message = 'Okta expired. Please refresh the page';
-                        } else {
-                            message = `Status: ${err.statusCode}. Message: ${err.body.message}`;
-                        }
-                        this.setState({
-                            errorMessage: message,
-                        });
-                    });
+        this.props
+            .addGroup(groupName, auditRef, group, this.props._csrf)
+            .then(() => {
+                this.props.onSubmit(
+                    `${this.props.domain}-${groupName}`,
+                    groupName,
+                    false
+                );
             })
             .catch((err) => {
+                let message = '';
+                if (err.statusCode === 0) {
+                    message = 'Okta expired. Please refresh the page';
+                } else {
+                    message = `Status: ${err.statusCode}. Message: ${err.body.message}`;
+                }
                 this.setState({
-                    errorMessage: RequestUtils.xhrErrorCheckHelper(err),
+                    errorMessage: message,
                 });
             });
     }
 
-    render() {
-        let memberNameChanged = this.inputChanged.bind(this, 'newMemberName');
+    userSearch(part) {
+        return MemberUtils.userSearch(part, this.props.userList);
+    }
 
+    render() {
         let nameChanged = this.inputChanged.bind(this, 'name');
 
         let members = this.state.members
@@ -301,12 +309,19 @@ export default class AddGroup extends React.Component {
                   );
               })
             : '';
+        let auditToolTip = this.state.auditEnabled
+            ? ADD_GROUP_AUDIT_ENABLED_TOOLTIP
+            : null;
+        let auditTriggerStyle = this.state.auditEnabled
+            ? { pointerEvents: 'none', opacity: '0.4' }
+            : {};
         let sections = (
             <SectionsDiv>
                 <SectionDiv>
                     <StyledInputLabel>Group Name</StyledInputLabel>
                     <ContentDiv>
                         <StyledInput
+                            id={'group-name-input'}
                             placeholder='Enter New Group Name'
                             value={this.state.name}
                             onChange={nameChanged}
@@ -316,20 +331,31 @@ export default class AddGroup extends React.Component {
                     </ContentDiv>
                 </SectionDiv>
                 {
-                    <SectionDiv>
-                        <StyledInputLabelPadding>
+                    <SectionDiv title={auditToolTip}>
+                        <StyledInputLabelPadding style={auditTriggerStyle}>
                             Add Member(s)
                         </StyledInputLabelPadding>
-                        <ContentDiv>
+                        <ContentDiv style={auditTriggerStyle}>
                             <AddMemberDiv>
-                                <StyledInputUser
+                                <StyledInputAutoComplete
                                     placeholder={GROUP_MEMBER_PLACEHOLDER}
-                                    value={this.state.newMemberName}
-                                    onChange={memberNameChanged}
-                                    noanim
-                                    fluid
+                                    itemToString={(i) =>
+                                        i === null ? '' : i.value
+                                    }
+                                    id='member-name'
+                                    name='member-name'
+                                    onChange={(evt) =>
+                                        this.setState({
+                                            ['newMemberName']: evt
+                                                ? evt.value
+                                                : '',
+                                        })
+                                    }
+                                    asyncSearchFunc={this.userSearch}
+                                    noanim={true}
+                                    fluid={true}
                                 />
-                                <ButtonDiv>
+                                <ButtonDiv style={auditTriggerStyle}>
                                     <StyledButton
                                         secondary
                                         onClick={this.addMember}
@@ -341,13 +367,26 @@ export default class AddGroup extends React.Component {
                         </ContentDiv>
                     </SectionDiv>
                 }
-                <SectionDiv>
+                <SectionDiv title={auditToolTip}>
                     <StyledInputLabel />
                     <StyledIncludedMembersDiv>
                         {members}
                     </StyledIncludedMembersDiv>
                 </SectionDiv>
                 {this.getJustification()}
+                {this.props.isDomainAuditEnabled && (
+                    <SectionDiv>
+                        <SliderDiv>
+                            <Switch
+                                checked={this.state.auditEnabled}
+                                disabled={members.length > 0}
+                                onChange={this.toggleAuditEnabled}
+                                name={'auditEnabled'}
+                            />
+                            <AuditEnabledLabel>Audit Enabled</AuditEnabledLabel>
+                        </SliderDiv>
+                    </SectionDiv>
+                )}
             </SectionsDiv>
         );
         return (
@@ -364,3 +403,18 @@ export default class AddGroup extends React.Component {
         );
     }
 }
+
+const mapStateToProps = (state, props) => {
+    return {
+        ...props,
+        isDomainAuditEnabled: selectDomainAuditEnabled(state),
+        userList: selectAllUsers(state),
+    };
+};
+
+const mapDispatchToProps = (dispatch) => ({
+    addGroup: (groupName, auditRef, group, _csrf) =>
+        dispatch(addGroup(groupName, auditRef, group, _csrf)),
+});
+
+export default connect(mapStateToProps, mapDispatchToProps)(AddGroup);

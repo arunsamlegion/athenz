@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -113,7 +113,7 @@ const modalContentClass = css`
 
     & > .content {
         flex: 1 1 auto;
-        font-size: 0.8571rem;
+        //font-size: 0.8571rem;
         overflow: auto;
         padding: 20px;
     }

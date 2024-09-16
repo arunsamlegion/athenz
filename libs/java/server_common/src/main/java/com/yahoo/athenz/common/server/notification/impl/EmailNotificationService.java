@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Oath Holdings Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,7 +58,7 @@ public class EmailNotificationService implements NotificationService {
     private final String emailDomainFrom;
     private final String from;
 
-    private byte[] logoImage;
+    private final byte[] logoImage;
 
     public EmailNotificationService(EmailProvider emailProvider) {
         this.emailProvider = emailProvider;
@@ -98,7 +98,13 @@ public class EmailNotificationService implements NotificationService {
         final String subject = notificationAsEmail.getSubject();
         final String body = notificationAsEmail.getBody();
         Set<String> recipients = notificationAsEmail.getFullyQualifiedRecipientsEmail();
-        return sendEmail(recipients, subject, body);
+            if (sendEmail(recipients, subject, body)) {
+            LOGGER.info("Successfully sent email notification. Subject={}, Recipients={}", subject, recipients);
+            return true;
+        } else {
+            LOGGER.error("Failed sending email notification. Subject={}, Recipients={}", subject, recipients);
+            return false;
+        }
     }
 
     boolean sendEmail(Set<String> recipients, String subject, String body) {

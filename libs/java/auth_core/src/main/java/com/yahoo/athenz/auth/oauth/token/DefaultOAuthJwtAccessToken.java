@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -74,7 +74,7 @@ public class DefaultOAuthJwtAccessToken implements OAuthJwtAccessToken {
                 LOG.debug("DefaultOAuthJwtAccessToken:getAudiences treat audience as string, err: {}", e.getMessage());
             }
             // found but class mismatch
-            audiences = Arrays.asList(new String[]{ this.body.getAudience() });
+            audiences = Arrays.asList(this.body.getAudience());
         }
         return audiences;
     }
@@ -87,7 +87,7 @@ public class DefaultOAuthJwtAccessToken implements OAuthJwtAccessToken {
     @Override
     public String getCertificateThumbprint() {
         // https://github.com/jwtk/jjwt/issues/404, custom model class not supported
-        LinkedHashMap<?, ?> certConf = null;
+        LinkedHashMap<?, ?> certConf;
         try {
             certConf = this.body.get(OAuthJwtAccessToken.CLAIM_CONFIRM, LinkedHashMap.class);
             if (certConf == null) {

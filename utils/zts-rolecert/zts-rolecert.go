@@ -1,4 +1,4 @@
-// Copyright 2017 Yahoo Holdings, Inc.
+// Copyright The Athenz Authors
 // Licensed under the terms of the Apache version 2.0 license. See LICENSE file for terms.
 
 package main
@@ -12,14 +12,15 @@ import (
 	"encoding/pem"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/AthenZ/athenz/clients/go/zts"
 	"github.com/AthenZ/athenz/libs/go/athenzutils"
+	"github.com/ardielle/ardielle-go/rdl"
 )
 
 type signer struct {
@@ -45,9 +46,9 @@ func printVersion() {
 
 func main() {
 
-	var ztsURL, svcKeyFile, svcCertFile, roleKeyFile, dom, svc string
+	var ztsURL, svcKeyFile, svcCertFile, roleKeyFile, dom, svc, oldRoleCertFile string
 	var caCertFile, roleCertFile, roleDomain, roleName, dnsDomain string
-	var subjC, subjO, subjOU, ip, uri string
+	var subjC, subjO, subjOU, ip, uri, spiffeTrustDomain string
 	var spiffe, csr, proxy, showVersion bool
 	var expiryTime int
 
@@ -66,17 +67,25 @@ func main() {
 	flag.StringVar(&subjO, "subj-o", "Oath Inc.", "Subject O/Organization field")
 	flag.StringVar(&subjOU, "subj-ou", "Athenz", "Subject OU/OrganizationalUnit field")
 	flag.StringVar(&ip, "ip", "", "IP address")
+	flag.StringVar(&oldRoleCertFile, "old-role-cert", "", "optional old role cert path to determin priority")
 	flag.BoolVar(&spiffe, "spiffe", true, "include spiffe uri in csr")
 	flag.BoolVar(&csr, "csr", false, "request csr only")
 	flag.IntVar(&expiryTime, "expiry-time", 0, "expiry time in minutes")
 	flag.BoolVar(&proxy, "proxy", true, "enable proxy mode for request")
 	flag.BoolVar(&showVersion, "version", false, "Show version")
+	flag.StringVar(&spiffeTrustDomain, "spiffe-trust-domain", "", "Trust Domain value to be included in spiffe uri")
 
 	flag.Parse()
 
 	if showVersion {
 		printVersion()
 		return
+	}
+
+	defaultConfig, _ := athenzutils.ReadDefaultConfig()
+	// check to see if we need to use zts url from our default config file
+	if ztsURL == "" && defaultConfig != nil {
+		ztsURL = defaultConfig.Zts
 	}
 
 	if svcKeyFile == "" || svcCertFile == "" || roleDomain == "" || roleName == "" ||
@@ -98,8 +107,12 @@ func main() {
 	hyphenDomain := strings.Replace(domain, ".", "-", -1)
 	host := fmt.Sprintf("%s.%s.%s", service, hyphenDomain, dnsDomain)
 	principal := fmt.Sprintf("%s.%s", domain, service)
-	if spiffe {
-		uri = fmt.Sprintf("spiffe://%s/ra/%s", roleDomain, roleName)
+	if spiffe || spiffeTrustDomain != "" {
+		if spiffeTrustDomain != "" {
+			uri = fmt.Sprintf("spiffe://%s/ns/%s/ra/%s", spiffeTrustDomain, roleDomain, roleName)
+		} else {
+			uri = fmt.Sprintf("spiffe://%s/ra/%s", roleDomain, roleName)
+		}
 	}
 
 	//note: RFC 6125 states that if the SAN (Subject Alternative Name) exists,
@@ -115,7 +128,7 @@ func main() {
 	}
 
 	// load private key
-	keyBytes, err := ioutil.ReadFile(roleKeyFile)
+	keyBytes, err := os.ReadFile(roleKeyFile)
 	if err != nil {
 		log.Fatalf("Unable to read private key file %s, err: %v\n", roleKeyFile, err)
 	}
@@ -123,7 +136,7 @@ func main() {
 	// get our private key signer for csr
 	pkSigner, err := newSigner(keyBytes)
 	if err != nil {
-		log.Fatalf("Unable to retrieve private key %s, err: %v\n", svcKeyFile, err)
+		log.Fatalf("Unable to retrieve private key %s, err: %v\n", roleKeyFile, err)
 	}
 
 	csrData, err := generateCSR(pkSigner, subj, host, principal, dnsDomain, ip, uri)
@@ -143,11 +156,11 @@ func main() {
 		log.Fatalf("Unable to initialize ZTS Client for %s, err: %v\n", ztsURL, err)
 	}
 
-	getRoleCertificate(client, csrData, roleDomain, roleName, roleCertFile, int64(expiryTime))
+	getRoleCertificate(client, csrData, roleDomain, roleName, roleCertFile, int64(expiryTime), oldRoleCertFile)
 }
 
 func extractServiceDetailsFromCert(certFile string) (string, string, error) {
-	data, err := ioutil.ReadFile(certFile)
+	data, err := os.ReadFile(certFile)
 	if err != nil {
 		return "", "", err
 	}
@@ -213,19 +226,61 @@ func generateCSR(keySigner *signer, subj pkix.Name, host, principal, dnsDomain, 
 	return buf.String(), nil
 }
 
-func getRoleCertificate(client *zts.ZTSClient, csr, roleDomain, roleName, roleCertFile string, expiryTime int64) {
+func CertFromFile(filename string) (*x509.Certificate, error) {
+	pemBytes, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+	return CertFromPEMBytes(pemBytes)
+}
+
+func CertFromPEMBytes(pemBytes []byte) (*x509.Certificate, error) {
+	var derBytes []byte
+	block, _ := pem.Decode(pemBytes)
+	if block == nil {
+		return nil, fmt.Errorf("cannot parse cert (empty pem)")
+	}
+	derBytes = block.Bytes
+	cert, err := x509.ParseCertificate(derBytes)
+	if err != nil {
+		return nil, err
+	}
+	return cert, nil
+}
+
+func getRoleCertificate(client *zts.ZTSClient, csr, roleDomain, roleName, roleCertFile string, expiryTime int64, oldRoleCertFile string) {
+
+	var notBefore *rdl.Timestamp
+	var notAfter *rdl.Timestamp
+
+	if oldRoleCertFile != "" {
+		// Extract before / after dates from old certificate
+		prevRolCert, err := CertFromFile(oldRoleCertFile)
+		if err != nil {
+			log.Fatalf("Unable to read cert %s, err: %v\n", oldRoleCertFile, err)
+		}
+		notBefore = &rdl.Timestamp{
+			Time: prevRolCert.NotBefore,
+		}
+		notAfter = &rdl.Timestamp{
+			Time: prevRolCert.NotAfter,
+		}
+	}
 
 	roleRequest := &zts.RoleCertificateRequest{
-		Csr:        csr,
-		ExpiryTime: expiryTime,
+		Csr:               csr,
+		ExpiryTime:        expiryTime,
+		PrevCertNotBefore: notBefore,
+		PrevCertNotAfter:  notAfter,
 	}
+
 	roleCertificate, err := client.PostRoleCertificateRequestExt(roleRequest)
 	if err != nil {
 		log.Fatalf("PostRoleCertificateRequestExt failed for %s:role.%s, err: %v\n", roleDomain, roleName, err)
 	}
 
 	if roleCertFile != "" {
-		err = ioutil.WriteFile(roleCertFile, []byte(roleCertificate.X509Certificate), 0644)
+		err = os.WriteFile(roleCertFile, []byte(roleCertificate.X509Certificate), 0644)
 		if err != nil {
 			log.Fatalf("Unable to save role token certificate in %s, err: %v\n", roleCertFile, err)
 		}
@@ -235,25 +290,9 @@ func getRoleCertificate(client *zts.ZTSClient, csr, roleDomain, roleName, roleCe
 }
 
 func newSigner(privateKeyPEM []byte) (*signer, error) {
-	block, _ := pem.Decode(privateKeyPEM)
-	if block == nil {
-		return nil, fmt.Errorf("unable to load private key")
+	key, algorithm, err := athenzutils.ExtractSignerInfo(privateKeyPEM)
+	if err != nil {
+		return nil, err
 	}
-
-	switch block.Type {
-	case "EC PRIVATE KEY":
-		key, err := x509.ParseECPrivateKey(block.Bytes)
-		if err != nil {
-			return nil, err
-		}
-		return &signer{key: key, algorithm: x509.ECDSAWithSHA256}, nil
-	case "RSA PRIVATE KEY":
-		key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
-		if err != nil {
-			return nil, err
-		}
-		return &signer{key: key, algorithm: x509.SHA256WithRSA}, nil
-	default:
-		return nil, fmt.Errorf("unsupported private key type: %s", block.Type)
-	}
+	return &signer{key: key, algorithm: algorithm}, nil
 }

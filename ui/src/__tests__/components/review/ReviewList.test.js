@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,11 +17,12 @@ import React from 'react';
 import { render } from '@testing-library/react';
 import ReviewList from '../../../components/review/ReviewList';
 import API from '../../../api';
+import { renderWithRedux } from '../../../tests_utils/ComponentsTestUtils';
 
 describe('ReviewList', () => {
     it('should render', () => {
         let members = [];
-        let domain= 'domain';
+        let domain = 'domain';
         let role = 'roleName';
         const roleDetails = {
             trust: null,
@@ -31,26 +32,32 @@ describe('ReviewList', () => {
         let user1 = {
             memberName: 'user1',
             approved: true,
-        }
+        };
         let user2 = {
             memberName: 'user2',
             approved: false,
-        }
+        };
         let user3 = {
             memberName: 'user3',
             approved: false,
-        }
+        };
         let user4 = {
             memberName: 'user4',
             approved: true,
-        }
+        };
         members.push(user1);
         members.push(user2);
         members.push(user3);
         members.push(user4);
 
-        const { getByTestId } = render(
-            <ReviewList api={API()} domain={domain} role={role} roleDetails={roleDetails} members={members} isDomainAuditEnabled={true}/>
+        const { getByTestId } = renderWithRedux(
+            <ReviewList
+                domain={domain}
+                role={role}
+                roleDetails={roleDetails}
+                members={members}
+                isDomainAuditEnabled={true}
+            />
         );
         const reviewlist = getByTestId('review-list');
 
@@ -58,7 +65,7 @@ describe('ReviewList', () => {
     });
     it('should render delegated role', () => {
         let members = [];
-        let domain= 'domain';
+        let domain = 'domain';
         let role = 'roleName';
         const roleDetails = {
             trust: 'domain.delegated',
@@ -68,26 +75,32 @@ describe('ReviewList', () => {
         let user1 = {
             memberName: 'user1',
             approved: true,
-        }
+        };
         let user2 = {
             memberName: 'user2',
             approved: false,
-        }
+        };
         let user3 = {
             memberName: 'user3',
             approved: false,
-        }
+        };
         let user4 = {
             memberName: 'user4',
             approved: true,
-        }
+        };
         members.push(user1);
         members.push(user2);
         members.push(user3);
         members.push(user4);
 
-        const { getByTestId } = render(
-            <ReviewList api={API()} domain={domain} role={role} roleDetails={roleDetails} members={members} isDomainAuditEnabled={true}/>
+        const { getByTestId } = renderWithRedux(
+            <ReviewList
+                domain={domain}
+                role={role}
+                roleDetails={roleDetails}
+                members={members}
+                isDomainAuditEnabled={true}
+            />
         );
         const reviewlist = getByTestId('review-list');
 

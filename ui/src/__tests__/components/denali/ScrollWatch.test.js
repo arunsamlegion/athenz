@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,23 +27,19 @@ function mockThrottle(func) {
 
     return invokeFunc;
 }
-
-const createRefSpy = jest.spyOn(React, 'createRef');
-
 describe('ScrollWatch', () => {
     beforeEach(() =>
-        createRefSpy.mockImplementation(() => {
+        jest.spyOn(React, 'createRef').mockImplementation(() => {
             return {};
         })
     );
 
-    afterEach(() => jest.resetAllMocks());
+    afterEach(() => {
+        jest.resetAllMocks();
+    });
 
     it('should handle scrolling with throttling', async () => {
-        throttle.mockImplementationOnce(
-            jest.requireActual('lodash/throttle')
-        );
-        createRefSpy;
+        throttle.mockImplementationOnce(jest.requireActual('lodash/throttle'));
 
         const { getByTestId } = render(
             <ScrollWatch watchScrolledToBottom>
@@ -179,6 +175,7 @@ describe('ScrollWatch', () => {
 
     it('should attach ref to child element', () => {
         throttle.mockImplementation(mockThrottle);
+        const createRefSpy = jest.spyOn(React, 'createRef');
         createRefSpy.mockImplementation(() => {
             return {
                 current: {
@@ -221,6 +218,7 @@ describe('ScrollWatch', () => {
 
     it('should attach ref to large child element', () => {
         throttle.mockImplementation(mockThrottle);
+        const createRefSpy = jest.spyOn(React, 'createRef');
         createRefSpy.mockImplementation(() => {
             return {
                 current: {
@@ -260,10 +258,7 @@ describe('ScrollWatch', () => {
     });
 
     it('should ignore scrolledToBottom', () => {
-        throttle.mockImplementationOnce(
-            jest.requireActual('lodash/throttle')
-        );
-        createRefSpy;
+        throttle.mockImplementationOnce(jest.requireActual('lodash/throttle'));
 
         const { getByTestId } = render(
             <ScrollWatch>

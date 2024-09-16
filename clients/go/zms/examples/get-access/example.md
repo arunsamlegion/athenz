@@ -41,7 +41,7 @@ and create a service and obtain the TLS certificate in Athenz UI
 
 
   - Setup role/policy in target domain
-    - zms-cli -d home.userid.movies add-group-role editors home.userid.helloworld
+    - zms-cli -d home.userid.movies add-regular-role editors home.userid.helloworld
     - zms-cli -d home.userid.movies add-policy editors_policy grant read to editors on rec.movie
 
   - go build
@@ -50,5 +50,5 @@ and create a service and obtain the TLS certificate in Athenz UI
 
 ## License
 
-Copyright 2017 Yahoo Holdings, Inc.
+Copyright The Athenz Authors
 Licensed under the [Apache License, Version 2.0](http://www.apache.org/licenses/LICENSE-2.0)

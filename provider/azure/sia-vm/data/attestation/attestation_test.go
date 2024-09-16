@@ -1,5 +1,5 @@
 //
-// Copyright 2020 Verizon Media
+// Copyright The Athenz Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,11 +17,12 @@
 package attestation
 
 import (
+	"github.com/AthenZ/athenz/provider/azure/sia-vm/devel/metamock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/AthenZ/athenz/provider/azure/sia-vm/devel/metamock"
 	"os"
 	"testing"
+	"time"
 )
 
 var (
@@ -31,6 +32,7 @@ var (
 
 func setup() {
 	go metamock.StartMetaServer("127.0.0.1:5083")
+	time.Sleep(3 * time.Second)
 }
 
 func teardown() {}
@@ -43,7 +45,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestGetIdentityDocument(test *testing.T) {
-	identityDocument, err := GetIdentityDocument(MetaEndPoint, ApiVersion, os.Stdout)
+	identityDocument, err := GetIdentityDocument(MetaEndPoint, ApiVersion)
 	require.Nilf(test, err, "error for get identity document should be empty, error: %v", err)
 
 	assert.True(test, identityDocument.Name == "athenz-client")
@@ -72,7 +74,7 @@ func TestGetAccessToken(test *testing.T) {
 		Document:          nil,
 	}
 
-	attestData, err := New("athenz", "backend", MetaEndPoint, ApiVersion, "https://test.athenz.io/", &identityDocument, os.Stdout)
+	attestData, err := New("athenz", "backend", MetaEndPoint, ApiVersion, "https://test.athenz.io/", &identityDocument)
 	require.Nilf(test, err, "error for get attestation data should be empty, error: %v", err)
 
 	assert.True(test, attestData.Name == "athenz-client")

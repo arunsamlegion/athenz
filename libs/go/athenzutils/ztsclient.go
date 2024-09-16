@@ -1,38 +1,37 @@
-// Copyright 2018 Yahoo Holdings, Inc.
+// Copyright The Athenz Authors
 // Licensed under the terms of the Apache version 2.0 license. See LICENSE file for terms.
 
 package athenzutils
 
 import (
-	"crypto/tls"
-	"crypto/x509"
-	"io/ioutil"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 
 	"github.com/AthenZ/athenz/clients/go/zts"
+	"github.com/AthenZ/athenz/libs/go/tls/config"
 )
 
 // ZtsClient creates and returns a ZTS client instance.
 func ZtsClient(ztsURL, keyFile, certFile, caCertFile string, proxy bool) (*zts.ZTSClient, error) {
-	keypem, err := ioutil.ReadFile(keyFile)
+	keypem, err := os.ReadFile(keyFile)
 	if err != nil {
 		return nil, err
 	}
-	certpem, err := ioutil.ReadFile(certFile)
+	certpem, err := os.ReadFile(certFile)
 	if err != nil {
 		return nil, err
 	}
 	var cacertpem []byte
 	if caCertFile != "" {
-		cacertpem, err = ioutil.ReadFile(caCertFile)
+		cacertpem, err = os.ReadFile(caCertFile)
 		if err != nil {
 			return nil, err
 		}
 	}
-	config, err := tlsConfiguration(keypem, certpem, cacertpem)
+	config, err := config.ClientTLSConfigFromPEM(keypem, certpem, cacertpem)
 	if err != nil {
 		return nil, err
 	}
@@ -46,30 +45,17 @@ func ZtsClient(ztsURL, keyFile, certFile, caCertFile string, proxy bool) (*zts.Z
 	return &client, nil
 }
 
-func tlsConfiguration(keypem, certpem, cacertpem []byte) (*tls.Config, error) {
-	config := &tls.Config{}
-	if certpem != nil && keypem != nil {
-		mycert, err := tls.X509KeyPair(certpem, keypem)
-		if err != nil {
-			return nil, err
-		}
-		config.Certificates = make([]tls.Certificate, 1)
-		config.Certificates[0] = mycert
-	}
-	if cacertpem != nil {
-		certPool := x509.NewCertPool()
-		certPool.AppendCertsFromPEM(cacertpem)
-		config.RootCAs = certPool
-	}
-	return config, nil
-}
-
 // GenerateAccessTokenRequestString generates and urlencodes an access token string.
-func GenerateAccessTokenRequestString(domain, service, roles, authzDetails, proxyPrincipalSpiffeUris string, expiryTime int) string {
+func GenerateAccessTokenRequestString(domain, service, roles, authzDetails, proxyPrincipalSpiffeUris, proxyForPrincipal string, expiryTime int) string {
 
 	params := url.Values{}
 	params.Add("grant_type", "client_credentials")
-	params.Add("expires_in", strconv.Itoa(expiryTime))
+	// do not include the expiry param if the client is asking
+	// for the server default setting (expiryTime == 0) or any
+	// invalid values (expiryTime < 0)
+	if expiryTime > 0 {
+		params.Add("expires_in", strconv.Itoa(expiryTime))
+	}
 
 	var scope string
 	if roles == "" {
@@ -93,6 +79,9 @@ func GenerateAccessTokenRequestString(domain, service, roles, authzDetails, prox
 	}
 	if proxyPrincipalSpiffeUris != "" {
 		params.Add("proxy_principal_spiffe_uris", proxyPrincipalSpiffeUris)
+	}
+	if proxyForPrincipal != "" {
+		params.Add("proxy_for_principal", proxyForPrincipal)
 	}
 	return params.Encode()
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,19 @@
  */
 package com.yahoo.athenz.zms;
 
+import com.fasterxml.jackson.core.StreamReadConstraints;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.primitives.Bytes;
+import com.oath.auth.KeyRefresherException;
 import com.yahoo.athenz.auth.*;
 import com.yahoo.athenz.auth.token.PrincipalToken;
 import com.yahoo.athenz.auth.util.Crypto;
 import com.yahoo.athenz.auth.util.StringUtils;
 import com.yahoo.athenz.common.config.AuthzDetailsEntity;
 import com.yahoo.athenz.common.config.AuthzDetailsField;
+import com.yahoo.athenz.common.messaging.ChangePublisher;
+import com.yahoo.athenz.common.messaging.ChangePublisherFactory;
+import com.yahoo.athenz.common.messaging.DomainChangeMessage;
 import com.yahoo.athenz.common.metrics.Metric;
 import com.yahoo.athenz.common.metrics.MetricFactory;
 import com.yahoo.athenz.common.server.audit.AuditReferenceValidator;
@@ -32,36 +38,42 @@ import com.yahoo.athenz.common.server.metastore.DomainMetaStore;
 import com.yahoo.athenz.common.server.metastore.DomainMetaStoreFactory;
 import com.yahoo.athenz.common.server.notification.Notification;
 import com.yahoo.athenz.common.server.notification.NotificationManager;
+import com.yahoo.athenz.common.server.notification.NotificationToEmailConverterCommon;
 import com.yahoo.athenz.common.server.rest.Http;
 import com.yahoo.athenz.common.server.rest.Http.AuthorityList;
 import com.yahoo.athenz.common.server.status.StatusCheckException;
 import com.yahoo.athenz.common.server.status.StatusChecker;
 import com.yahoo.athenz.common.server.status.StatusCheckerFactory;
-import com.yahoo.athenz.common.server.util.ConfigProperties;
-import com.yahoo.athenz.common.server.util.ResourceUtils;
-import com.yahoo.athenz.common.server.util.ServletRequestUtil;
-import com.yahoo.athenz.common.server.util.AuthzHelper;
+import com.yahoo.athenz.common.server.util.*;
+import com.yahoo.athenz.common.server.util.config.dynamic.DynamicConfigBoolean;
+import com.yahoo.athenz.common.server.util.config.dynamic.DynamicConfigCsv;
+import com.yahoo.athenz.common.server.util.config.providers.ConfigProviderFile;
 import com.yahoo.athenz.common.utils.SignUtils;
 import com.yahoo.athenz.zms.config.*;
-import com.yahoo.athenz.zms.notification.*;
-import com.yahoo.athenz.zms.store.AthenzDomain;
-import com.yahoo.athenz.zms.store.ObjectStore;
-import com.yahoo.athenz.zms.store.ObjectStoreFactory;
+import com.yahoo.athenz.zms.notification.PutGroupMembershipNotificationTask;
+import com.yahoo.athenz.zms.notification.PutRoleMembershipNotificationTask;
+import com.yahoo.athenz.zms.notification.ZMSNotificationTaskFactory;
+import com.yahoo.athenz.zms.provider.DomainDependencyProviderResponse;
+import com.yahoo.athenz.zms.provider.ServiceProviderClient;
+import com.yahoo.athenz.zms.provider.ServiceProviderManager;
+import com.yahoo.athenz.zms.purge.PurgeResourcesEnum;
+import com.yahoo.athenz.zms.store.*;
+import com.yahoo.athenz.zms.utils.PrincipalDomainFilter;
+import com.yahoo.athenz.zms.utils.ResourceOwnership;
 import com.yahoo.athenz.zms.utils.ZMSUtils;
-import com.yahoo.rdl.JSON;
-import com.yahoo.rdl.Schema;
-import com.yahoo.rdl.Timestamp;
 import com.yahoo.rdl.UUID;
-import com.yahoo.rdl.Validator;
-import com.yahoo.rdl.Validator.Result;
+import com.yahoo.rdl.*;
+import io.jsonwebtoken.SignatureAlgorithm;
+import jakarta.servlet.ServletContext;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.ws.rs.core.EntityTag;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.ext.RuntimeDelegate;
 import org.eclipse.jetty.util.StringUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import javax.ws.rs.core.EntityTag;
-import javax.ws.rs.core.Response;
 import java.io.File;
 import java.io.IOException;
 import java.net.InetAddress;
@@ -72,25 +84,30 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.PrivateKey;
-import java.security.PublicKey;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
-import java.util.concurrent.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-
 import static com.yahoo.athenz.common.ServerCommonConsts.METRIC_DEFAULT_FACTORY_CLASS;
 import static com.yahoo.athenz.common.ServerCommonConsts.USER_DOMAIN_PREFIX;
 import static com.yahoo.athenz.common.server.notification.NotificationServiceConstants.*;
+import static com.yahoo.athenz.common.server.util.config.ConfigManagerSingleton.CONFIG_MANAGER;
+import static com.yahoo.athenz.zms.ZMSConsts.PROVIDER_RESPONSE_DENY;
+import static com.yahoo.athenz.zms.ZMSConsts.ZMS_PROP_DOMAIN_CHANGE_TOPIC_NAMES;
 
 public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
     private static final Logger LOG = LoggerFactory.getLogger(ZMSImpl.class);
+    private static final RuntimeDelegate.HeaderDelegate<EntityTag> ENTITY_TAG_HEADER_DELEGATE =
+            RuntimeDelegate.getInstance().createHeaderDelegate(EntityTag.class);
 
     private static String ROOT_DIR;
 
@@ -99,9 +116,6 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
     private static final String ADMIN_POLICY_NAME = "admin";
     private static final String ADMIN_ROLE_NAME = "admin";
-
-    private static final String META_ATTR_YPM_ID = "ypmid";
-    private static final String META_ATTR_ALL = "all";
 
     private static final String SYS_AUTH = "sys.auth";
     private static final String USER_TOKEN_DEFAULT_NAME = "_self_";
@@ -140,6 +154,9 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
     private static final String TYPE_GROUP_META = "GroupMeta";
     private static final String TYPE_ASSERTION_CONDITIONS = "AssertionConditions";
     private static final String TYPE_ASSERTION_CONDITION = "AssertionCondition";
+    private static final String TYPE_POLICY_OPTIONS = "PolicyOptions";
+    private static final String TYPE_TAG_KEY = "TagKey";
+    private static final String TYPE_TAG_COMPOUND_VALUE = "TagCompoundValue";
 
     private static final String SERVER_READ_ONLY_MESSAGE = "Server in Maintenance Read-Only mode. Please try your request later";
 
@@ -161,15 +178,20 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
     protected int domainNameMaxLen;
     protected AuthorizedServices serverAuthorizedServices = null;
     protected SolutionTemplates serverSolutionTemplates = null;
+    protected List<String> serverSolutionTemplateNames = null;
     protected Map<String, String> serverPublicKeyMap = null;
-    protected boolean readOnlyMode = false;
-    protected boolean validateUserRoleMembers = false;
-    protected boolean validateServiceRoleMembers = false;
+    protected DynamicConfigBoolean readOnlyMode;
+    protected DynamicConfigBoolean validateServiceRoleMembers;
+    protected DynamicConfigBoolean validateUserRoleMembers;
+    protected DynamicConfigBoolean validatePolicyAssertionRoles;
+    protected DynamicConfigBoolean allowUnderscoreInServiceNames;
     protected boolean useMasterCopyForSignedDomains = false;
-    protected Set<String> validateServiceMemberSkipDomains;
+    protected List<String> validateServiceMemberSkipDomains;
     protected static Validator validator;
     protected String userDomain;
     protected String userDomainPrefix;
+    protected String headlessUserDomain;
+    protected String headlessUserDomainPrefix;
     protected String homeDomain;
     protected String homeDomainPrefix;
     protected String userDomainAlias;
@@ -195,14 +217,26 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
     protected int serviceNameMinLength;
     protected Status successServerStatus = null;
     protected Set<String> reservedSystemDomains = null;
+    protected DynamicConfigCsv reservedDomainNames = null;
     protected File healthCheckFile = null;
     protected AuditReferenceValidator auditReferenceValidator = null;
     protected NotificationManager notificationManager = null;
     protected ObjectMapper jsonMapper;
     protected StatusChecker statusChecker = null;
     protected ObjectStore objectStore = null;
+    protected AuthHistoryStore authHistoryStore = null;
     protected ZMSGroupMembersFetcher groupMemberFetcher = null;
     protected DomainMetaStore domainMetaStore = null;
+    protected NotificationToEmailConverterCommon notificationToEmailConverterCommon;
+    protected List<ChangePublisher<DomainChangeMessage>> domainChangePublishers = new ArrayList<>();
+    protected ServiceProviderManager serviceProviderManager;
+    protected ServiceProviderClient serviceProviderClient;
+    protected Info serverInfo = null;
+    protected Set<String> domainContactTypes = new HashSet<>();
+    protected Set<String> domainEnvironments = new HashSet<>();
+    protected List<String> domainDeleteMetaAttributes = new ArrayList<>();
+    protected DynamicConfigBoolean disallowGroupsInAdminRole = null;
+    protected String userAuthorityFilterDocUrl;
 
     // enum to represent our access response since in some cases we want to
     // handle domain not founds differently instead of just returning failure
@@ -546,6 +580,16 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
                 }
                 assertionCondition.setConditionsMap(lowerCasedMap);
             }
+        },
+        POLICY_OPTIONS {
+            @Override
+            void convertToLowerCase(Object obj) {
+                PolicyOptions policyOptions = (PolicyOptions) obj;
+                policyOptions.setVersion(policyOptions.getVersion().toLowerCase());
+                if (!StringUtil.isEmpty(policyOptions.getFromVersion())) {
+                    policyOptions.setFromVersion(policyOptions.getFromVersion().toLowerCase());
+                }
+            }
         };
 
         abstract void convertToLowerCase(Object obj);
@@ -564,7 +608,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         // create our json mapper
 
-        jsonMapper = new ObjectMapper();
+        loadJsonMapper();
 
         // before we do anything we need to load our configuration
         // settings
@@ -604,6 +648,10 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         loadSolutionTemplates();
 
+        // loud authentication history store
+
+        loadAuthHistoryStore();
+
         // our object store - either mysql or file based
 
         loadObjectStore();
@@ -641,6 +689,61 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         // system disabled from UserAuthority
 
         initializePrincipalStateUpdater();
+
+        // Initialize Service Provider Manager
+
+        initializeServiceProviderManager();
+
+        // load the DomainChangePublisher
+        
+        loadDomainChangePublisher();
+
+    }
+
+    void loadJsonMapper() {
+
+        int maxNestingDepth = Integer.parseInt(System.getProperty(ZMSConsts.ZMS_PROP_JSON_MAX_NESTING_DEPTH, "1000"));
+        int maxNumberLength = Integer.parseInt(System.getProperty(ZMSConsts.ZMS_PROP_JSON_MAX_NUMBER_LENGTH, "1000"));
+        int maxStringLength = Integer.parseInt(System.getProperty(ZMSConsts.ZMS_PROP_JSON_MAX_STRING_LENGTH, "200000000"));
+
+        final StreamReadConstraints streamReadConstraints = StreamReadConstraints.builder()
+                .maxNestingDepth(maxNestingDepth)
+                .maxNumberLength(maxNumberLength)
+                .maxStringLength(maxStringLength).build();
+        StreamReadConstraints.overrideDefaultStreamReadConstraints(streamReadConstraints);
+
+        jsonMapper = new ObjectMapper();
+    }
+
+    void loadDomainChangePublisher() {
+        final String topicNames = System.getProperty(ZMS_PROP_DOMAIN_CHANGE_TOPIC_NAMES, "");
+        for (String topic : topicNames.split(",")) {
+            topic = topic.trim();
+            if (!topic.isEmpty()) {
+                ChangePublisher<DomainChangeMessage> publisher = createPublisher(topic);
+                if (publisher != null) {
+                    domainChangePublishers.add(publisher);
+                }
+            }
+        }
+    }
+
+    private ChangePublisher<DomainChangeMessage> createPublisher(String topicName) {
+        ChangePublisherFactory<DomainChangeMessage> publisherFactory;
+        final String domainChangePublisherClassName = System.getProperty(ZMSConsts.ZMS_PROP_DOMAIN_CHANGE_PUBLISHER_FACTORY_CLASS,
+            ZMSConsts.ZMS_PROP_DOMAIN_CHANGE_PUBLISHER_DEFAULT);
+        try {
+            publisherFactory = (ChangePublisherFactory<DomainChangeMessage>) Class.forName(domainChangePublisherClassName).getDeclaredConstructor().newInstance();
+        } catch (Exception ex) {
+            LOG.error("unable to initialize publisher factory for: {}", domainChangePublisherClassName, ex);
+            return null;
+        }
+        try {
+            return publisherFactory.create(keyStore, topicName);
+        } catch (Exception ex) {
+            LOG.error("unable to create a publisher for topic: {}", topicName, ex);
+        }
+        return null;
     }
 
     private void initializePrincipalStateUpdater() {
@@ -649,15 +752,30 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         }
     }
 
+    private void initializeServiceProviderManager() {
+        try {
+            serviceProviderManager = ServiceProviderManager.getInstance(dbService, this);
+            serviceProviderClient = new ServiceProviderClient(keyStore, homeDomainPrefix);
+        } catch (KeyRefresherException | IOException | InterruptedException e) {
+            throw new RuntimeException("Failed to initialize service provider manager: " + e.getMessage());
+        }
+    }
+
     private void setNotificationManager() {
-        ZMSNotificationTaskFactory zmsNotificationTaskFactory = new ZMSNotificationTaskFactory(dbService, userDomainPrefix);
-        notificationManager = new NotificationManager(zmsNotificationTaskFactory.getNotificationTasks());
+        notificationToEmailConverterCommon = new NotificationToEmailConverterCommon(userAuthority);
+        ZMSNotificationTaskFactory zmsNotificationTaskFactory = new ZMSNotificationTaskFactory(dbService, userDomainPrefix, notificationToEmailConverterCommon);
+        notificationManager = new NotificationManager(zmsNotificationTaskFactory.getNotificationTasks(),
+                userAuthority, keyStore, dbService);
     }
 
     void loadSystemProperties() {
         String propFile = System.getProperty(ZMSConsts.ZMS_PROP_FILE_NAME,
                 getRootDir() + "/conf/zms_server/zms.properties");
-        ConfigProperties.loadProperties(propFile);
+        try {
+            CONFIG_MANAGER.addConfigSource(ConfigProviderFile.PROVIDER_DESCRIPTION_PREFIX + propFile);
+        } catch (Exception e) {
+            throw new RuntimeException(e.getMessage());
+        }
     }
 
     void setAuthorityKeyStore() {
@@ -695,12 +813,15 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         userDomainPrefix = userDomain + ".";
 
         userDomainAlias = System.getProperty(ZMSConsts.ZMS_PROP_USER_DOMAIN_ALIAS);
-        if (userDomainAlias != null) {
+        if (!StringUtil.isEmpty(userDomainAlias)) {
             userDomainAliasPrefix = userDomainAlias + ".";
         }
 
+        headlessUserDomain = System.getProperty(ZMSConsts.ZMS_PROP_HEADLESS_USER_DOMAIN, userDomain);
+        headlessUserDomainPrefix = headlessUserDomain + ".";
+
         final String addlUserCheckDomains = System.getProperty(ZMSConsts.ZMS_PROP_ADDL_USER_CHECK_DOMAINS);
-        if (addlUserCheckDomains != null && !addlUserCheckDomains.isEmpty()) {
+        if (!StringUtil.isEmpty(addlUserCheckDomains)) {
             String[] checkDomains = addlUserCheckDomains.split(",");
             addlUserCheckDomainSet = new HashSet<>();
             addlUserCheckDomainPrefixList = new ArrayList<>();
@@ -720,16 +841,14 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         // check if we need to run in maintenance read only mode
 
-        readOnlyMode = Boolean.parseBoolean(
-                System.getProperty(ZMSConsts.ZMS_PROP_READ_ONLY_MODE, "false"));
+        readOnlyMode = new DynamicConfigBoolean(CONFIG_MANAGER, ZMSConsts.ZMS_PROP_READ_ONLY_MODE, false);
 
         // check to see if we need to validate all user and service members
         // when adding them to roles
 
-        validateUserRoleMembers = Boolean.parseBoolean(
-                System.getProperty(ZMSConsts.ZMS_PROP_VALIDATE_USER_MEMBERS, "false"));
-        validateServiceRoleMembers = Boolean.parseBoolean(
-                System.getProperty(ZMSConsts.ZMS_PROP_VALIDATE_SERVICE_MEMBERS, "false"));
+        validateServiceRoleMembers = new DynamicConfigBoolean(CONFIG_MANAGER, ZMSConsts.ZMS_PROP_VALIDATE_SERVICE_MEMBERS, false);
+        validateUserRoleMembers = new DynamicConfigBoolean(CONFIG_MANAGER, ZMSConsts.ZMS_PROP_VALIDATE_USER_MEMBERS, false);
+        validatePolicyAssertionRoles = new DynamicConfigBoolean(CONFIG_MANAGER, ZMSConsts.ZMS_PROP_VALIDATE_ASSERTION_ROLES, false);
 
         // there are going to be domains like our ci/cd dynamic project domain
         // where we can't verify the service role members so for those we're
@@ -737,7 +856,9 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         final String skipDomains = System.getProperty(
                 ZMSConsts.ZMS_PROP_VALIDATE_SERVICE_MEMBERS_SKIP_DOMAINS, "");
-        validateServiceMemberSkipDomains = new HashSet<>(Arrays.asList(skipDomains.split(",")));
+        validateServiceMemberSkipDomains = Arrays.asList(skipDomains.split(","));
+        allowUnderscoreInServiceNames = new DynamicConfigBoolean(CONFIG_MANAGER,
+                ZMSConsts.ZMS_PROP_ALLOW_UNDERSCORE_IN_SERVICE_NAMES, Boolean.FALSE);
 
         // check to see if we need to support product ids as required
         // for top level domains
@@ -748,7 +869,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         // get the list of valid provider endpoints
 
         final String endPoints = System.getProperty(ZMSConsts.ZMS_PROP_PROVIDER_ENDPOINTS);
-        if (endPoints != null) {
+        if (!StringUtil.isEmpty(endPoints)) {
             providerEndpoints = Arrays.asList(endPoints.split(","));
         }
 
@@ -790,7 +911,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         // get the list of uris that we want to allow an-authenticated access
 
         final String uriList = System.getProperty(ZMSConsts.ZMS_PROP_NOAUTH_URI_LIST);
-        if (uriList != null) {
+        if (!StringUtil.isEmpty(uriList)) {
             authFreeUriSet = new HashSet<>();
             authFreeUriList = new ArrayList<>();
             String[] list = uriList.split(",");
@@ -806,18 +927,16 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         // get the list of allowed origin values for cors requests
 
         final String originList = System.getProperty(ZMSConsts.ZMS_PROP_CORS_ORIGIN_LIST);
-        if (originList != null) {
+        if (!StringUtil.isEmpty(originList)) {
             corsOriginList = new HashSet<>(Arrays.asList(originList.split(",")));
         }
 
         // get the list of allowed header names for cors requests
 
         final String headerList = System.getProperty(ZMSConsts.ZMS_PROP_CORS_HEADER_LIST,
-                "*,Accept,Accept-Language,Content-Language,Content-Type");
-        if (headerList != null) {
-            corsRequestHeaderList = Arrays.stream(headerList.split(","))
-                    .map(String::toLowerCase).collect(Collectors.toSet());
-        }
+                "*,Accept,Accept-Language,Content-Language,Content-Type,Authorization");
+        corsRequestHeaderList = Arrays.stream(headerList.split(","))
+                .map(String::toLowerCase).collect(Collectors.toSet());
 
         // get the list of valid provider endpoints
 
@@ -840,17 +959,54 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         reservedSystemDomains.add("sys.auth.audit.domain");
         reservedSystemDomains.add(userDomain);
         reservedSystemDomains.add(homeDomain);
+        reservedSystemDomains.add(headlessUserDomain);
 
-        // setup our health check file
+        // set up our reserved top level domain names. we will not allow any top level
+        // domains to be created with these values
+
+        reservedDomainNames = new DynamicConfigCsv(CONFIG_MANAGER, ZMSConsts.ZMS_PROP_RESERVED_DOMAIN_NAMES, null);
+
+        // set up our health check file
 
         final String healthCheckPath = System.getProperty(ZMSConsts.ZMS_PROP_HEALTH_CHECK_PATH);
-        if (healthCheckPath != null && !healthCheckPath.isEmpty()) {
+        if (!StringUtil.isEmpty(healthCheckPath)) {
             healthCheckFile = new File(healthCheckPath);
         }
+
+        // get our domain contact types
+
+        final String contactTypeList = System.getProperty(ZMSConsts.ZMS_PROP_DOMAIN_CONTACT_TYPES);
+        if (!StringUtil.isEmpty(contactTypeList)) {
+            domainContactTypes.addAll(Arrays.asList(contactTypeList.split(",")));
+        }
+
+        // get our domain classification values
+
+        final String environments = System.getProperty(ZMSConsts.ZMS_PROP_DOMAIN_ENVIRONMENTS,
+                ZMSConsts.ZMS_DEFAULT_DOMAIN_ENVIRONMENTS);
+        domainEnvironments.addAll(Arrays.asList(environments.split(",")));
 
         // get server region
 
         serverRegion = System.getProperty(ZMSConsts.ZMS_PROP_SERVER_REGION);
+
+        // fetch the list of system meta attributes that must be empty when a domain
+        // is to be deleted
+
+        final String metaAttributes = System.getProperty(ZMSConsts.ZMS_PROP_DOMAIN_DELETE_META_ATTRIBUTES);
+        if (!StringUtil.isEmpty(metaAttributes)) {
+            domainDeleteMetaAttributes.addAll(Arrays.asList(metaAttributes.split(",")));
+        }
+
+        // check to see if we're allowed to include groups in admin roles
+
+        disallowGroupsInAdminRole = new DynamicConfigBoolean(CONFIG_MANAGER,
+                ZMSConsts.ZMS_PROP_DISALLOW_GROUPS_IN_ADMIN_ROLE, true);
+
+        // load documentation url for user authority filters
+
+        userAuthorityFilterDocUrl = System.getProperty(ZMSConsts.ZMS_PROP_USER_AUTHORITY_FILTER_DOC_URL,
+                "https://athenz.github.io/athenz/");
     }
 
     void loadObjectStore() {
@@ -858,9 +1014,9 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
                 ZMSConsts.ZMS_OBJECT_STORE_FACTORY_CLASS);
         ObjectStoreFactory objFactory;
         try {
-            objFactory = (ObjectStoreFactory) Class.forName(objFactoryClass).newInstance();
-        } catch (InstantiationException | IllegalAccessException | ClassNotFoundException e) {
-            LOG.error("Invalid ObjectStoreFactory class: {} error: {}", objFactoryClass, e.getMessage());
+            objFactory = (ObjectStoreFactory) Class.forName(objFactoryClass).getDeclaredConstructor().newInstance();
+        } catch (Exception ex) {
+            LOG.error("Invalid ObjectStoreFactory class: {}", objFactoryClass, ex);
             throw new IllegalArgumentException("Invalid object store");
         }
 
@@ -868,16 +1024,36 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         zmsConfig.setUserDomain(userDomain);
         zmsConfig.setAddlUserCheckDomainPrefixList(addlUserCheckDomainPrefixList);
         zmsConfig.setUserDomainPrefix(userDomainPrefix);
+        zmsConfig.setHeadlessUserDomainPrefix(headlessUserDomainPrefix);
         zmsConfig.setServerHostName(serverHostName);
         zmsConfig.setServerSolutionTemplates(serverSolutionTemplates);
         zmsConfig.setUserAuthority(userAuthority);
+        zmsConfig.setValidator(validator);
 
         objectStore = objFactory.create(keyStore);
-        dbService = new DBService(objectStore, auditLogger, zmsConfig, auditReferenceValidator);
+        dbService = new DBService(objectStore, auditLogger, zmsConfig, auditReferenceValidator, authHistoryStore);
 
         // create our group fetcher based on the db service
 
         groupMemberFetcher = new ZMSGroupMembersFetcher(dbService);
+    }
+
+    void loadAuthHistoryStore() {
+        String authHistoryFactoryClass = System.getProperty(ZMSConsts.ZMS_PROP_AUTH_HISTORY_STORE_FACTORY_CLASS);
+        if (StringUtil.isEmpty(authHistoryFactoryClass)) {
+            LOG.info("Authentication History Store Disabled.");
+            return;
+        }
+
+        AuthHistoryStoreFactory authHistoryStoreFactory;
+        try {
+            authHistoryStoreFactory = (AuthHistoryStoreFactory) Class.forName(authHistoryFactoryClass).getDeclaredConstructor().newInstance();
+        } catch (Exception ex) {
+            LOG.error("Invalid AuthHistoryStoreFactory class: {}", authHistoryFactoryClass, ex);
+            throw new IllegalArgumentException("Invalid auth history store");
+        }
+
+        authHistoryStore = authHistoryStoreFactory.create(keyStore);
     }
 
     void loadMetricObject() {
@@ -886,9 +1062,9 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
                 METRIC_DEFAULT_FACTORY_CLASS);
         MetricFactory metricFactory;
         try {
-            metricFactory = (MetricFactory) Class.forName(metricFactoryClass).newInstance();
-        } catch (InstantiationException | IllegalAccessException | ClassNotFoundException e) {
-            LOG.error("Invalid MetricFactory class: {} error: {}", metricFactoryClass, e.getMessage());
+            metricFactory = (MetricFactory) Class.forName(metricFactoryClass).getDeclaredConstructor().newInstance();
+        } catch (Exception ex) {
+            LOG.error("Invalid MetricFactory class: {}", metricFactoryClass, ex);
             throw new IllegalArgumentException("Invalid metric class");
         }
 
@@ -904,9 +1080,9 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
                 ZMSConsts.ZMS_PRIVATE_KEY_STORE_FACTORY_CLASS);
         PrivateKeyStoreFactory pkeyFactory;
         try {
-            pkeyFactory = (PrivateKeyStoreFactory) Class.forName(pkeyFactoryClass).newInstance();
-        } catch (InstantiationException | IllegalAccessException | ClassNotFoundException e) {
-            LOG.error("Invalid PrivateKeyStoreFactory class: {} error: {}", pkeyFactoryClass, e.getMessage());
+            pkeyFactory = (PrivateKeyStoreFactory) Class.forName(pkeyFactoryClass).getDeclaredConstructor().newInstance();
+        } catch (Exception ex) {
+            LOG.error("Invalid PrivateKeyStoreFactory class: {}", pkeyFactoryClass, ex);
             throw new IllegalArgumentException("Invalid private key store");
         }
 
@@ -929,10 +1105,8 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             StringBuilder privKeyId = new StringBuilder(256);
             PrivateKey pkey = keyStore.getPrivateKey(ZMSConsts.ZMS_SERVICE, serverHostName, privKeyId);
             privateKey = new ServerPrivateKey(pkey, privKeyId.toString());
-        } else if (privateECKey != null) {
-            privateKey = privateECKey;
         } else {
-            privateKey = privateRSAKey;
+            privateKey = Objects.requireNonNullElseGet(privateECKey, () -> privateRSAKey);
         }
     }
 
@@ -942,9 +1116,9 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
                 ZMSConsts.ZMS_DOMAIN_META_STORE_FACTORY_CLASS);
         DomainMetaStoreFactory metaStoreFactory;
         try {
-            metaStoreFactory = (DomainMetaStoreFactory) Class.forName(metaStoreFactoryClass).newInstance();
-        } catch (InstantiationException | IllegalAccessException | ClassNotFoundException e) {
-            LOG.error("Invalid DomainMetaStoreFactory class: {} error: {}", metaStoreFactoryClass, e.getMessage());
+            metaStoreFactory = (DomainMetaStoreFactory) Class.forName(metaStoreFactoryClass).getDeclaredConstructor().newInstance();
+        } catch (Exception ex) {
+            LOG.error("Invalid DomainMetaStoreFactory class: {}", metaStoreFactoryClass, ex);
             throw new IllegalArgumentException("Invalid metastore factory");
         }
 
@@ -988,9 +1162,9 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         AuditLoggerFactory auditLogFactory;
 
         try {
-            auditLogFactory = (AuditLoggerFactory) Class.forName(auditFactoryClass).newInstance();
-        } catch (InstantiationException | IllegalAccessException | ClassNotFoundException e) {
-            LOG.error("Invalid AuditLoggerFactory class: {} error: {}", auditFactoryClass, e.getMessage());
+            auditLogFactory = (AuditLoggerFactory) Class.forName(auditFactoryClass).getDeclaredConstructor().newInstance();
+        } catch (Exception ex) {
+            LOG.error("Invalid AuditLoggerFactory class: {}", auditFactoryClass, ex);
             throw new IllegalArgumentException("Invalid audit logger class");
         }
 
@@ -1003,12 +1177,12 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         final String auditRefValidatorClass = System.getProperty(ZMSConsts.ZMS_PROP_AUDIT_REF_VALIDATOR_FACTORY_CLASS);
         AuditReferenceValidatorFactory auditReferenceValidatorFactory;
 
-        if (auditRefValidatorClass != null && !auditRefValidatorClass.isEmpty()) {
+        if (!StringUtil.isEmpty(auditRefValidatorClass)) {
 
             try {
-                auditReferenceValidatorFactory = (AuditReferenceValidatorFactory) Class.forName(auditRefValidatorClass).newInstance();
-            } catch (InstantiationException | IllegalAccessException | ClassNotFoundException e) {
-                LOG.error("Invalid AuditReferenceValidatorFactory class: {} error: {}", auditRefValidatorClass, e.getMessage());
+                auditReferenceValidatorFactory = (AuditReferenceValidatorFactory) Class.forName(auditRefValidatorClass).getDeclaredConstructor().newInstance();
+            } catch (Exception ex) {
+                LOG.error("Invalid AuditReferenceValidatorFactory class: {}", auditRefValidatorClass, ex);
                 throw new IllegalArgumentException("Invalid audit reference factory class");
             }
 
@@ -1059,7 +1233,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         try {
             serverSolutionTemplates = JSON.fromBytes(Files.readAllBytes(path), SolutionTemplates.class);
         } catch (IOException ex) {
-            LOG.error("Unable to parse service templates file {}: {}",
+            LOG.error("Unable to parse solution templates file {}: {}",
                     solutionTemplatesFname, ex.getMessage());
         }
 
@@ -1067,6 +1241,10 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             LOG.error("Generating empty solution template list...");
             serverSolutionTemplates = new SolutionTemplates();
             serverSolutionTemplates.setTemplates(new HashMap<>());
+            serverSolutionTemplateNames = Collections.emptyList();
+        } else {
+            serverSolutionTemplateNames = new ArrayList<>(serverSolutionTemplates.names());
+            Collections.sort(serverSolutionTemplateNames);
         }
     }
 
@@ -1114,12 +1292,12 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         final String statusCheckerFactoryClass = System.getProperty(ZMSConsts.ZMS_PROP_STATUS_CHECKER_FACTORY_CLASS);
         StatusCheckerFactory statusCheckerFactory;
 
-        if (statusCheckerFactoryClass != null && !statusCheckerFactoryClass.isEmpty()) {
+        if (!StringUtil.isEmpty(statusCheckerFactoryClass)) {
 
             try {
-                statusCheckerFactory = (StatusCheckerFactory) Class.forName(statusCheckerFactoryClass).newInstance();
-            } catch (InstantiationException | IllegalAccessException | ClassNotFoundException e) {
-                LOG.error("Invalid StatusCheckerFactory class: {} error: {}", statusCheckerFactoryClass, e.getMessage());
+                statusCheckerFactory = (StatusCheckerFactory) Class.forName(statusCheckerFactoryClass).getDeclaredConstructor().newInstance();
+            } catch (Exception ex) {
+                LOG.error("Invalid StatusCheckerFactory class: {}", statusCheckerFactoryClass, ex);
                 throw new IllegalArgumentException("Invalid status checker factory class");
             }
 
@@ -1134,12 +1312,12 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         final String caller = "initstore";
 
         List<String> domains = dbService.listDomains(null, 0, true);
-        if (domains.size() > 0 && domains.contains(SYS_AUTH)) {
+        if (!domains.isEmpty() && domains.contains(SYS_AUTH)) {
             return;
         }
 
-        String adminUserList = System.getProperty(ZMSConsts.ZMS_PROP_DOMAIN_ADMIN);
-        if (adminUserList == null) {
+        final String adminUserList = System.getProperty(ZMSConsts.ZMS_PROP_DOMAIN_ADMIN);
+        if (StringUtil.isEmpty(adminUserList)) {
             throw ZMSUtils.internalServerError("init: No ZMS admin user specified", caller);
         }
 
@@ -1158,45 +1336,51 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         Domain domain = new Domain().setName(userDomain).setDescription("The reserved domain for user authentication")
                 .setId(UUID.fromCurrentTime()).setModified(Timestamp.fromCurrentTime());
-        createTopLevelDomain(null, domain, adminUsers, null, "System Setup");
+        createTopLevelDomain(null, domain, adminUsers, null, null, "System Setup", caller);
         if (!ZMSConsts.USER_DOMAIN.equals(userDomain)) {
             domain = new Domain().setName(ZMSConsts.USER_DOMAIN).setDescription("The reserved domain for user authentication")
                     .setId(UUID.fromCurrentTime()).setModified(Timestamp.fromCurrentTime());
-            createTopLevelDomain(null, domain, adminUsers, null, "System Setup");
+            createTopLevelDomain(null, domain, adminUsers, null, null, "System Setup", caller);
         }
         if (!homeDomain.equals(userDomain)) {
             domain = new Domain().setName(homeDomain).setDescription("The reserved domain for personal user domains")
                     .setId(UUID.fromCurrentTime()).setModified(Timestamp.fromCurrentTime());
-            createTopLevelDomain(null, domain, adminUsers, null, "System Setup");
+            createTopLevelDomain(null, domain, adminUsers, null, null, "System Setup", caller);
+        }
+        if (!headlessUserDomain.equals(userDomain)) {
+            domain = new Domain().setName(headlessUserDomain).setDescription("The reserved domain for headless users")
+                    .setId(UUID.fromCurrentTime()).setModified(Timestamp.fromCurrentTime());
+            createTopLevelDomain(null, domain, adminUsers, null, null, "System Setup", caller);
         }
         domain = new Domain().setName("sys").setDescription("The reserved domain for system related information")
                 .setId(UUID.fromCurrentTime()).setModified(Timestamp.fromCurrentTime());
-        createTopLevelDomain(null, domain, adminUsers, null, "System Setup");
+        createTopLevelDomain(null, domain, adminUsers, null, null, "System Setup", caller);
 
         // now create required subdomains in sys top level domain
 
         domain = new Domain().setName(SYS_AUTH).setDescription("The Athenz domain")
                 .setId(UUID.fromCurrentTime()).setModified(Timestamp.fromCurrentTime());
-        createSubDomain(null, domain, adminUsers, null, "System Setup", caller);
+        createSubDomain(null, domain, adminUsers, null, null, "System Setup", caller);
 
         domain = new Domain().setName("sys.auth.audit").setDescription("The Athenz audit domain")
                 .setId(UUID.fromCurrentTime()).setModified(Timestamp.fromCurrentTime());
-        createSubDomain(null, domain, adminUsers, null, "System Setup", caller);
+        createSubDomain(null, domain, adminUsers, null, null, "System Setup", caller);
 
         domain = new Domain().setName("sys.auth.audit.org").setDescription("The Athenz audit domain based on org name")
                 .setId(UUID.fromCurrentTime()).setModified(Timestamp.fromCurrentTime());
-        createSubDomain(null, domain, adminUsers, null, "System Setup", caller);
+        createSubDomain(null, domain, adminUsers, null, null, "System Setup", caller);
 
         domain = new Domain().setName("sys.auth.audit.domain").setDescription("The Athenz audit domain based on domain name")
                 .setId(UUID.fromCurrentTime()).setModified(Timestamp.fromCurrentTime());
-        createSubDomain(null, domain, adminUsers, null, "System Setup", caller);
+        createSubDomain(null, domain, adminUsers, null, null, "System Setup", caller);
 
         if (privateKey != null) {
             List<PublicKeyEntry> pubKeys = new ArrayList<>();
             final String publicKey = Crypto.convertToPEMFormat(Crypto.extractPublicKey(privateKey.getKey()));
             pubKeys.add(new PublicKeyEntry().setId(privateKey.getId()).setKey(Crypto.ybase64EncodeString(publicKey)));
-            ServiceIdentity id = new ServiceIdentity().setName("sys.auth.zms").setPublicKeys(pubKeys);
-            dbService.executePutServiceIdentity(null, SYS_AUTH, ZMSConsts.ZMS_SERVICE, id, null, caller);
+            ServiceIdentity zmsService = new ServiceIdentity().setName("sys.auth.zms").setPublicKeys(pubKeys);
+            dbService.executePutServiceIdentity(null, SYS_AUTH, ZMSConsts.ZMS_SERVICE, zmsService,
+                    null, null, caller, false);
         } else {
             if (LOG.isWarnEnabled()) {
                 LOG.warn("init: Warning: no public key, cannot register sys.auth.zms identity");
@@ -1213,8 +1397,9 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
     @Override
     public DomainList getDomainList(ResourceContext ctx, Integer limit, String skip, String prefix,
-            Integer depth, String account, Integer productId, String roleMember, String roleName,
-            String subscription, String tagKey, String tagValue, String businessService, String modifiedSince) {
+            Integer depth, String account, Integer productNumber, String roleMember, String roleName,
+            String subscription, String project, String tagKey, String tagValue, String businessService,
+            String productId, String modifiedSince) {
 
         final String caller = ctx.getApiName();
 
@@ -1223,10 +1408,11 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         validateRequest(ctx.request(), caller);
 
         if (LOG.isDebugEnabled()) {
-            LOG.debug("getDomainList: limit: {}, skip: {}, prefix: {}, depth: {}, account: {}, productId: {}, " +
-                    "roleMember: {}, roleName: {}, modifiedSince: {}, subscription: {}, businessService: {}",
-                    limit, skip, prefix, depth, account, productId, roleMember, roleName,
-                    modifiedSince, subscription, businessService);
+            LOG.debug("getDomainList: limit: {}, skip: {}, prefix: {}, depth: {}, account: {}, productNumber: {}, " +
+                    "roleMember: {}, roleName: {}, modifiedSince: {}, subscription: {}, project: {}, " +
+                    "businessService: {}, productId: {}, tagKey: {}, tagValue: {}",
+                    limit, skip, prefix, depth, account, productNumber, roleMember, roleName,
+                    modifiedSince, subscription, project, businessService, productId, tagKey, tagValue);
         }
 
         // for consistent handling of all requests, we're going to convert
@@ -1249,6 +1435,12 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         }
         if (limit != null && limit <= 0) {
             throw ZMSUtils.requestError("getDomainList: limit must be positive: " + limit, caller);
+        }
+        if (!StringUtil.isEmpty(tagKey)) {
+            validate(tagKey, TYPE_TAG_KEY, caller);
+        }
+        if (!StringUtil.isEmpty(tagValue)) {
+            validate(tagValue, TYPE_TAG_COMPOUND_VALUE, caller);
         }
 
         long modTime = 0;
@@ -1278,7 +1470,11 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             dlist = dbService.lookupDomainByAWSAccount(account);
         } else if (!StringUtil.isEmpty(subscription)) {
             dlist = dbService.lookupDomainByAzureSubscription(subscription);
-        } else if (productId != null && productId != 0) {
+        } else if (!StringUtil.isEmpty(project)) {
+            dlist = dbService.lookupDomainByGcpProject(project);
+        } else if (productNumber != null && productNumber != 0) {
+            dlist = dbService.lookupDomainByProductId(productNumber);
+        } else if (!StringUtil.isEmpty(productId)) {
             dlist = dbService.lookupDomainByProductId(productId);
         } else if (roleMember != null || roleName != null) {
             dlist = dbService.lookupDomainByRole(normalizeDomainAliasUser(roleMember), roleName);
@@ -1317,16 +1513,17 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
     }
 
     @Override
-    public Domain postTopLevelDomain(ResourceContext ctx, String auditRef, TopLevelDomain detail) {
+    public Domain postTopLevelDomain(ResourceContext ctx, String auditRef, String resourceOwner, TopLevelDomain detail) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
+        validateResourceOwner(resourceOwner, caller);
         validate(detail, TYPE_TOP_LEVEL_DOMAIN, caller);
 
         String domainName = detail.getName();
@@ -1334,6 +1531,17 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         domainName = domainName.toLowerCase();
         setRequestDomain(ctx, domainName);
+
+        // first verify that this is not a reserved domain name
+
+        if (reservedDomainNames.hasItem(domainName)) {
+            throw ZMSUtils.requestError("Domain name is reserved", caller);
+        }
+
+        // next check to make sure the domain does not contain an underscore
+        // since it's not a valid character for our sanDNS hostname entry
+        // in the service identity x.509 certificate, unless it's being
+        // executed by a system admin
 
         if (domainName.indexOf('_') != -1 && !isSysAdminUser(((RsrcCtxWrapper) ctx).principal())) {
             throw ZMSUtils.requestError("Domain name cannot contain underscores", caller);
@@ -1370,13 +1578,16 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         int productId = 0;
         if (productIdSupport) {
+            if (detail.getYpmId() == null && StringUtil.isEmpty(detail.getProductId())) {
+                throw ZMSUtils.requestError("Product Id is required when creating top level domain", caller);
+            }
+            // if we're given a ypm-id value then we need to make sure
+            // it is not a negative number.
             if (detail.getYpmId() != null) {
                 productId = detail.getYpmId();
                 if (productId <= 0) {
                     throw ZMSUtils.requestError("Product Id must be a positive integer", caller);
                 }
-            } else {
-                throw ZMSUtils.requestError("Product Id is required when creating top level domain", caller);
             }
         }
 
@@ -1395,10 +1606,16 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
                 .setId(UUID.fromCurrentTime())
                 .setAccount(detail.getAccount())
                 .setAzureSubscription(detail.getAzureSubscription())
+                .setAzureTenant(detail.getAzureTenant())
+                .setAzureClient(detail.getAzureClient())
+                .setGcpProject(detail.getGcpProject())
+                .setGcpProjectNumber(detail.getGcpProjectNumber())
                 .setYpmId(productId)
+                .setProductId(detail.getProductId())
                 .setModified(Timestamp.fromCurrentTime())
                 .setApplicationId(detail.getApplicationId())
                 .setMemberExpiryDays(detail.getMemberExpiryDays())
+                .setMemberPurgeExpiryDays(detail.getMemberPurgeExpiryDays())
                 .setServiceExpiryDays(detail.getServiceExpiryDays())
                 .setGroupExpiryDays(detail.getGroupExpiryDays())
                 .setTokenExpiryMins(detail.getTokenExpiryMins())
@@ -1408,26 +1625,37 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
                 .setUserAuthorityFilter(detail.getUserAuthorityFilter())
                 .setTags(detail.getTags())
                 .setBusinessService(detail.getBusinessService())
-                .setCertDnsDomain(detail.getCertDnsDomain());
+                .setCertDnsDomain(detail.getCertDnsDomain())
+                .setFeatureFlags(detail.getFeatureFlags())
+                .setContacts(detail.getContacts())
+                .setEnvironment(detail.getEnvironment())
+                .setX509CertSignerKeyId(detail.getX509CertSignerKeyId())
+                .setSshCertSignerKeyId(detail.getSshCertSignerKeyId());
 
         // before processing validate the fields
 
         validateDomainValues(topLevelDomain);
 
         List<String> adminUsers = normalizedAdminUsers(detail.getAdminUsers(), detail.getUserAuthorityFilter(), caller);
-        return createTopLevelDomain(ctx, topLevelDomain, adminUsers, solutionTemplates, auditRef);
+        ResourceDomainOwnership resourceOwnership = StringUtil.isEmpty(resourceOwner) ? null :
+                new ResourceDomainOwnership().setMetaOwner(resourceOwner).setObjectOwner(resourceOwner);
+
+        return createTopLevelDomain(ctx, topLevelDomain, adminUsers, solutionTemplates,
+                resourceOwnership, auditRef, caller);
     }
 
-    public void deleteTopLevelDomain(ResourceContext ctx, String domainName, String auditRef) {
+    @Override
+    public void deleteTopLevelDomain(ResourceContext ctx, String domainName, String auditRef, String resourceOwner) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
+        validateResourceOwner(resourceOwner, caller);
         validate(domainName, TYPE_DOMAIN_NAME, caller);
 
         domainName = domainName.toLowerCase();
@@ -1441,10 +1669,11 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         // all incoming object values into lower case (e.g. domain, role,
         // policy, service, etc name)
 
-        deleteDomain(ctx, auditRef, domainName, caller);
+        deleteDomain(ctx, auditRef, domainName, resourceOwner, caller);
     }
 
-    void deleteDomain(ResourceContext ctx, String auditRef, String domainName, String caller) {
+    void deleteDomain(ResourceContext ctx, final String auditRef, final String domainName,
+            final String resourceOwner, final String caller) {
 
         // make sure we're not deleting any of the reserved system domain
 
@@ -1453,7 +1682,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         }
 
         DomainList subDomainList = listDomains(null, null, domainName + ".", null, 0, true);
-        if (subDomainList.getNames().size() > 0) {
+        if (!subDomainList.getNames().isEmpty()) {
             throw ZMSUtils.requestError(caller + ": Cannot delete domain " +
                     domainName + ": " + subDomainList.getNames().size() + " subdomains of it exist", caller);
         }
@@ -1468,13 +1697,103 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             throw ZMSUtils.notFoundError("Domain not found: '" + domainName + "'", caller);
         }
 
+        // verify resource ownership to make sure we should allow this operation
+
+        ResourceOwnership.verifyDomainDeleteResourceOwnership(domain.getDomain(), resourceOwner, caller);
+
         for (Group group : domain.getGroups()) {
             groupMemberConsistencyCheck(domainName, group.getName(), true, caller);
         }
 
-        // consistency checks are ok so we can go ahead and delete the domain
+        // consistency checks are ok. Now check if there are provider services dependent on the domain
+
+        verifyNoServiceDependenciesOnDomain(domainName, caller);
+        verifyServiceProvidersAuthorizeDelete(ctx, domainName, caller);
+        verifyEmptyDomainMetaAttributes(domain.getDomain(), caller);
+
+        // no service is dependent on the domain, we can go ahead and delete the domain
 
         dbService.executeDeleteDomain(ctx, domainName, auditRef, caller);
+    }
+
+    void verifyEmptyDomainMetaAttributes(Domain domain, final String caller) {
+
+        for (String metaAttribute : domainDeleteMetaAttributes) {
+            switch (metaAttribute) {
+                case ZMSConsts.SYSTEM_META_ACCOUNT:
+                    if (!StringUtil.isEmpty(domain.getAccount())) {
+                        throw ZMSUtils.requestError("Domain has non-empty account attribute: "
+                                + domain.getAccount(), caller);
+                    }
+                    break;
+                case ZMSConsts.SYSTEM_META_GCP_PROJECT:
+                    if (!StringUtil.isEmpty(domain.getGcpProject())) {
+                        throw ZMSUtils.requestError("Domain has non-empty gcp-project attribute: "
+                                + domain.getGcpProject(), caller);
+                    }
+                    break;
+                case ZMSConsts.SYSTEM_META_AZURE_SUBSCRIPTION:
+                    if (!StringUtil.isEmpty(domain.getAzureSubscription())) {
+                        throw ZMSUtils.requestError("Domain has non-empty azure-subscription attribute: "
+                                + domain.getAzureSubscription(), caller);
+                    }
+                    break;
+            }
+        }
+    }
+
+    private void verifyNoServiceDependenciesOnDomain(String domainName, String caller) {
+        ServiceIdentityList serviceIdentityList = dbService.listServiceDependencies(domainName);
+        if (serviceIdentityList.getNames() != null && !serviceIdentityList.getNames().isEmpty()) {
+            final String msgBuilder = "Remove domain '" + domainName +
+                    "' dependency from the following service(s):" +
+                    String.join(", ", serviceIdentityList.getNames());
+            throw ZMSUtils.forbiddenError(msgBuilder, caller);
+        }
+    }
+
+    void verifyServiceProvidersAuthorizeDelete(ResourceContext ctx, String domainName, String caller) {
+        // Concurrently contact all service providers with endpoints and verify that the domain can be deleted
+        Principal principal = ((RsrcCtxWrapper) ctx).principal();
+        Map<String, ServiceProviderManager.DomainDependencyProvider> serviceProvidersWithEndpoints = serviceProviderManager.getServiceProvidersWithEndpoints();
+        List<String> serviceDependenciesDenied = serviceProvidersWithEndpoints.values()
+                .parallelStream()
+                .map(domainDependencyProvider -> getErrorOnServiceProviderDeny(domainName, principal, domainDependencyProvider))
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+
+        if (!serviceDependenciesDenied.isEmpty()) {
+            throw ZMSUtils.forbiddenError(String.join(", ", serviceDependenciesDenied), caller);
+        }
+    }
+
+    private String getErrorOnServiceProviderDeny(String domainName, Principal principal, ServiceProviderManager.DomainDependencyProvider domainDependencyProvider) {
+        DomainDependencyProviderResponse domainDependencyProviderResponse = serviceProviderClient.getDependencyStatus(domainDependencyProvider, domainName, principal.getFullName());
+        if (domainDependencyProviderResponse.getStatus().equals(PROVIDER_RESPONSE_DENY)) {
+            StringBuilder msgBuilder = new StringBuilder("Service '");
+            msgBuilder.append(domainDependencyProvider.getProvider());
+            msgBuilder.append("' is dependent on domain '");
+            msgBuilder.append(domainName);
+            msgBuilder.append("'");
+            if (!StringUtil.isEmpty(domainDependencyProviderResponse.getMessage())) {
+                msgBuilder.append(". Error: ");
+                msgBuilder.append(domainDependencyProviderResponse.getMessage());
+            }
+            return msgBuilder.toString();
+        }
+        return null;
+    }
+
+    private void verifyNoDomainDependenciesOnService(String serviceName, String caller) {
+        if (serviceProviderManager.isServiceProvider(serviceName)) {
+            DomainList domainList = dbService.listDomainDependencies(serviceName);
+            if (domainList.getNames() != null && !domainList.getNames().isEmpty()) {
+                final String msgBuilder = "Remove service '" + serviceName +
+                        "' dependency from the following domain(s):" +
+                        String.join(", ", domainList.getNames());
+                throw ZMSUtils.forbiddenError(msgBuilder, caller);
+            }
+        }
     }
 
     boolean isVirtualDomain(String domain) {
@@ -1515,16 +1834,18 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         return true;
     }
 
-    public Domain postUserDomain(ResourceContext ctx, String name, String auditRef, UserDomain detail) {
+    @Override
+    public Domain postUserDomain(ResourceContext ctx, String name, String auditRef, String resourceOwner, UserDomain detail) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
+        validateResourceOwner(resourceOwner, caller);
         validate(detail, TYPE_USER_DOMAIN, caller);
         validate(name, TYPE_SIMPLE_NAME, caller);
 
@@ -1553,7 +1874,8 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         // to be the home domain and the admin of the domain is the user
 
         final String userDomainAdmin = userDomainPrefix + principal.getName();
-        validateRoleMemberPrincipal(userDomainAdmin, Principal.Type.USER.getValue(), null, null, null, true, caller);
+        validateRoleMemberPrincipal(userDomainAdmin, Principal.Type.USER.getValue(), null, null,
+                null, null, true, caller);
 
         List<String> adminUsers = new ArrayList<>();
         adminUsers.add(userDomainAdmin);
@@ -1573,6 +1895,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
                 .setModified(Timestamp.fromCurrentTime())
                 .setApplicationId(detail.getApplicationId())
                 .setMemberExpiryDays(detail.getMemberExpiryDays())
+                .setMemberPurgeExpiryDays(detail.getMemberPurgeExpiryDays())
                 .setServiceExpiryDays(detail.getServiceExpiryDays())
                 .setGroupExpiryDays(detail.getGroupExpiryDays())
                 .setTokenExpiryMins(detail.getTokenExpiryMins())
@@ -1580,25 +1903,30 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
                 .setRoleCertExpiryMins(detail.getRoleCertExpiryMins())
                 .setSignAlgorithm(detail.getSignAlgorithm())
                 .setTags(detail.getTags())
-                .setBusinessService(detail.getBusinessService());
+                .setBusinessService(detail.getBusinessService())
+                .setContacts(detail.getContacts())
+                .setEnvironment(detail.getEnvironment());
 
         // before processing validate the fields
 
         validateDomainValues(subDomain);
-
-        return createSubDomain(ctx, subDomain, adminUsers, solutionTemplates, auditRef, caller);
+        ResourceDomainOwnership resourceOwnership = StringUtil.isEmpty(resourceOwner) ? null :
+                new ResourceDomainOwnership().setMetaOwner(resourceOwner).setObjectOwner(resourceOwner);
+        return createSubDomain(ctx, subDomain, adminUsers, solutionTemplates, resourceOwnership, auditRef, caller);
     }
 
-    public Domain postSubDomain(ResourceContext ctx, String parent, String auditRef, SubDomain detail) {
+    @Override
+    public Domain postSubDomain(ResourceContext ctx, String parent, String auditRef, String resourceOwner, SubDomain detail) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
+        validateResourceOwner(resourceOwner, caller);
         validate(detail, TYPE_SUB_DOMAIN, caller);
         validate(parent, TYPE_DOMAIN_NAME, caller);
         validate(detail.getName(), TYPE_SIMPLE_NAME, caller);
@@ -1646,12 +1974,14 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             throw ZMSUtils.notFoundError("Invalid parent domain: " + parent, caller);
         }
 
-        // inherit audit_enabled flag, organization and user authority settings
-        // from the parent domain
+        // inherit audit_enabled flag, organization, user authority,
+        // x509 and ssh cert signer key id settings from the parent domain
 
         detail.setAuditEnabled(parentDomain.getDomain().getAuditEnabled());
         detail.setOrg(parentDomain.getDomain().getOrg());
         detail.setUserAuthorityFilter(parentDomain.getDomain().getUserAuthorityFilter());
+        detail.setX509CertSignerKeyId(parentDomain.getDomain().getX509CertSignerKeyId());
+        detail.setSshCertSignerKeyId(parentDomain.getDomain().getSshCertSignerKeyId());
 
         // generate and verify admin users
 
@@ -1666,6 +1996,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
                 .setModified(Timestamp.fromCurrentTime())
                 .setApplicationId(detail.getApplicationId())
                 .setMemberExpiryDays(detail.getMemberExpiryDays())
+                .setMemberPurgeExpiryDays(detail.getMemberPurgeExpiryDays())
                 .setServiceExpiryDays(detail.getServiceExpiryDays())
                 .setGroupExpiryDays(detail.getGroupExpiryDays())
                 .setTokenExpiryMins(detail.getTokenExpiryMins())
@@ -1673,49 +2004,92 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
                 .setRoleCertExpiryMins(detail.getRoleCertExpiryMins())
                 .setSignAlgorithm(detail.getSignAlgorithm())
                 .setTags(detail.getTags())
-                .setBusinessService(detail.getBusinessService());
+                .setBusinessService(detail.getBusinessService())
+                .setContacts(detail.getContacts())
+                .setEnvironment(detail.getEnvironment())
+                .setX509CertSignerKeyId(detail.getX509CertSignerKeyId())
+                .setSshCertSignerKeyId(detail.getSshCertSignerKeyId());
 
         // before processing validate the fields
 
         validateDomainValues(subDomain);
 
-        return createSubDomain(ctx, subDomain, adminUsers, solutionTemplates, auditRef, caller);
+        ResourceDomainOwnership resourceOwnership = StringUtil.isEmpty(resourceOwner) ? null :
+                new ResourceDomainOwnership().setMetaOwner(resourceOwner).setObjectOwner(resourceOwner);
+        return createSubDomain(ctx, subDomain, adminUsers, solutionTemplates, resourceOwnership, auditRef, caller);
     }
 
     boolean isSysAdminUser(Principal principal) {
+        return isSysAdminUser(principal, true);
+    }
+
+    boolean isSysAdminUser(Principal principal, boolean prefixMustBeUserDomain) {
 
         // verify we're dealing with system administrator
         // authorize ("CREATE", "sys.auth:domain");
 
-        // first check - the domain must be the user domain
-
-        if (!principal.getDomain().equals(userDomain)) {
-            return false;
+        if (prefixMustBeUserDomain) {
+            if (!principal.getDomain().equals(userDomain)) {
+                return false;
+            }
         }
-
-        AthenzDomain domain = getAthenzDomain(SYS_AUTH, true);
 
         // evaluate our domain's roles and policies to see if access
         // is allowed or not for the given operation and resource
         // our action are always converted to lowercase
 
-        String resource = SYS_AUTH + ":domain";
-        AccessStatus accessStatus = evaluateAccess(domain, principal.getFullName(), "create",
-                resource, null, null, principal);
-
-        return accessStatus == AccessStatus.ALLOWED;
+        return isAllowedSystemAccess(principal, "create", SYS_AUTH + ":domain");
     }
 
-    public void deleteSubDomain(ResourceContext ctx, String parent, String name, String auditRef) {
+    boolean authorizedForDomainDelete(Principal principal, final String domainName, final String caller) {
+
+        // extract the domain object first
+
+        AthenzDomain domain = getAthenzDomain(domainName, true);
+        if (domain == null) {
+            throw ZMSUtils.notFoundError("Domain not found: " + domainName, caller);
+        }
+
+        // carry out authorization check
+        //     authorize ("delete", "{domainName}:domain");
+
+        return hasAccess(domain, "delete", domainName + ":domain", principal, null) == AccessStatus.ALLOWED;
+    }
+
+    void authorizeSubDomainDeleteRequest(ResourceContext ctx, final String parentDomainName,
+            final String subDomainName, final String caller) {
+
+        // first check if the user has a delete privilege in the domain
+
+        Principal principal = ((RsrcCtxWrapper) ctx).principal();
+        if (authorizedForDomainDelete(principal, subDomainName, caller)) {
+            return;
+        }
+
+        // since the principal is not a domain admin, let's check if the
+        // principal is an admin in the parent domain (original behavior)
+
+        if (authorizedForDomainDelete(principal, parentDomainName, caller)) {
+            return;
+        }
+
+        // the principal is not authorized to delete this domain
+
+        throw ZMSUtils.forbiddenError("Principal is not authorized to delete domain: " + subDomainName, caller);
+    }
+
+    @Override
+    public void deleteSubDomain(ResourceContext ctx, String parent, String name, String auditRef, String resourceOwner) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
+        validateResourceOwner(resourceOwner, caller);
         validate(parent, TYPE_DOMAIN_NAME, caller);
         validate(name, TYPE_SIMPLE_NAME, caller);
 
@@ -1728,23 +2102,31 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         String domainName = parent + "." + name;
         setRequestDomain(ctx, parent);
 
+        // carry out the authorization check for this request since the RDL
+        // only defines authentication. The caller must be a domain admin either
+        // in the domain itself or in the parent (original behavior)
+
+        authorizeSubDomainDeleteRequest(ctx, parent, domainName, caller);
+
         // verify that request is properly authenticated for this request
 
         verifyAuthorizedServiceOperation(((RsrcCtxWrapper) ctx).principal().getAuthorizedService(), caller);
 
-        deleteDomain(ctx, auditRef, domainName, caller);
+        deleteDomain(ctx, auditRef, domainName, resourceOwner, caller);
     }
 
-    public void deleteUserDomain(ResourceContext ctx, String name, String auditRef) {
+    @Override
+    public void deleteUserDomain(ResourceContext ctx, String name, String auditRef, String resourceOwner) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
+        validateResourceOwner(resourceOwner, caller);
         validate(name, TYPE_SIMPLE_NAME, caller);
 
         // for consistent handling of all requests, we're going to convert
@@ -1759,7 +2141,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         verifyAuthorizedServiceOperation(((RsrcCtxWrapper) ctx).principal().getAuthorizedService(), caller);
 
         String domainName = homeDomainPrefix + name;
-        deleteDomain(ctx, auditRef, domainName, caller);
+        deleteDomain(ctx, auditRef, domainName, resourceOwner, caller);
     }
 
     @Override
@@ -1796,7 +2178,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
@@ -1825,13 +2207,16 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
-
         validate(name, TYPE_SIMPLE_NAME, caller);
+
+        if (StringUtil.isEmpty(auditRef)) {
+            throw ZMSUtils.requestError("Audit reference is required for this operation", caller);
+        }
 
         // for consistent handling of all requests, we're going to convert
         // all incoming object values into lower case (e.g. domain, role,
@@ -1846,7 +2231,24 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         String userName = userDomainPrefix + name;
         String domainName = homeDomainPrefix + getUserDomainName(name);
+
+        // verify that we're not deleting one of the system admins. We'll
+        // refuse those operations since the user must first be removed
+        // from the sys.auth:role.admin role and then can be deleted
+
+        if (isSysAdminRoleMember(userName)) {
+            throw ZMSUtils.forbiddenError("system admin users cannot be deleted", caller);
+        }
+
         dbService.executeDeleteUser(ctx, userName, domainName, auditRef, caller);
+    }
+
+    boolean isSysAdminRoleMember(final String roleMember) {
+        Role role = dbService.getRole(SYS_AUTH, ADMIN_ROLE_NAME, false, true, false);
+        if (role == null) {
+            return false;
+        }
+        return isMemberOfRole(role, roleMember);
     }
 
     String getUserDomainName(String userName) {
@@ -1854,17 +2256,18 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
     }
 
     @Override
-    public void putDomainMeta(ResourceContext ctx, String domainName, String auditRef,
+    public void putDomainMeta(ResourceContext ctx, String domainName, String auditRef, String resourceOwner,
             DomainMeta meta) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
+        validateResourceOwner(resourceOwner, caller);
 
         // validate meta values - validator will enforce any patters
         // defined in the schema and we need to validate the rest of the
@@ -1882,14 +2285,13 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         setRequestDomain(ctx, domainName);
         AthenzObject.DOMAIN_META.convertToLowerCase(meta);
 
-        // verify that request is properly authenticated for this request
-
-        verifyAuthorizedServiceOperation(((RsrcCtxWrapper) ctx).principal().getAuthorizedService(),
-                caller);
-
         if (LOG.isDebugEnabled()) {
             LOG.debug("putDomainMeta: name={}, meta={}", domainName, meta);
         }
+
+        // verify that request is properly authenticated for this request
+
+        verifyAuthorizedServiceOperation(((RsrcCtxWrapper) ctx).principal().getAuthorizedService(), caller);
 
         // first obtain our domain object
 
@@ -1897,6 +2299,13 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         if (domain == null) {
             throw ZMSUtils.notFoundError("No such domain: " + domainName, caller);
         }
+
+        // verify resource ownership for the request. If the object returned
+        // is not null then it indicates that the object must be modified
+        // with the given resource ownership details
+
+        ResourceDomainOwnership resourceOwnership = ResourceOwnership.verifyDomainMetaResourceOwnership(domain,
+                resourceOwner, caller);
 
         // if any of our meta values has changed we need to validate
         // them against the meta store
@@ -1911,10 +2320,64 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         // need to update any of our values in the meta store
 
         updateExistingDomainMetaStoreDetails(domainName, meta, changedAttrs);
+
+        // update resource ownership if required
+
+        updateResourceDomainOwnership(ctx, domainName, resourceOwnership, auditRef, caller);
+    }
+
+    void validateDomainContacts(Map<String, String> contacts, final String caller) {
+
+        if (contacts == null || contacts.isEmpty()) {
+            return;
+        }
+
+        // verify the type is a registered type in the server and the value
+        // is a valid principal according to the user authority
+
+        for (Map.Entry<String, String> entry : contacts.entrySet()) {
+
+            if (!domainContactTypes.contains(entry.getKey())) {
+                throw ZMSUtils.requestError("invalid domain contact type: " + entry.getKey(), caller);
+            }
+
+            // empty value indicates that we want to delete the contact
+
+            if (StringUtil.isEmpty(entry.getValue())) {
+                continue;
+            }
+
+            // if we have a user authority defined, verify that the given contact
+            // is a valid principal according to the user authority
+
+            if (userAuthority != null && !userAuthority.isValidUser(entry.getValue())) {
+                throw ZMSUtils.requestError("invalid domain contact: " + entry.getKey(), caller);
+            }
+        }
+    }
+
+    void validateDomainFilterValue(final String domainFilter, final String caller) {
+
+        if (!StringUtil.isEmpty(domainFilter)) {
+
+            String[] domainNames = domainFilter.split(",");
+            for (String domainName : domainNames) {
+
+                // supported format is domainName,+domainName,-domainName
+
+                if (domainName.startsWith("+") || domainName.startsWith("-")) {
+                    domainName = domainName.substring(1);
+                }
+                validate(domainName, TYPE_DOMAIN_NAME, caller);
+                if (dbService.getDomain(domainName, false) == null) {
+                    throw ZMSUtils.requestError("No such domain: " + domainName, caller);
+                }
+            }
+        }
     }
 
     void validateString(final String value, final String type, final String caller) {
-        if (value != null && !value.isEmpty()) {
+        if (!StringUtil.isEmpty(value)) {
             validate(value, type, caller);
         }
     }
@@ -1935,11 +2398,18 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         validateIntegerValue(domain.getServiceExpiryDays(), "serviceExpiryDays");
         validateIntegerValue(domain.getGroupExpiryDays(), "groupExpiryDays");
         validateIntegerValue(domain.getTokenExpiryMins(), "tokenExpiryMins");
+        validateIntegerValue(domain.getFeatureFlags(), "featureFlags");
 
         validateString(domain.getApplicationId(), TYPE_COMPOUND_NAME, caller);
         validateString(domain.getAccount(), TYPE_COMPOUND_NAME, caller);
         validateString(domain.getAzureSubscription(), TYPE_COMPOUND_NAME, caller);
+        validateString(domain.getAzureTenant(), TYPE_COMPOUND_NAME, caller);
+        validateString(domain.getAzureClient(), TYPE_COMPOUND_NAME, caller);
+        validateString(domain.getGcpProject(), TYPE_COMPOUND_NAME, caller);
+        validateString(domain.getGcpProjectNumber(), TYPE_COMPOUND_NAME, caller);
         validateString(domain.getUserAuthorityFilter(), TYPE_AUTHORITY_KEYWORDS, caller);
+        validateString(domain.getX509CertSignerKeyId(), TYPE_COMPOUND_NAME, caller);
+        validateString(domain.getSshCertSignerKeyId(), TYPE_COMPOUND_NAME, caller);
 
         // we're going to check the meta values for our new domain
         // requests against our meta store
@@ -1953,9 +2423,45 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         if (!domainMetaStore.isValidAzureSubscription(domain.getName(), domain.getAzureSubscription())) {
             throw ZMSUtils.requestError("invalid azure subscription for domain", caller);
         }
+        // validate that azure details are specified correctly
+        if (!validateAllEmptyOrPresent(domain.getAzureSubscription(), domain.getAzureTenant(), domain.getAzureClient())) {
+            throw ZMSUtils.requestError("invalid azure details for domain, both subscription, tenant and client must be specified", caller);
+        }
+        if (!domainMetaStore.isValidGcpProject(domain.getName(), domain.getGcpProject())) {
+            throw ZMSUtils.requestError("invalid gcp project for domain", caller);
+        }
+        // validate that gcp project details are specified correctly
+        if (!validateAllEmptyOrPresent(domain.getGcpProject(), domain.getGcpProjectNumber())) {
+            throw ZMSUtils.requestError("invalid gcp project details for domain, both id and number must be specified", caller);
+        }
         if (!domainMetaStore.isValidProductId(domain.getName(), domain.getYpmId())) {
             throw ZMSUtils.requestError("invalid product id for domain", caller);
         }
+        if (!domainMetaStore.isValidProductId(domain.getName(), domain.getProductId())) {
+            throw ZMSUtils.requestError("invalid product id for domain", caller);
+        }
+
+        // validate the domain contacts types and names
+
+        validateDomainContacts(domain.getContacts(), caller);
+
+        // validate the domain environment if specified
+
+        if (!StringUtil.isEmpty(domain.getEnvironment()) && !domainEnvironments.contains(domain.getEnvironment())) {
+            throw ZMSUtils.requestError("invalid environment for domain", caller);
+        }
+    }
+
+    boolean validateAllEmptyOrPresent(final String... strings) {
+        if (strings == null) {
+            return true;
+        }
+        for (String s : strings) {
+            if (StringUtil.isEmpty(strings[0]) != StringUtil.isEmpty(s)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     BitSet validateDomainSystemMetaStoreValues(Domain domain, DomainMeta meta, final String attributeName) {
@@ -1976,16 +2482,39 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
                 }
                 break;
             case ZMSConsts.SYSTEM_META_AZURE_SUBSCRIPTION:
-                if (ZMSUtils.metaValueChanged(domain.getAzureSubscription(), meta.getAzureSubscription())) {
+                if (!validateAllEmptyOrPresent(meta.getAzureSubscription(), meta.getAzureTenant(), meta.getAzureClient())) {
+                    throw ZMSUtils.requestError("invalid azure details for domain, all of subscription, tenant and client must be specified", caller);
+                }
+                if (ZMSUtils.metaValueChanged(domain.getAzureSubscription(), meta.getAzureSubscription()) ||
+                        ZMSUtils.metaValueChanged(domain.getAzureTenant(), meta.getAzureTenant()) ||
+                        ZMSUtils.metaValueChanged(domain.getAzureClient(), meta.getAzureClient())) {
                     if (!domainMetaStore.isValidAzureSubscription(domain.getName(), meta.getAzureSubscription())) {
                         throw ZMSUtils.requestError("invalid azure subscription for domain", caller);
                     }
                     changedAttrs.set(DomainMetaStore.META_ATTR_AZURE_SUBSCRIPTION);
                 }
                 break;
+            case ZMSConsts.SYSTEM_META_GCP_PROJECT:
+                if (!validateAllEmptyOrPresent(meta.getGcpProject(), meta.getGcpProjectNumber())) {
+                    throw ZMSUtils.requestError("invalid gcp project details for domain, both id and number must be specified", caller);
+                }
+                if (ZMSUtils.metaValueChanged(domain.getGcpProject(), meta.getGcpProject()) ||
+                        ZMSUtils.metaValueChanged(domain.getGcpProjectNumber(), meta.getGcpProjectNumber())) {
+                    if (!domainMetaStore.isValidGcpProject(domain.getName(), meta.getGcpProject())) {
+                        throw ZMSUtils.requestError("invalid gcp project for domain", caller);
+                    }
+                    changedAttrs.set(DomainMetaStore.META_ATTR_GCP_PROJECT);
+                }
+                break;
             case ZMSConsts.SYSTEM_META_PRODUCT_ID:
                 if (ZMSUtils.metaValueChanged(domain.getYpmId(), meta.getYpmId())) {
                     if (!domainMetaStore.isValidProductId(domain.getName(), meta.getYpmId())) {
+                        throw ZMSUtils.requestError("invalid product id for domain", caller);
+                    }
+                    changedAttrs.set(DomainMetaStore.META_ATTR_PRODUCT_NUMBER);
+                }
+                if (ZMSUtils.metaValueChanged(domain.getProductId(), meta.getProductId())) {
+                    if (!domainMetaStore.isValidProductId(domain.getName(), meta.getProductId())) {
                         throw ZMSUtils.requestError("invalid product id for domain", caller);
                     }
                     changedAttrs.set(DomainMetaStore.META_ATTR_PRODUCT_ID);
@@ -2034,9 +2563,22 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         validateIntegerValue(meta.getGroupExpiryDays(), "groupExpiryDays");
         validateIntegerValue(meta.getTokenExpiryMins(), "tokenExpiryMins");
         validateIntegerValue(meta.getYpmId(), "ypmId");
+        validateIntegerValue(meta.getFeatureFlags(), "featureFlags");
 
         validateString(meta.getApplicationId(), TYPE_COMPOUND_NAME, caller);
         validateString(meta.getAccount(), TYPE_COMPOUND_NAME, caller);
+        validateString(meta.getX509CertSignerKeyId(), TYPE_COMPOUND_NAME, caller);
+        validateString(meta.getSshCertSignerKeyId(), TYPE_COMPOUND_NAME, caller);
+
+        // validate the domain contacts types and names
+
+        validateDomainContacts(meta.getContacts(), caller);
+
+        // validate the domain environment if specified
+
+        if (!StringUtil.isEmpty(meta.getEnvironment()) && !domainEnvironments.contains(meta.getEnvironment())) {
+            throw ZMSUtils.requestError("invalid environment for domain", caller);
+        }
     }
 
     void updateDomainMetaStoreAttributeDetails(final String domainName, int metaAttribute, final Object value) {
@@ -2058,8 +2600,14 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
                 case DomainMetaStore.META_ATTR_AZURE_SUBSCRIPTION:
                     domainMetaStore.setAzureSubscriptionDomain(domainName, (String) value);
                     break;
-                case DomainMetaStore.META_ATTR_PRODUCT_ID:
+                case DomainMetaStore.META_ATTR_GCP_PROJECT:
+                    domainMetaStore.setGcpProjectDomain(domainName, (String) value);
+                    break;
+                case DomainMetaStore.META_ATTR_PRODUCT_NUMBER:
                     domainMetaStore.setProductIdDomain(domainName, (Integer) value);
+                    break;
+                case DomainMetaStore.META_ATTR_PRODUCT_ID:
+                    domainMetaStore.setProductIdDomain(domainName, (String) value);
                     break;
             }
         } catch (Exception ex) {
@@ -2082,9 +2630,17 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             updateDomainMetaStoreAttributeDetails(domain.getName(), DomainMetaStore.META_ATTR_AZURE_SUBSCRIPTION,
                     domain.getAzureSubscription());
         }
+        if (!StringUtil.isEmpty(domain.getGcpProject())) {
+            updateDomainMetaStoreAttributeDetails(domain.getName(), DomainMetaStore.META_ATTR_GCP_PROJECT,
+                    domain.getGcpProject());
+        }
         if (domain.getYpmId() != null) {
-            updateDomainMetaStoreAttributeDetails(domain.getName(), DomainMetaStore.META_ATTR_PRODUCT_ID,
+            updateDomainMetaStoreAttributeDetails(domain.getName(), DomainMetaStore.META_ATTR_PRODUCT_NUMBER,
                     domain.getYpmId());
+        }
+        if (domain.getProductId() != null) {
+            updateDomainMetaStoreAttributeDetails(domain.getName(), DomainMetaStore.META_ATTR_PRODUCT_ID,
+                    domain.getProductId());
         }
     }
 
@@ -2100,8 +2656,14 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             case DomainMetaStore.META_ATTR_AZURE_SUBSCRIPTION:
                 value = meta.getAzureSubscription();
                 break;
-            case DomainMetaStore.META_ATTR_PRODUCT_ID:
+            case DomainMetaStore.META_ATTR_GCP_PROJECT:
+                value = meta.getGcpProject();
+                break;
+            case DomainMetaStore.META_ATTR_PRODUCT_NUMBER:
                 value = meta.getYpmId();
+                break;
+            case DomainMetaStore.META_ATTR_PRODUCT_ID:
+                value = meta.getProductId();
                 break;
         }
         return value;
@@ -2127,10 +2689,14 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         validateIntegerValue(meta.getMemberReviewDays(), "memberReviewDays");
         validateIntegerValue(meta.getServiceReviewDays(), "serviceReviewDays");
         validateIntegerValue(meta.getGroupReviewDays(), "groupReviewDays");
+        validateIntegerValue(meta.getMaxMembers(), "maxMembers");
+        validateIntegerValue(meta.getSelfRenewMins(), "selfRenewMins");
 
         validateString(meta.getNotifyRoles(), TYPE_RESOURCE_NAMES, caller);
         validateString(meta.getUserAuthorityFilter(), TYPE_AUTHORITY_KEYWORDS, caller);
         validateString(meta.getUserAuthorityExpiration(), TYPE_AUTHORITY_KEYWORD, caller);
+
+        validateDomainFilterValue(meta.getPrincipalDomainFilter(), caller);
     }
 
     void validateRoleValues(Role role) {
@@ -2145,10 +2711,14 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         validateIntegerValue(role.getMemberReviewDays(), "memberReviewDays");
         validateIntegerValue(role.getServiceReviewDays(), "serviceReviewDays");
         validateIntegerValue(role.getGroupReviewDays(), "groupReviewDays");
+        validateIntegerValue(role.getMaxMembers(), "maxMembers");
+        validateIntegerValue(role.getSelfRenewMins(), "selfRenewMins");
 
         validateString(role.getNotifyRoles(), TYPE_RESOURCE_NAMES, caller);
         validateString(role.getUserAuthorityFilter(), TYPE_AUTHORITY_KEYWORDS, caller);
         validateString(role.getUserAuthorityExpiration(), TYPE_AUTHORITY_KEYWORD, caller);
+
+        validateDomainFilterValue(role.getPrincipalDomainFilter(), caller);
     }
 
     void validateGroupValues(Group group) {
@@ -2157,9 +2727,14 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         validateIntegerValue(group.getMemberExpiryDays(), "memberExpiryDays");
         validateIntegerValue(group.getServiceExpiryDays(), "serviceExpiryDays");
+        validateIntegerValue(group.getMaxMembers(), "maxMembers");
+        validateIntegerValue(group.getSelfRenewMins(), "selfRenewMins");
+
         validateString(group.getNotifyRoles(), TYPE_RESOURCE_NAMES, caller);
         validateString(group.getUserAuthorityFilter(), TYPE_AUTHORITY_KEYWORDS, caller);
         validateString(group.getUserAuthorityExpiration(), TYPE_AUTHORITY_KEYWORD, caller);
+
+        validateDomainFilterValue(group.getPrincipalDomainFilter(), caller);
     }
 
     void validateGroupMetaValues(GroupMeta meta) {
@@ -2168,9 +2743,14 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         validateIntegerValue(meta.getMemberExpiryDays(), "memberExpiryDays");
         validateIntegerValue(meta.getServiceExpiryDays(), "serviceExpiryDays");
+        validateIntegerValue(meta.getMaxMembers(), "maxMembers");
+        validateIntegerValue(meta.getSelfRenewMins(), "selfRenewMins");
+
         validateString(meta.getNotifyRoles(), TYPE_RESOURCE_NAMES, caller);
         validateString(meta.getUserAuthorityFilter(), TYPE_AUTHORITY_KEYWORDS, caller);
         validateString(meta.getUserAuthorityExpiration(), TYPE_AUTHORITY_KEYWORD, caller);
+
+        validateDomainFilterValue(meta.getPrincipalDomainFilter(), caller);
     }
 
     @Override
@@ -2180,7 +2760,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
@@ -2238,8 +2818,8 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         // sure here if product id support is required then we must
         // have one specified for a top level domain.
 
-        if (productIdSupport && meta.getYpmId() == null && domainName.indexOf('.') == -1 &&
-                ZMSConsts.SYSTEM_META_PRODUCT_ID.equals(attribute)) {
+        if (productIdSupport && meta.getYpmId() == null && StringUtil.isEmpty(meta.getProductId()) &&
+                domainName.indexOf('.') == -1 && ZMSConsts.SYSTEM_META_PRODUCT_ID.equals(attribute)) {
              throw ZMSUtils.requestError("Unique Product Id must be specified for top level domain", caller);
         }
 
@@ -2287,12 +2867,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         domainName = domainName.toLowerCase();
         setRequestDomain(ctx, domainName);
 
-        DomainTemplateList domainTemplateList = dbService.listDomainTemplates(domainName);
-        if (domainTemplateList == null) {
-            throw ZMSUtils.notFoundError("getDomainTemplateList: Domain not found: '" + domainName + "'", caller);
-        }
-
-        return domainTemplateList;
+        return dbService.listDomainTemplates(domainName);
     }
 
     @Override
@@ -2302,7 +2877,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
@@ -2322,7 +2897,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         // verify that all template names are valid
 
         List<String> templateNames = domainTemplate.getTemplateNames();
-        if (templateNames == null || templateNames.size() == 0) {
+        if (ZMSUtils.isCollectionEmpty(templateNames)) {
             throw ZMSUtils.requestError("putDomainTemplate: No templates specified", caller);
         }
         validateSolutionTemplates(templateNames, caller);
@@ -2345,7 +2920,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
@@ -2367,7 +2942,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         // verify that all template names are valid
 
         List<String> templateNames = domainTemplate.getTemplateNames();
-        if (templateNames == null) {
+        if (ZMSUtils.isCollectionEmpty(templateNames)) {
             throw ZMSUtils.requestError("putDomainTemplateExt: No templates specified", caller);
         }
 
@@ -2387,12 +2962,13 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         dbService.executePutDomainTemplate(ctx, domainName, domainTemplate, auditRef, caller);
     }
 
+    @Override
     public void deleteDomainTemplate(ResourceContext ctx, String domainName, String templateName, String auditRef) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
@@ -2460,6 +3036,10 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             case DomainMetaStore.META_ATTR_AZURE_SUBSCRIPTION_NAME:
                 values = domainMetaStore.getValidAzureSubscriptions(userName);
                 break;
+            case DomainMetaStore.META_ATTR_GCP_PROJECT_NAME:
+                values = domainMetaStore.getValidGcpProjects(userName);
+                break;
+            case DomainMetaStore.META_ATTR_PRODUCT_NUMBER_NAME:
             case DomainMetaStore.META_ATTR_PRODUCT_ID_NAME:
                 values = domainMetaStore.getValidProductIds(userName);
                 break;
@@ -2469,6 +3049,82 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         DomainMetaStoreValidValuesList domainMetaStoreValidValuesList = new DomainMetaStoreValidValuesList();
         domainMetaStoreValidValuesList.setValidValues(values);
         return domainMetaStoreValidValuesList;
+    }
+
+    @Override
+    public AuthHistoryDependencies getAuthHistoryDependencies(ResourceContext ctx, String domainName) {
+        final String caller = ctx.getApiName();
+        logPrincipal(ctx);
+
+        validateRequest(ctx.request(), caller);
+        validate(domainName, TYPE_DOMAIN_NAME, caller);
+
+        // for consistent handling of all requests, we're going to convert
+        // all incoming object values into lower case (e.g. domain, role,
+        // policy, service, etc name)
+
+        domainName = domainName.toLowerCase();
+        setRequestDomain(ctx, domainName);
+
+        return dbService.getAuthHistory(domainName);
+    }
+
+    @Override
+    public Response deleteExpiredMembers(ResourceContext ctx, Integer purgeResources, String auditRef, Boolean returnObj) {
+        final String caller = ctx.getApiName();
+        logPrincipal(ctx);
+        validateRequest(ctx.request(), caller);
+
+        if (purgeResources == null) {
+            // it is not provided, all resources will be purged
+            purgeResources = 3;
+        }
+
+        if (!List.of(0, 1, 2, 3).contains(purgeResources)) {
+            throw ZMSUtils.requestError("Invalid purgeResources value, error: should be a number in [0-3]", caller);
+        }
+
+        EnumSet<PurgeResourcesEnum>  purgeResourcesEnumSet = PurgeResourcesEnum.getPurgeResourcesState(purgeResources);
+
+        LOG.info("deleteExpiredMembers: purgeResources: {}", purgeResourcesEnumSet);
+
+        ExpiredMembers expiredMembers = new ExpiredMembers();
+
+        if (purgeResourcesEnumSet.contains(PurgeResourcesEnum.ROLES)) {
+            List<ExpiryMember> expiredRoleMembers = dbService.executeDeleteAllExpiredRoleMemberships(ctx, auditRef, caller);
+            expiredMembers.setExpiredRoleMembers(expiredRoleMembers);
+        }
+
+        if (purgeResourcesEnumSet.contains(PurgeResourcesEnum.GROUPS)) {
+            List<ExpiryMember> expiredGroupMembers = dbService.executeDeleteAllExpiredGroupMemberships(ctx, auditRef, caller);
+            expiredMembers.setExpiredGroupMembers(expiredGroupMembers);
+        }
+
+        return ZMSUtils.returnPutResponse(returnObj, expiredMembers);
+    }
+
+    @Override
+    public void putResourceDomainOwnership(ResourceContext ctx, String domainName,
+            String auditRef, ResourceDomainOwnership resourceOwnership) {
+
+        final String caller = ctx.getApiName();
+        logPrincipal(ctx);
+
+        if (readOnlyMode.get()) {
+            throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
+        }
+
+        validateRequest(ctx.request(), caller);
+        validate(domainName, TYPE_DOMAIN_NAME, caller);
+        validateResourceOwnership(resourceOwnership, caller);
+
+        // for consistent handling of all requests, we're going to convert
+        // all incoming object values into lower case
+
+        domainName = domainName.toLowerCase();
+        setRequestDomain(ctx, domainName);
+
+        dbService.executePutResourceDomainOwnership(ctx, domainName, resourceOwnership, auditRef, caller);
     }
 
     boolean validateRoleBasedAccessCheck(List<String> roles, final String trustDomain, final String domainName,
@@ -2606,7 +3262,14 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         for (Policy policy : policies) {
 
             if (LOG.isDebugEnabled()) {
-                LOG.debug("evaluateAccess: processing policy: {}", policy.getName());
+                LOG.debug("evaluateAccess: processing policy name/version/active: {}/{}/{}",
+                        policy.getName(), policy.getVersion(), policy.getActive());
+            }
+
+            // ignore any inactive/multi-version policies
+
+            if (policy.getActive() == Boolean.FALSE) {
+                continue;
             }
 
             // we are going to process all the assertions defined in this
@@ -2780,6 +3443,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         return evaluateAccess(domain, identity, action, resource, authenticatedRoles, trustDomain, principal);
     }
 
+    @Override
     public Access getAccessExt(ResourceContext ctx, String action, String resource,
             String trustDomain, String checkPrincipal) {
 
@@ -2793,6 +3457,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
                 trustDomain, checkPrincipal, ctx);
     }
 
+    @Override
     public Access getAccess(ResourceContext ctx, String action, String resource,
             String trustDomain, String checkPrincipal) {
 
@@ -2862,11 +3527,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             }
         }
 
-        boolean accessAllowed = false;
-        AccessStatus accessStatus = hasAccess(domain, action, resource, principal, trustDomain);
-        if (accessStatus == AccessStatus.ALLOWED) {
-            accessAllowed = true;
-        }
+        boolean accessAllowed = hasAccess(domain, action, resource, principal, trustDomain) == AccessStatus.ALLOWED;
         return new Access().setGranted(accessAllowed);
     }
 
@@ -2889,7 +3550,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
@@ -2999,12 +3660,13 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         return entity;
     }
 
+    @Override
     public void deleteEntity(ResourceContext ctx, String domainName, String entityName, String auditRef) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
@@ -3033,13 +3695,9 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         final String caller = ctx.getApiName();
 
         logPrincipal(ctx);
-
         validateRequest(ctx.request(), caller);
 
-        ServerTemplateList result = new ServerTemplateList();
-        result.setTemplateNames(new ArrayList<>(serverSolutionTemplates.names()));
-
-        return result;
+        return new ServerTemplateList().setTemplateNames(serverSolutionTemplateNames);
     }
 
     public Template getTemplate(ResourceContext ctx, String templateName) {
@@ -3141,8 +3799,8 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         RoleList result = new RoleList();
 
-        List<String> names = new ArrayList<>();
-        String next = processListRequest(domainName, AthenzObject.ROLE, limit, skip, names);
+        List<String> names = new ArrayList<>(dbService.listRoles(domainName));
+        final String next = processListRequest(limit, skip, names);
         result.setNames(names);
         if (next != null) {
             result.setNext(next);
@@ -3177,7 +3835,9 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
                         .setMemberReviewDays(role.getMemberReviewDays())
                         .setServiceReviewDays(role.getServiceReviewDays())
                         .setSignAlgorithm(role.getSignAlgorithm())
+                        .setDescription(role.getDescription())
                         .setReviewEnabled(role.getReviewEnabled())
+                        .setDeleteProtection(role.getDeleteProtection())
                         .setLastReviewedDate(role.getLastReviewedDate())
                         .setTags(role.getTags());
                 roles.add(newRole);
@@ -3187,19 +3847,20 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         // filter roles by their tags
         if (tagKey != null) {
             roles = roles.stream()
-                    .filter(role -> filterByTag(tagKey, tagValue, role))
+                    .filter(role -> filterByTag(tagKey, tagValue, role, Role::getTags))
                     .collect(Collectors.toList());
         }
 
         return roles;
     }
 
-    private boolean filterByTag(String tagKey, String tagValue, Role role) {
-        boolean result = role.getTags() != null && role.getTags().get(tagKey) != null;
+    private <T> boolean filterByTag(String tagKey, String tagValue, T tagCollection, Function<T, Map<String, TagValueList>> tagsGetter) {
+        Map<String, TagValueList> tags = tagsGetter.apply(tagCollection);
+        boolean result = tags != null && tags.get(tagKey) != null;
 
         // if tagValue is present we should filter tag values
         if (result && tagValue != null) {
-            List<String> tagValues = role.getTags().get(tagKey).getList();
+            List<String> tagValues = tags.get(tagKey).getList();
             result = tagValues != null && tagValues.contains(tagValue);
         }
         return result;
@@ -3212,6 +3873,12 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         validateRequest(ctx.request(), caller);
         validate(domainName, TYPE_DOMAIN_NAME, caller);
+        if (!StringUtil.isEmpty(tagKey)) {
+            validate(tagKey, TYPE_TAG_KEY, caller);
+        }
+        if (!StringUtil.isEmpty(tagValue)) {
+            validate(tagValue, TYPE_TAG_COMPOUND_VALUE, caller);
+        }
 
         // for consistent handling of all requests, we're going to convert
         // all incoming object values into lower case (e.g. domain, role,
@@ -3251,12 +3918,32 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
     }
 
     @Override
-    public DomainRoleMember getPrincipalRoles(ResourceContext context, String principal, String domainName) {
+    public DomainGroupMembers getDomainGroupMembers(ResourceContext ctx, String domainName) {
+
+        final String caller = ctx.getApiName();
+        logPrincipal(ctx);
+
+        validateRequest(ctx.request(), caller);
+        validate(domainName, TYPE_DOMAIN_NAME, caller);
+
+        // for consistent handling of all requests, we're going to convert
+        // all incoming object values into lower case (e.g. domain, role,
+        // policy, service, etc name)
+
+        domainName = domainName.toLowerCase();
+        setRequestDomain(ctx, domainName);
+
+        return dbService.listDomainGroupMembers(domainName);
+    }
+
+    @Override
+    public DomainRoleMember getPrincipalRoles(ResourceContext context, String principal, String domainName, Boolean expand) {
         final String caller = context.getApiName();
         logPrincipal(context);
 
+        // If principal not specified, get roles for current user
+
         if (StringUtil.isEmpty(principal)) {
-            // If principal not specified, get roles for current user
             principal = ((RsrcCtxWrapper) context).principal().getFullName();
         }
         validateRequest(context.request(), caller);
@@ -3274,7 +3961,77 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             setRequestDomain(context, domainName);
         }
 
-        return dbService.getPrincipalRoles(principal, domainName);
+        // if we're asked to expand all groups and delegated roles then
+        // we're going to carry out an authorization check
+
+        if (expand == Boolean.TRUE && !isAllowedExpandedRoleLookup(((RsrcCtxWrapper) context).principal(), principal, domainName)) {
+            throw ZMSUtils.forbiddenError("principal is not authorized to request expanded role lookup", caller);
+        }
+
+        return dbService.getPrincipalRoles(principal, domainName, expand);
+    }
+
+    boolean isAllowedExpandedRoleLookup(Principal principal, final String checkPrincipal, final String domainName) {
+
+        // Expanded role lookup requires one of these authorization checks
+        // 1. authenticated principal is the same as the check principal
+        // 2. system authorized ("access", "sys.auth:meta.role.lookup")
+        // 3. service admin ("update", "{principal}")
+        // 4. domain authorized ("access", "{domain}:meta.role.lookup") if domain is provided
+
+        if (checkPrincipal.equals(principal.getFullName())) {
+            return true;
+        }
+
+        // if the domain is provided then we're going to check to see if the principal
+        // is authorized for role lookup access within the domain
+
+        if (!StringUtil.isEmpty(domainName)) {
+            AthenzDomain requestDomain = getAthenzDomain(domainName, true);
+            if (requestDomain != null) {
+                AccessStatus accessStatus = hasAccess(requestDomain, "access",
+                        domainName + ":meta.role.lookup", principal, null);
+                if (accessStatus == AccessStatus.ALLOWED) {
+                    return true;
+                }
+            }
+        }
+
+        // if the check principal is another user, then this is not allowed
+        // unless the principal is authorized at system level
+        // evaluate our domain's roles and policies to see if access
+        // is allowed or not for the given operation and resource
+        // our action are always converted to lowercase
+
+        if (isAllowedSystemAccess(principal, "access", SYS_AUTH + ":meta.role.lookup")) {
+            return true;
+        }
+
+        // at this point one user cannot ask for another user
+
+        if (PrincipalUtils.isUserDomainPrincipal(checkPrincipal, userDomainPrefix, addlUserCheckDomainPrefixList)) {
+            return false;
+        }
+
+        // for service accounts, the principal must have an update action
+        // on the service identity object
+
+        int idx = checkPrincipal.lastIndexOf('.');
+        if (idx == -1) {
+            LOG.debug("invalid check principal: {}", checkPrincipal);
+            return false;
+        }
+
+        final String checkPrincipalDomain = checkPrincipal.substring(0, idx);
+        final String checkResource = checkPrincipalDomain + ":service." + checkPrincipal.substring(idx + 1);
+
+        AthenzDomain domain = getAthenzDomain(checkPrincipalDomain, true);
+        if (domain == null) {
+            LOG.debug("invalid check principal domain: {}", checkPrincipal);
+            return false;
+        }
+
+        return hasAccess(domain, "update", checkResource, principal, null) == AccessStatus.ALLOWED;
     }
 
     @Override
@@ -3316,15 +4073,19 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         // now go through the list and make sure they're all valid
 
+        Set<String> authorityFilterSet = StringUtil.isEmpty(domainUserAuthorityFilter) ?
+                null : Set.of(domainUserAuthorityFilter.split(","));
+
         for (String admin : normalizedAdmins) {
-            validateRoleMemberPrincipal(admin, principalType(admin), domainUserAuthorityFilter, null, null, true, caller);
+            validateRoleMemberPrincipal(admin, principalType(admin), authorityFilterSet, null,
+                    null, null, disallowGroupsInAdminRole.get(), caller);
         }
 
         return new ArrayList<>(normalizedAdmins);
     }
 
     int principalType(final String principalName) {
-        return ZMSUtils.principalType(principalName, userDomainPrefix, addlUserCheckDomainPrefixList).getValue();
+        return PrincipalUtils.principalType(principalName, userDomainPrefix, addlUserCheckDomainPrefixList, headlessUserDomainPrefix).getValue();
     }
 
     String normalizeDomainAliasUser(String user) {
@@ -3406,17 +4167,18 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
     }
 
     @Override
-    public void putRole(ResourceContext ctx, String domainName, String roleName, String auditRef, Role role) {
+    public Response putRole(ResourceContext ctx, String domainName, String roleName, String auditRef,
+            Boolean returnObj, String resourceOwner, Role role) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
-
+        validateResourceOwner(resourceOwner, caller);
         validate(domainName, TYPE_DOMAIN_NAME, caller);
         validate(roleName, TYPE_ENTITY_NAME, caller);
         validate(role, TYPE_ROLE, caller);
@@ -3452,6 +4214,15 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             throw ZMSUtils.notFoundError("No such domain: " + domainName, caller);
         }
 
+        Role originalRole = dbService.getRole(domainName, roleName, false, false, false);
+
+        // verify resource ownership for the request. If the object returned
+        // is not null then it indicates that the object must be modified
+        // with the given resource ownership details
+
+        ResourceRoleOwnership resourceOwnership = ResourceOwnership.verifyRoleResourceOwnership(
+                originalRole, !ZMSUtils.isCollectionEmpty(role.getRoleMembers()), resourceOwner, caller);
+
         // validate role and trust settings are as expected
 
         validateRoleStructure(role, domainName, caller);
@@ -3463,19 +4234,16 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         // check to see if we need to validate user and service members
         // and possibly user authority filter restrictions. For the
         // admin role we're not going to allow any group members to
-        // enforce least privilege access where specific users must
+        // enforce the least privilege access where specific users must
         // be specified as members.
 
-        boolean disallowGroups = ADMIN_ROLE_NAME.equals(roleName);
-        validateRoleMemberPrincipals(role, domain.getUserAuthorityFilter(), disallowGroups, caller);
+        boolean disallowGroups = disallowGroupsInAdminRole.get() == Boolean.TRUE && ADMIN_ROLE_NAME.equals(roleName);
+        PrincipalDomainFilter principalDomainFilter = new PrincipalDomainFilter(role.getPrincipalDomainFilter());
+        validateRoleMemberPrincipals(role, domain.getUserAuthorityFilter(), principalDomainFilter, disallowGroups, caller);
 
-        // if the role is review enabled then it cannot contain
-        // role members as we want review and audit enabled roles
-        // to be enabled as such and then add individual members
+        // validate role review-enabled and/or audit-enabled flags
 
-        if (role.getReviewEnabled() == Boolean.TRUE && !role.getRoleMembers().isEmpty()) {
-            throw ZMSUtils.requestError("Set review enabled flag using role meta api", caller);
-        }
+        validateRoleReviewAuditFlag(domain, role, caller);
 
         // update role expiry based on our configurations
 
@@ -3495,13 +4263,60 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         // process our request
 
-        dbService.executePutRole(ctx, domainName, roleName, role, auditRef, caller);
+        Role dbRole = dbService.executePutRole(ctx, domainName, roleName, role, originalRole,
+                auditRef, caller, returnObj);
+
+        // update resource ownership if required
+
+        updateResourceRoleOwnership(ctx, domainName, roleName, resourceOwnership, auditRef, caller);
+
+        return ZMSUtils.returnPutResponse(returnObj, dbRole);
+    }
+
+    void updateResourceRoleOwnership(ResourceContext ctx, final String domainName, final String roleName,
+            ResourceRoleOwnership resourceOwnership, final String auditRef, final String caller) {
+
+        if (resourceOwnership == null) {
+            return;
+        }
+
+        // need to apply the resource ownership if required, but we'll ignore any errors
+        // since this is not critical for the operation and the changes
+        // have already been successfully applied in the data store. the error
+        // has already been logged by the generated exception so no need to log it again
+
+        try {
+            dbService.executePutResourceRoleOwnership(ctx, domainName, roleName, resourceOwnership,
+                    auditRef, caller);
+        } catch (Exception ignored) {
+        }
+    }
+
+    void validateRoleReviewAuditFlag(final Domain domain, final Role role, final String caller) {
+
+        // role cannot be requested to be audit-enabled if the domain is not audit enabled
+
+        if (role.getAuditEnabled() == Boolean.TRUE && domain.getAuditEnabled() != Boolean.TRUE) {
+            throw ZMSUtils.requestError("Role cannot be set as audit-enabled if the domain is not audit-enabled", caller);
+        }
+
+        // if the role is review and/or audit enabled then it cannot contain
+        // role members as we want review and audit enabled roles
+        // to be enabled as such and then add individual members
+
+        if (!role.getRoleMembers().isEmpty()) {
+            if (role.getReviewEnabled() == Boolean.TRUE) {
+                throw ZMSUtils.requestError("Set review-enabled flag using role meta api", caller);
+            }
+            if (role.getAuditEnabled() == Boolean.TRUE) {
+                throw ZMSUtils.requestError("Only system admins can set the role as audit-enabled if it has members", caller);
+            }
+        }
     }
 
     void validateRoleStructure(final Role role, final String domainName, final String caller) {
 
-        if ((role.getMembers() != null && !role.getMembers().isEmpty())
-                && (role.getRoleMembers() != null && !role.getRoleMembers().isEmpty())) {
+        if (!ZMSUtils.isCollectionEmpty(role.getMembers()) && !ZMSUtils.isCollectionEmpty(role.getRoleMembers())) {
             throw ZMSUtils.requestError("validateRoleMembers: Role cannot have both members and roleMembers set", caller);
         }
 
@@ -3509,18 +4324,18 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         // delegated back to itself and there are no members since
         // those 2 fields are mutually exclusive
 
-        if (role.getTrust() != null && !role.getTrust().isEmpty()) {
+        if (!StringUtil.isEmpty(role.getTrust())) {
 
             AthenzDomain athenzDomain = getAthenzDomain(role.getTrust(), true);
             if (athenzDomain == null) {
                 throw ZMSUtils.requestError("Delegated role assigned to non existing domain", caller);
             }
 
-            if (role.getRoleMembers() != null && !role.getRoleMembers().isEmpty()) {
+            if (!ZMSUtils.isCollectionEmpty(role.getRoleMembers())) {
                 throw ZMSUtils.requestError("validateRoleMembers: Role cannot have both roleMembers and delegated domain set", caller);
             }
 
-            if (role.getMembers() != null && !role.getMembers().isEmpty()) {
+            if (!ZMSUtils.isCollectionEmpty(role.getMembers())) {
                 throw ZMSUtils.requestError("validateRoleMembers: Role cannot have both members and delegated domain set", caller);
             }
 
@@ -3530,22 +4345,27 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         }
     }
 
-    void validateRoleMemberPrincipals(final Role role, final String domainUserAuthorityFilter, boolean disallowGroups,
-                                      final String caller) {
+    void validateRoleMemberPrincipals(final Role role, final String domainUserAuthorityFilter,
+            PrincipalDomainFilter principalDomainFilter, boolean disallowGroups, final String caller) {
 
         // extract the user authority filter for the role
 
         final String userAuthorityFilter = enforcedUserAuthorityFilter(role.getUserAuthorityFilter(),
                 domainUserAuthorityFilter);
+        Set<String> userAuthorityFilterSet = StringUtil.isEmpty(userAuthorityFilter) ?
+                null : Set.of(userAuthorityFilter.split(","));
 
         for (RoleMember roleMember : role.getRoleMembers()) {
             validateRoleMemberPrincipal(roleMember.getMemberName(), roleMember.getPrincipalType(),
-                    userAuthorityFilter, role.getUserAuthorityExpiration(), role.getAuditEnabled(),
-                    disallowGroups, caller);
+                    userAuthorityFilterSet, role.getUserAuthorityExpiration(), principalDomainFilter,
+                    role.getAuditEnabled(), disallowGroups, caller);
         }
     }
 
     void updateRoleMemberUserAuthorityExpiry(final Role role, final String caller) {
+
+        // getUserAuthorityExpiryAttr also verifies that we have a valid
+        // user authority configured in the server
 
         final String userAuthorityExpiry = getUserAuthorityExpiryAttr(role.getUserAuthorityExpiration());
         if (userAuthorityExpiry == null) {
@@ -3567,13 +4387,17 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
                     throw ZMSUtils.requestError("Invalid member: " + roleMember.getMemberName() +
                             ". No expiry date attribute specified in user authority", caller);
                 }
-                roleMember.setExpiration(Timestamp.fromDate(expiry));
+
+                // otherwise only update the value is current expiry date
+                // is greater than the authority expiry date
+
+                roleMember.setExpiration(ZMSUtils.smallestExpiry(roleMember.getExpiration(), Timestamp.fromDate(expiry)));
             }
         }
     }
 
-    void validateUserPrincipal(final String memberName, boolean validateUserMember, final String userAuthorityFilter,
-                               final String caller) {
+    void validateUserPrincipal(final String memberName, boolean validateUserMember,
+            final Set<String> userAuthorityFilterSet, final String caller) {
 
         if (userAuthority == null) {
             return;
@@ -3585,15 +4409,15 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             }
         }
 
-        // once we know it's a valid principal and we have a user
+        // once we know it's a valid principal, and we have a user
         // authority filter configured, we'll check that as well
-        // if we're already determined that the principal is not
-        // valid there is no point of running this check
 
-        if (!StringUtil.isEmpty(userAuthorityFilter)) {
-            if (!ZMSUtils.isUserAuthorityFilterValid(userAuthority, userAuthorityFilter, memberName)) {
-                throw ZMSUtils.requestError("Invalid member: " + memberName +
-                        ". Required user authority filter not valid for the member", caller);
+        if (userAuthorityFilterSet != null) {
+            StringBuilder failedUserAuthorityFilter = new StringBuilder();
+            if (!ZMSUtils.isUserAuthorityFilterValid(userAuthority, userAuthorityFilterSet,
+                    memberName, failedUserAuthorityFilter)) {
+                throw ZMSUtils.requestError("Required user authority filter " +  failedUserAuthorityFilter +
+                        " not valid for the member. See " + userAuthorityFilterDocUrl, caller);
             }
         }
     }
@@ -3613,14 +4437,25 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         // are typically domains (like for ci/cd) where services
         // are dynamic and do not need to be registered in Athenz
 
-        if (!validateServiceMemberSkipDomains.contains(domainName)) {
-            if (dbService.getServiceIdentity(domainName, serviceName, true) == null) {
-                throw ZMSUtils.requestError("Principal " + memberName + " is not a valid service", caller);
+        for (String skipDomain : validateServiceMemberSkipDomains) {
+            // first, we perform validation using wildcards
+            if (skipDomain.endsWith("*")) {
+                String skipDomainPrefix = skipDomain.substring(0, skipDomain.length() - 1);
+                if (domainName.startsWith(skipDomainPrefix)) {
+                    return;
+                }
+            } else if (skipDomain.equals(domainName)) {
+                // if skipDomain doesn't have wildcard, we conduct a perfect match search
+                return;
             }
+        }
+        // if it reaches here, check if the service exists
+        if (dbService.getServiceIdentity(domainName, serviceName, true) == null) {
+            throw ZMSUtils.requestError("Principal " + memberName + " is not a valid service", caller);
         }
     }
 
-    void validateGroupPrincipal(final String memberName, final String userAuthorityFilter,
+    void validateGroupPrincipal(final String memberName, final Set<String> userAuthorityFilterSet,
                                 final String userAuthorityExpiration, Boolean auditEnabled, final String caller) {
 
         Group group = getGroup(memberName);
@@ -3628,9 +4463,9 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             throw ZMSUtils.requestError("Principal " + memberName + " is not valid", caller);
         }
 
-        if (ZMSUtils.userAuthorityAttrMissing(userAuthorityFilter, group.getUserAuthorityFilter())) {
-            throw ZMSUtils.requestError("Group " + memberName + " does not have same user authority filter "
-                    + userAuthorityFilter + " configured", caller);
+        if (ZMSUtils.userAuthorityAttrMissing(userAuthorityFilterSet, group.getUserAuthorityFilter())) {
+            throw ZMSUtils.requestError("Group " + memberName + " does not have same user authority filter configured",
+                    caller);
         }
 
         if (ZMSUtils.userAuthorityAttrMissing(userAuthorityExpiration, group.getUserAuthorityExpiration())) {
@@ -3646,23 +4481,39 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         }
     }
 
-    void validateRoleMemberPrincipal(final String memberName, int principalType, final String userAuthorityFilter,
-                                     final String userAuthorityExpiration, Boolean roleAuditEnabled,
-                                     boolean disallowGroups, final String caller) {
+    void validateRoleMemberPrincipal(final String memberName, int principalType, final Set<String> userAuthorityFilterSet,
+            final String userAuthorityExpiration, PrincipalDomainFilter principalDomainFilter,
+            Boolean roleAuditEnabled, boolean disallowGroups, final String caller) {
 
-        switch (Principal.Type.getType(principalType)) {
+        Principal.Type type = Principal.Type.getType(principalType);
+
+        if (type == Principal.Type.UNKNOWN) {
+            throw ZMSUtils.requestError("Principal " + memberName + " is not valid", caller);
+        }
+
+        // if we have a principal domain filter then we need to make sure
+        // that the principal is within the allowed domain list
+
+        if (principalDomainFilter != null && !principalDomainFilter.validate(memberName, type)) {
+            throw ZMSUtils.requestError("Principal " + memberName + " is not allowed for the role", caller);
+        }
+
+        // now let's carry out further validation based on the principal type
+
+        switch (type) {
 
             case USER:
+            case USER_HEADLESS:
 
                 // if the account contains a wildcard then we're going
                 // to let the user authority decide if it's valid or not
 
-                validateUserPrincipal(memberName, validateUserRoleMembers, userAuthorityFilter, caller);
+                validateUserPrincipal(memberName, validateUserRoleMembers.get(), userAuthorityFilterSet, caller);
                 break;
 
             case SERVICE:
 
-                if (validateServiceRoleMembers) {
+                if (validateServiceRoleMembers.get()) {
 
                     // if the account contains a wildcard character then
                     // we're going to assume it's valid
@@ -3680,55 +4531,61 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
                     throw ZMSUtils.requestError("Group principals are not allowed in the role", caller);
                 }
 
-                validateGroupPrincipal(memberName, userAuthorityFilter, userAuthorityExpiration, roleAuditEnabled, caller);
+                validateGroupPrincipal(memberName, userAuthorityFilterSet, userAuthorityExpiration,
+                        roleAuditEnabled, caller);
                 break;
-
-            default:
-
-                throw ZMSUtils.requestError("Principal " + memberName + " is not valid", caller);
         }
     }
 
-    void validateGroupMemberPrincipal(final String memberName, int principalType, final String userAuthorityFilter,
-                                      final String caller) {
+    void validateGroupMemberPrincipal(final String memberName, int principalType, final Set<String> userAuthorityFilterSet,
+            PrincipalDomainFilter principalDomainFilter, final String caller) {
 
-        // we do not support any type of wildcards in group members
+        Principal.Type type = Principal.Type.getType(principalType);
 
-        if (memberName.indexOf('*') != -1) {
+        // we do not support group members and any type of wildcards in group members
+
+        if (type == Principal.Type.UNKNOWN || type == Principal.Type.GROUP || memberName.indexOf('*') != -1) {
             throw ZMSUtils.requestError("Principal " + memberName + " is not valid", caller);
         }
 
-        switch (Principal.Type.getType(principalType)) {
+        // if we have a principal domain filter then we need to make sure
+        // that the principal is within the allowed domain list
+
+        if (principalDomainFilter != null && !principalDomainFilter.validate(memberName, type)) {
+            throw ZMSUtils.requestError("Principal " + memberName + " is not allowed for the group", caller);
+        }
+
+        // now let's carry out further validation based on the principal type
+
+        switch (type) {
 
             case USER:
+            case USER_HEADLESS:
 
                 // for group members we always validate all members
 
-                validateUserPrincipal(memberName, true, userAuthorityFilter, caller);
+                validateUserPrincipal(memberName, true, userAuthorityFilterSet, caller);
                 break;
 
             case SERVICE:
 
                 validateServicePrincipal(memberName, caller);
                 break;
-
-            default:
-
-                throw ZMSUtils.requestError("Principal " + memberName + " is not valid", caller);
         }
     }
 
-    public void deleteRole(ResourceContext ctx, String domainName, String roleName, String auditRef) {
+    @Override
+    public void deleteRole(ResourceContext ctx, String domainName, String roleName, String auditRef, String resourceOwner) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
-
+        validateResourceOwner(resourceOwner, caller);
         validate(domainName, TYPE_DOMAIN_NAME, caller);
         validate(roleName, TYPE_ENTITY_NAME, caller);
 
@@ -3744,15 +4601,55 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         verifyAuthorizedServiceOperation(((RsrcCtxWrapper) ctx).principal().getAuthorizedService(), caller);
 
-        /* we are not going to allow any user to delete
-         * the admin role and policy since those are required
-         * for standard domain operations */
+        // we are not going to allow any user to delete
+        // the admin role and policy since those are required
+        // for standard domain operations */
 
         if (roleName.equalsIgnoreCase(ADMIN_ROLE_NAME)) {
             throw ZMSUtils.requestError("deleteRole: admin role cannot be deleted", caller);
         }
 
+        // if enabled, we are not going to allow any user to delete a
+        // role that is referenced in any assertion of any policy
+
+        if (validatePolicyAssertionRoles.get() == Boolean.TRUE) {
+            validateRoleNotAssociatedToPolicy(getPolicyList(domainName, caller), roleName, domainName, caller);
+        }
+
+        // verify resource ownership for the request
+
+        Role role = dbService.getRole(domainName, roleName, false, false, false);
+        if (role == null) {
+            throw ZMSUtils.notFoundError("Role does not exist", caller);
+        }
+
+        ResourceOwnership.verifyRoleDeleteResourceOwnership(role, resourceOwner, caller);
         dbService.executeDeleteRole(ctx, domainName, roleName, auditRef, caller);
+    }
+
+    private List<Policy> getPolicyList(final String domainName, final String caller) {
+        AthenzDomain domain = getAthenzDomain(domainName, false, true);
+        if (domain == null) {
+            throw ZMSUtils.notFoundError(caller + ": Domain not found: '" + domainName + "'", caller);
+        }
+        return setupPolicyList(domain, true, true, null, null);
+    }
+
+    void validateRoleNotAssociatedToPolicy(List<Policy> policies, final String roleName,
+            final String domainName, final String caller) {
+
+        final String fullRoleName = ResourceUtils.roleResourceName(domainName, roleName);
+        for (Policy policy : policies) {
+            if (policy.getAssertions() == null) {
+                continue;
+            }
+            for (Assertion assertion : policy.getAssertions()) {
+                if (assertion.getRole().equals(fullRoleName)) {
+                    throw ZMSUtils.requestError("deleteRole: the role: " + roleName + " associated to policy: "
+                            + policy.name + ", it cannot be deleted", caller);
+                }
+            }
+        }
     }
 
     boolean isMemberOfRole(Role role, String member) {
@@ -3820,18 +4717,18 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         updateMemberDueDate(
                 memberExpiryDueDays,
                 roleMembers,
-                roleMember -> roleMember.getExpiration(),
-                (roleMember, expiration) -> roleMember.setExpiration(expiration),
-                roleMember -> roleMember.getPrincipalType());
+                RoleMember::getExpiration,
+                RoleMember::setExpiration,
+                RoleMember::getPrincipalType);
     }
 
     void updateRoleMemberReviewReminder(MemberDueDays memberReminderDueDays, List<RoleMember> roleMembers) {
         updateMemberDueDate(
                 memberReminderDueDays,
                 roleMembers,
-                roleMember -> roleMember.getReviewReminder(),
-                (roleMember, reviewReminder) -> roleMember.setReviewReminder(reviewReminder),
-                roleMember -> roleMember.getPrincipalType());
+                RoleMember::getReviewReminder,
+                RoleMember::setReviewReminder,
+                RoleMember::getPrincipalType);
     }
 
     private <T> void updateMemberDueDate(MemberDueDays memberDueDays,
@@ -3864,6 +4761,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
                     }
                     break;
                 case SERVICE:
+                case USER_HEADLESS:
                     if (cfgServiceMemberDueDateMillis != 0) {
                         Timestamp newDueDate = getMemberDueDate(cfgServiceMemberDueDateMillis, currentDueDate);
                         dueDateSetter.accept(member, newDueDate);
@@ -3897,18 +4795,18 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
     }
 
     @Override
-    public void putMembership(ResourceContext ctx, String domainName, String roleName,
-            String memberName, String auditRef, Membership membership) {
+    public Response putMembership(ResourceContext ctx, String domainName, String roleName,
+            String memberName, String auditRef, Boolean returnObj, String resourceOwner, Membership membership) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
-
+        validateResourceOwner(resourceOwner, caller);
         validate(domainName, TYPE_DOMAIN_NAME, caller);
         setRequestDomain(ctx, domainName);
         validate(roleName, TYPE_ENTITY_NAME, caller);
@@ -3951,6 +4849,13 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             throw ZMSUtils.requestError("Invalid role name specified", caller);
         }
 
+        // verify resource ownership for the request. If the object returned
+        // is not null then it indicates that the object must be modified
+        // with the given resource ownership details
+
+        ResourceRoleOwnership resourceOwnership = ResourceOwnership.verifyRoleMembersResourceOwnership(
+                role, resourceOwner, caller);
+
         // create and normalize the role member object
 
         RoleMember roleMember = new RoleMember();
@@ -3963,9 +4868,14 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         final String userAuthorityFilter = enforcedUserAuthorityFilter(role.getUserAuthorityFilter(),
                 domain.getDomain().getUserAuthorityFilter());
-        boolean disallowGroups = ADMIN_ROLE_NAME.equals(roleName);
-        validateRoleMemberPrincipal(roleMember.getMemberName(), roleMember.getPrincipalType(), userAuthorityFilter,
-                role.getUserAuthorityExpiration(), role.getAuditEnabled(), disallowGroups, caller);
+        Set<String> userAuthorityFilterSet = StringUtil.isEmpty(userAuthorityFilter) ?
+                null : Set.of(userAuthorityFilter.split(","));
+
+        boolean disallowGroups = disallowGroupsInAdminRole.get() == Boolean.TRUE && ADMIN_ROLE_NAME.equals(roleName);
+        PrincipalDomainFilter principalDomainFilter = new PrincipalDomainFilter(role.getPrincipalDomainFilter());
+        validateRoleMemberPrincipal(roleMember.getMemberName(), roleMember.getPrincipalType(), userAuthorityFilterSet,
+                role.getUserAuthorityExpiration(), principalDomainFilter, role.getAuditEnabled(),
+                disallowGroups, caller);
 
         // authorization check which also automatically updates
         // the active and approved flags for the request
@@ -3976,7 +4886,8 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         // add the member to the specified role
 
-        dbService.executePutMembership(ctx, domainName, roleName, roleMember, auditRef, caller);
+        Membership dbMembership = dbService.executePutMembership(ctx, domainName, roleName, roleMember,
+                auditRef, caller, returnObj);
 
         // new role member with pending status. Notify approvers
 
@@ -3984,6 +4895,12 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             sendMembershipApprovalNotification(domainName, domain.getDomain().getOrg(), roleName,
                     roleMember.getMemberName(), auditRef, principal.getFullName(), role);
         }
+
+        // update resource ownership if required
+
+        updateResourceRoleOwnership(ctx, domainName, roleName, resourceOwnership, auditRef, caller);
+
+        return ZMSUtils.returnPutResponse(returnObj, dbMembership);
     }
 
     String enforcedUserAuthorityFilter(final String roleUserAuthorityFilter, final String domainUserAuthorityFilter) {
@@ -4000,20 +4917,15 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
     String getUserAuthorityExpiryAttr(final String userAuthorityExpiry) {
 
-        // we must have a valid user authority
+        // we must have a valid user authority and non-empty expiry setting
 
-        if (userAuthority == null) {
-            return null;
-        }
-
-        if (StringUtil.isEmpty(userAuthorityExpiry)) {
-            return null;
-        }
-
-        return userAuthorityExpiry;
+        return (userAuthority == null || StringUtil.isEmpty(userAuthorityExpiry)) ? null : userAuthorityExpiry;
     }
 
     Timestamp getUserAuthorityExpiry(final String userName, final String expiryAttrValue, final String caller) {
+
+        // getUserAuthorityExpiryAttr also verifies that we have a valid
+        // user authority configured in the server
 
         final String userAuthorityExpiry = getUserAuthorityExpiryAttr(expiryAttrValue);
         if (userAuthorityExpiry == null) {
@@ -4038,16 +4950,20 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
             case USER:
 
-                Timestamp userAuthorityExpiry = getUserAuthorityExpiry(roleMember.memberName, role.getUserAuthorityExpiration(), caller);
-                if (userAuthorityExpiry != null) {
-                    roleMember.setExpiration(userAuthorityExpiry);
-                } else {
-                    roleMember.setExpiration(memberDueDateTimestamp(domain.getDomain().getMemberExpiryDays(),
-                            role.getMemberExpiryDays(), membership.getExpiration()));
-                }
+                // first check if we have a user authority expiry configured
+                // which will automatically reject the request if the user
+                // doesn't have it, and then we'll check the role/domain expiry
+                // and use the smallest value as the user's expiry
+
+                Timestamp userAuthorityExpiry = getUserAuthorityExpiry(roleMember.memberName,
+                        role.getUserAuthorityExpiration(), caller);
+                Timestamp memberExpiry = memberDueDateTimestamp(domain.getDomain().getMemberExpiryDays(),
+                        role.getMemberExpiryDays(), membership.getExpiration());
+                roleMember.setExpiration(ZMSUtils.smallestExpiry(memberExpiry, userAuthorityExpiry));
                 break;
 
             case SERVICE:
+            case USER_HEADLESS:
 
                 roleMember.setExpiration(memberDueDateTimestamp(domain.getDomain().getServiceExpiryDays(),
                         role.getServiceExpiryDays(), membership.getExpiration()));
@@ -4071,6 +4987,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
                 break;
 
             case SERVICE:
+            case USER_HEADLESS:
                 roleMember.setReviewReminder(memberDueDateTimestamp(null,
                         role.getServiceReviewDays(), membership.getReviewReminder()));
                 break;
@@ -4094,7 +5011,8 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             LOG.debug("Sending Membership Approval notification after putMembership");
         }
 
-        List<Notification> notifications = new PutRoleMembershipNotificationTask(domain, org, role, details, dbService, userDomainPrefix).getNotifications();
+        List<Notification> notifications = new PutRoleMembershipNotificationTask(domain, org, role, details,
+                dbService, userDomainPrefix, notificationToEmailConverterCommon).getNotifications();
         notificationManager.sendNotifications(notifications);
     }
 
@@ -4111,17 +5029,19 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             LOG.debug("Sending Group Membership Approval notification after putGroupMembership");
         }
 
-        List<Notification> notifications = new PutGroupMembershipNotificationTask(domain, org, group, details, dbService, userDomainPrefix).getNotifications();
+        List<Notification> notifications = new PutGroupMembershipNotificationTask(domain, org, group, details,
+                dbService, userDomainPrefix, notificationToEmailConverterCommon).getNotifications();
         notificationManager.sendNotifications(notifications);
     }
 
+    @Override
     public void deletePendingMembership(ResourceContext ctx, String domainName, String roleName,
             String memberName, String auditRef) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
@@ -4158,18 +5078,19 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         dbService.executeDeletePendingMembership(ctx, domainName, roleName, memberName, auditRef, caller);
     }
 
+    @Override
     public void deleteMembership(ResourceContext ctx, String domainName, String roleName,
-            String memberName, String auditRef) {
+            String memberName, String auditRef, String resourceOwner) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
-
+        validateResourceOwner(resourceOwner, caller);
         validate(domainName, TYPE_DOMAIN_NAME, caller);
         validate(roleName, TYPE_ENTITY_NAME, caller);
         validate(memberName, TYPE_MEMBER_NAME, caller);
@@ -4199,9 +5120,11 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         }
 
         // authorization check since we have 2 actions: update and update_members
-        // that allow access callers to manage members in a role
+        // that allow access callers to manage members in a role plus we allow
+        // delete operation if the principal matches membername
 
-        if (!isAllowedPutMembershipAccess(principal, domain, role.getName())) {
+        final String normalizedMember = normalizeDomainAliasUser(memberName);
+        if (!(principal.getFullName().equals(normalizedMember) || isAllowedPutMembershipAccess(principal, domain, role.getName()))) {
             throw ZMSUtils.forbiddenError("deleteMembership: principal is not authorized to delete members", caller);
         }
 
@@ -4209,7 +5132,6 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         // the admin is not himself who happens to be the last
         // member in the role
 
-        final String normalizedMember = normalizeDomainAliasUser(memberName);
         if (ZMSConsts.ADMIN_ROLE_NAME.equals(roleName)) {
             List<RoleMember> members = role.getRoleMembers();
             if (members.size() == 1 && members.get(0).getMemberName().equals(normalizedMember)) {
@@ -4217,9 +5139,40 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             }
         }
 
+        ResourceOwnership.verifyRoleMembersDeleteResourceOwnership(role, resourceOwner, caller);
         dbService.executeDeleteMembership(ctx, domainName, roleName, normalizedMember, auditRef, caller);
     }
 
+    @Override
+    public Stats getStats(ResourceContext ctx, String domainName) {
+
+        final String caller = ctx.getApiName();
+        logPrincipal(ctx);
+
+        validateRequest(ctx.request(), caller);
+        validate(domainName, TYPE_DOMAIN_NAME, caller);
+
+        // for consistent handling of all requests, we're going to convert
+        // all incoming object values into lower case (e.g. domain, role,
+        // policy, service, etc name)
+
+        domainName = domainName.toLowerCase();
+        setRequestDomain(ctx, domainName);
+
+        return dbService.getStats(domainName);
+    }
+
+    @Override
+    public Stats getSystemStats(ResourceContext ctx) {
+
+        final String caller = ctx.getApiName();
+        logPrincipal(ctx);
+
+        validateRequest(ctx.request(), caller);
+        return dbService.getStats(null);
+    }
+
+    @Override
     public Quota getQuota(ResourceContext ctx, String domainName) {
 
         final String caller = ctx.getApiName();
@@ -4244,7 +5197,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
@@ -4275,12 +5228,13 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         dbService.executePutQuota(ctx, domainName, quota, auditRef, caller);
     }
 
+    @Override
     public void deleteQuota(ResourceContext ctx, String domainName, String auditRef) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
@@ -4312,28 +5266,12 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
     }
 
     /**
-     * process the list request for the given object type - e.g. role, policy, etc
+     * Cut the list from a specific entry until limit is reached.
      * if the limit is specified and we have reached that limit then return
      * the name of the object that should be set at the next item for the
      * subsequent list operation.
      */
-    String processListRequest(String domainName, AthenzObject objType, Integer limit,
-            String skip, List<String> names) {
-
-        switch (objType) {
-            case ROLE:
-                names.addAll(dbService.listRoles(domainName));
-                break;
-            case POLICY:
-                names.addAll(dbService.listPolicies(domainName));
-                break;
-            case SERVICE_IDENTITY:
-                names.addAll(dbService.listServiceIdentities(domainName));
-                break;
-            default:
-                return null;
-        }
-
+    String processListRequest(Integer limit, String skip, List<String> names) {
         int count = names.size();
         if (skip != null) {
             for (int i = 0; i < count; i++) {
@@ -4373,8 +5311,8 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             skip = skip.toLowerCase();
         }
 
-        List<String> names = new ArrayList<>();
-        String next = processListRequest(domainName, AthenzObject.POLICY, limit, skip, names);
+        List<String> names = new ArrayList<>(dbService.listPolicies(domainName));
+        final String next = processListRequest(limit, skip, names);
         PolicyList result = new PolicyList().setNames(names);
         if (next != null) {
             result.setNext(next);
@@ -4383,28 +5321,271 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         return result;
     }
 
-    List<Policy> setupPolicyList(AthenzDomain domain, Boolean assertions) {
+    @Override
+    public PolicyList getPolicyVersionList(ResourceContext ctx, String domainName, String policyName) {
+        final String caller = ctx.getApiName();
+        logPrincipal(ctx);
+
+        validateRequest(ctx.request(), caller);
+        validate(domainName, TYPE_DOMAIN_NAME, caller);
+        validate(policyName, TYPE_ENTITY_NAME, caller);
+
+        // for consistent handling of all requests, we're going to convert
+        // all incoming object values into lower case (e.g. domain, role,
+        // policy, service, etc name)
+
+        domainName = domainName.toLowerCase();
+        policyName = policyName.toLowerCase();
+        setRequestDomain(ctx, domainName);
+
+        List<String> names = dbService.listPolicyVersions(domainName, policyName);
+
+        return new PolicyList().setNames(names);
+    }
+
+    @Override
+    public Policy getPolicyVersion(ResourceContext ctx, String domainName, String policyName, String version) {
+        final String caller = ctx.getApiName();
+        logPrincipal(ctx);
+
+        validateRequest(ctx.request(), caller);
+        validate(domainName, TYPE_DOMAIN_NAME, caller);
+        validate(policyName, TYPE_ENTITY_NAME, caller);
+        validate(version, TYPE_SIMPLE_NAME, caller);
+
+        // for consistent handling of all requests, we're going to convert
+        // all incoming object values into lower case (e.g. domain, role,
+        // policy, service, etc name)
+
+        domainName = domainName.toLowerCase();
+        setRequestDomain(ctx, domainName);
+        policyName = policyName.toLowerCase();
+        version = version.toLowerCase();
+
+        Policy policy = dbService.getPolicy(domainName, policyName, version);
+        if (policy == null) {
+            throw ZMSUtils.notFoundError(caller + ": Policy not found: '" +
+                    ResourceUtils.policyResourceName(domainName, policyName) + "' with version: " + version, caller);
+        }
+
+        return policy;
+    }
+
+    @Override
+    public Response putPolicyVersion(ResourceContext ctx, String domainName, String policyName,
+            PolicyOptions policyOptions, String auditRef, Boolean returnObj, String resourceOwner) {
+
+        final String caller = ctx.getApiName();
+        logPrincipal(ctx);
+
+        if (readOnlyMode.get()) {
+            throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
+        }
+
+        validateRequest(ctx.request(), caller);
+        validateResourceOwner(resourceOwner, caller);
+        validate(domainName, TYPE_DOMAIN_NAME, caller);
+        validate(policyName, TYPE_COMPOUND_NAME, caller);
+        validate(policyOptions, TYPE_POLICY_OPTIONS, caller);
+
+        // verify that request is properly authenticated for this request
+
+        verifyAuthorizedServiceOperation(((RsrcCtxWrapper) ctx).principal().getAuthorizedService(), caller);
+
+        // for consistent handling of all requests, we're going to convert
+        // all incoming object values into lower case (e.g. domain, role,
+        // policy, service, etc name)
+
+        domainName = domainName.toLowerCase();
+        setRequestDomain(ctx, domainName);
+        policyName = policyName.toLowerCase();
+        AthenzObject.POLICY_OPTIONS.convertToLowerCase(policyOptions);
+
+        // we are not going to allow any user to update
+        // the admin policy since that is required
+        // for standard domain operations */
+
+        if (policyName.equalsIgnoreCase(ADMIN_POLICY_NAME)) {
+            throw ZMSUtils.requestError(caller + ": admin policy cannot be modified", caller);
+        }
+
+        // since we're creating a new version there is no existing resource
+        // ownership verification check but we need to set the ownership
+        // for the new version if the operation is successful
+
+        ResourcePolicyOwnership resourceOwnership = StringUtil.isEmpty(resourceOwner) ? null
+                : new ResourcePolicyOwnership().setObjectOwner(resourceOwner).setAssertionsOwner(resourceOwner);
+
+        Policy dbPolicy = dbService.executePutPolicyVersion(ctx, domainName, policyName, policyOptions.getVersion(),
+                policyOptions.getFromVersion(), auditRef, caller, returnObj);
+
+        // update resource ownership if required
+
+        updateResourcePolicyOwnership(ctx, domainName, policyName, resourceOwnership, auditRef, caller);
+
+        return ZMSUtils.returnPutResponse(returnObj, dbPolicy);
+    }
+
+    @Override
+    public void setActivePolicyVersion(ResourceContext ctx, String domainName, String policyName,
+            PolicyOptions policyOptions, String auditRef, String resourceOwner) {
+
+        final String caller = ctx.getApiName();
+        logPrincipal(ctx);
+
+        if (readOnlyMode.get()) {
+            throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
+        }
+
+        validateRequest(ctx.request(), caller);
+        validateResourceOwner(resourceOwner, caller);
+        validate(domainName, TYPE_DOMAIN_NAME, caller);
+        validate(policyName, TYPE_COMPOUND_NAME, caller);
+        validate(policyOptions, TYPE_POLICY_OPTIONS, caller);
+
+        // verify that request is properly authenticated for this request
+
+        verifyAuthorizedServiceOperation(((RsrcCtxWrapper) ctx).principal().getAuthorizedService(), caller);
+
+        // for consistent handling of all requests, we're going to convert
+        // all incoming object values into lower case (e.g. domain, role,
+        // policy, service, etc name)
+
+        domainName = domainName.toLowerCase();
+        setRequestDomain(ctx, domainName);
+        policyName = policyName.toLowerCase();
+        AthenzObject.POLICY_OPTIONS.convertToLowerCase(policyOptions);
+
+        // we are not going to allow any user to update
+        // the admin policy since that is required
+        // for standard domain operations */
+
+        if (policyName.equalsIgnoreCase(ADMIN_POLICY_NAME)) {
+            throw ZMSUtils.requestError(caller + ": admin policy cannot be modified", caller);
+        }
+
+        dbService.executeSetActivePolicy(ctx, domainName, policyName, policyOptions.getVersion(), auditRef, caller);
+    }
+
+    @Override
+    public void deletePolicyVersion(ResourceContext ctx, String domainName, String policyName, String version,
+            String auditRef, String resourceOwner) {
+
+        final String caller = ctx.getApiName();
+        logPrincipal(ctx);
+
+        if (readOnlyMode.get()) {
+            throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
+        }
+
+        validateRequest(ctx.request(), caller);
+        validateResourceOwner(resourceOwner, caller);
+        validate(domainName, TYPE_DOMAIN_NAME, caller);
+        validate(policyName, TYPE_ENTITY_NAME, caller);
+        validate(version, TYPE_SIMPLE_NAME, caller);
+
+        // verify that request is properly authenticated for this request
+
+        verifyAuthorizedServiceOperation(((RsrcCtxWrapper) ctx).principal().getAuthorizedService(), caller);
+
+        // for consistent handling of all requests, we're going to convert
+        // all incoming object values into lower case (e.g. domain, role,
+        // policy, service, etc name)
+
+        domainName = domainName.toLowerCase();
+        setRequestDomain(ctx, domainName);
+        policyName = policyName.toLowerCase();
+        version = version.toLowerCase();
+
+        // we are not going to allow any user to delete
+        // the admin role and policy since those are required
+        // for standard domain operations */
+
+        if (policyName.equalsIgnoreCase(ADMIN_POLICY_NAME)) {
+            throw ZMSUtils.requestError(caller + ": admin policy version cannot be deleted", caller);
+        }
+
+        // verify resource ownership for the request
+
+        Policy policy = dbService.getPolicy(domainName, policyName, version);
+        if (policy == null) {
+            throw ZMSUtils.notFoundError("Policy does not exist", caller);
+        }
+
+        ResourceOwnership.verifyPolicyDeleteResourceOwnership(policy, resourceOwner, caller);
+        dbService.executeDeletePolicyVersion(ctx, domainName, policyName, version, auditRef, caller);
+    }
+
+    @Override
+    public void putResourcePolicyOwnership(ResourceContext ctx, String domainName,
+            String policyName, String auditRef, ResourcePolicyOwnership resourceOwnership) {
+
+        final String caller = ctx.getApiName();
+        logPrincipal(ctx);
+
+        if (readOnlyMode.get()) {
+            throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
+        }
+
+        validateRequest(ctx.request(), caller);
+        validate(domainName, TYPE_DOMAIN_NAME, caller);
+        validate(policyName, TYPE_ENTITY_NAME, caller);
+        validateResourceOwnership(resourceOwnership, caller);
+
+        // for consistent handling of all requests, we're going to convert
+        // all incoming object values into lower case
+
+        domainName = domainName.toLowerCase();
+        setRequestDomain(ctx, domainName);
+        policyName = policyName.toLowerCase();
+
+        dbService.executePutResourcePolicyOwnership(ctx, domainName, policyName, resourceOwnership, auditRef, caller);
+    }
+
+    List<Policy> setupPolicyList(AthenzDomain domain, Boolean assertions, Boolean versions, String tagKey, String tagValue) {
 
         // if we're asked to return the assertions as well then we
         // just need to return the data as is without any modifications
 
         List<Policy> policies;
-        if (assertions == Boolean.TRUE) {
+        if (assertions == Boolean.TRUE && versions == Boolean.TRUE) {
             policies = domain.getPolicies();
         } else {
             policies = new ArrayList<>();
             for (Policy policy : domain.getPolicies()) {
-                Policy newPolicy = new Policy()
-                        .setName(policy.getName())
-                        .setModified(policy.getModified());
-                policies.add(newPolicy);
+
+                // if we're only asked for active versions then skip
+                // any multi-version policies
+
+                if (versions != Boolean.TRUE && policy.getActive() == Boolean.FALSE) {
+                    continue;
+                }
+
+                if (assertions == Boolean.TRUE) {
+                    policies.add(policy);
+                } else {
+                    Policy newPolicy = new Policy()
+                            .setName(policy.getName())
+                            .setModified(policy.getModified())
+                            .setVersion(policy.getVersion())
+                            .setActive(policy.getActive())
+                            .setTags(policy.getTags());
+                    policies.add(newPolicy);
+                }
             }
+        }
+
+        if (tagKey != null) {
+            policies = policies.stream()
+                    .filter(policy -> (filterByTag(tagKey, tagValue, policy, Policy::getTags)))
+                    .collect(Collectors.toList());
         }
 
         return policies;
     }
 
-    public Policies getPolicies(ResourceContext ctx, String domainName, Boolean assertions) {
+    @Override
+    public Policies getPolicies(ResourceContext ctx, String domainName, Boolean assertions, Boolean includeNonActive, String tagKey, String tagValue) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
@@ -4423,10 +5604,10 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         AthenzDomain domain = getAthenzDomain(domainName, false);
         if (domain == null) {
-            throw ZMSUtils.notFoundError("getPolicies: Domain not found: '" + domainName + "'", caller);
+            throw ZMSUtils.notFoundError(caller + ": Domain not found: '" + domainName + "'", caller);
         }
 
-        result.setList(setupPolicyList(domain, assertions));
+        result.setList(setupPolicyList(domain, assertions, includeNonActive, tagKey, tagValue));
         return result;
     }
 
@@ -4447,9 +5628,9 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         setRequestDomain(ctx, domainName);
         policyName = policyName.toLowerCase();
 
-        Policy policy = dbService.getPolicy(domainName, policyName);
+        Policy policy = dbService.getPolicy(domainName, policyName, null);
         if (policy == null) {
-            throw ZMSUtils.notFoundError("getPolicy: Policy not found: '" +
+            throw ZMSUtils.notFoundError(caller + ": Policy not found: '" +
                     ResourceUtils.policyResourceName(domainName, policyName) + "'", caller);
         }
 
@@ -4486,17 +5667,17 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
     @Override
     public Assertion putAssertion(ResourceContext ctx, String domainName, String policyName,
-            String auditRef, Assertion assertion) {
+            String auditRef, String resourceOwner, Assertion assertion) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
-
+        validateResourceOwner(resourceOwner, caller);
         validate(domainName, TYPE_DOMAIN_NAME, caller);
         validate(policyName, TYPE_COMPOUND_NAME, caller);
         validate(assertion, TYPE_ASSERTION, caller);
@@ -4523,25 +5704,124 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         }
 
         // validate to make sure we have expected values for assertion fields
+        // - and also to make sure that the associated role exists
 
-        validatePolicyAssertion(assertion, caller);
+        validatePolicyAssertion(assertion, domainName, new HashSet<>(), caller);
 
-        dbService.executePutAssertion(ctx, domainName, policyName, assertion, auditRef, caller);
+        // extract the policy for the resource ownership check
+
+        Policy dbPolicy = dbService.getPolicy(domainName, policyName, null);
+        if (dbPolicy == null) {
+            throw ZMSUtils.notFoundError("putAssertion: Unable to retrieve policy: " +
+                    ResourceUtils.policyResourceName(domainName, policyName), caller);
+        }
+
+        // verify resource ownership for the request. If the object returned
+        // is not null then it indicates that the object must be modified
+        // with the given resource ownership details
+
+        ResourcePolicyOwnership resourceOwnership = ResourceOwnership.verifyPolicyAssertionsResourceOwnership(
+                dbPolicy, resourceOwner, caller);
+
+        dbService.executePutAssertion(ctx, domainName, policyName, null, assertion, auditRef, caller);
+
+        // update resource ownership if required
+
+        updateResourcePolicyOwnership(ctx, domainName, policyName, resourceOwnership, auditRef, caller);
+
         return assertion;
     }
 
-    public void deleteAssertion(ResourceContext ctx, String domainName, String policyName,
-            Long assertionId, String auditRef) {
+    @Override
+    public Assertion putAssertionPolicyVersion(ResourceContext ctx, String domainName, String policyName, String version,
+            String auditRef, String resourceOwner, Assertion assertion) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
+        validateResourceOwner(resourceOwner, caller);
+        validate(domainName, TYPE_DOMAIN_NAME, caller);
+        validate(policyName, TYPE_COMPOUND_NAME, caller);
+        validate(assertion, TYPE_ASSERTION, caller);
+        validate(version, TYPE_SIMPLE_NAME, caller);
 
+        // verify that request is properly authenticated for this request
+
+        verifyAuthorizedServiceOperation(((RsrcCtxWrapper) ctx).principal().getAuthorizedService(), caller);
+
+        // for consistent handling of all requests, we're going to convert
+        // all incoming object values into lower case (e.g. domain, role,
+        // policy, service, etc name)
+
+        domainName = domainName.toLowerCase();
+        setRequestDomain(ctx, domainName);
+        policyName = policyName.toLowerCase();
+        version = version.toLowerCase();
+        AthenzObject.ASSERTION.convertToLowerCase(assertion);
+
+        // we are not going to allow any user to update
+        // the admin policy since that is required
+        // for standard domain operations */
+
+        if (policyName.equalsIgnoreCase(ADMIN_POLICY_NAME)) {
+            throw ZMSUtils.requestError("putAssertionPolicyVersion: admin policy cannot be modified", caller);
+        }
+
+        // extract the policy for the resource ownership check
+
+        Policy dbPolicy = dbService.getPolicy(domainName, policyName, version);
+        if (dbPolicy == null) {
+            throw ZMSUtils.notFoundError("putAssertion: Unable to retrieve policy: " +
+                    ResourceUtils.policyResourceName(domainName, policyName), caller);
+        }
+
+        // verify resource ownership for the request. If the object returned
+        // is not null then it indicates that the object must be modified
+        // with the given resource ownership details
+
+        ResourcePolicyOwnership resourceOwnership = ResourceOwnership.verifyPolicyAssertionsResourceOwnership(
+                dbPolicy, resourceOwner, caller);
+
+        // validate to make sure we have expected values for assertion fields
+        // - and also to make sure that the associated role exists
+
+        validatePolicyAssertion(assertion, domainName, new HashSet<>(), caller);
+
+        dbService.executePutAssertion(ctx, domainName, policyName, version, assertion, auditRef, caller);
+
+        // update resource ownership if required
+
+        updateResourcePolicyOwnership(ctx, domainName, policyName, resourceOwnership, auditRef, caller);
+
+        return assertion;
+    }
+
+    void validateRoleAssociatedIsExist(Set<String> roleNames, String lookingForRole, String domainName, String caller) {
+
+        String shortRoleName = ZMSUtils.removeDomainPrefix(lookingForRole, domainName, ROLE_PREFIX);
+        if (!roleNames.contains(shortRoleName)) {
+            throw ZMSUtils.requestError("The role: " + lookingForRole + " that associated to an assertion does not exist", caller);
+        }
+    }
+
+    @Override
+    public void deleteAssertion(ResourceContext ctx, String domainName, String policyName,
+            Long assertionId, String auditRef, String resourceOwner) {
+
+        final String caller = ctx.getApiName();
+        logPrincipal(ctx);
+
+        if (readOnlyMode.get()) {
+            throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
+        }
+
+        validateRequest(ctx.request(), caller);
+        validateResourceOwner(resourceOwner, caller);
         validate(domainName, TYPE_DOMAIN_NAME, caller);
         validate(policyName, TYPE_ENTITY_NAME, caller);
 
@@ -4565,59 +5845,105 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         verifyAuthorizedServiceOperation(((RsrcCtxWrapper) ctx).principal().getAuthorizedService(), caller);
 
-        dbService.executeDeleteAssertion(ctx, domainName, policyName, assertionId, auditRef, caller);
+        // extract our policy object to get its attributes
+
+        AthenzDomain domain = getAthenzDomain(domainName, false);
+        Policy policy = getPolicyFromDomain(policyName, domain);
+
+        if (policy == null) {
+            throw ZMSUtils.notFoundError("Invalid policy name specified", caller);
+        }
+
+        ResourceOwnership.verifyPolicyAssertionsDeleteResourceOwnership(policy, resourceOwner, caller);
+        dbService.executeDeleteAssertion(ctx, domainName, policyName, null, assertionId, auditRef, caller);
     }
 
-    void validatePolicyAssertions(List<Assertion> assertions, String caller) {
+    @Override
+    public void deleteAssertionPolicyVersion(ResourceContext ctx, String domainName, String policyName,
+            String version, Long assertionId, String auditRef, String resourceOwner) {
+
+        final String caller = ctx.getApiName();
+        logPrincipal(ctx);
+
+        if (readOnlyMode.get()) {
+            throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
+        }
+
+        validateRequest(ctx.request(), caller);
+        validateResourceOwner(resourceOwner, caller);
+        validate(domainName, TYPE_DOMAIN_NAME, caller);
+        validate(policyName, TYPE_ENTITY_NAME, caller);
+        validate(version, TYPE_SIMPLE_NAME, caller);
+
+        // for consistent handling of all requests, we're going to convert
+        // all incoming object values into lower case (e.g. domain, role,
+        // policy, service, etc name)
+
+        domainName = domainName.toLowerCase();
+        setRequestDomain(ctx, domainName);
+        policyName = policyName.toLowerCase();
+        version = version.toLowerCase();
+
+        // we are not going to allow any user to update
+        // the admin policy since that is required
+        // for standard domain operations */
+
+        if (policyName.equalsIgnoreCase(ADMIN_POLICY_NAME)) {
+            throw ZMSUtils.requestError("deleteAssertion: admin policy cannot be modified", caller);
+        }
+
+        // verify that request is properly authenticated for this request
+
+        verifyAuthorizedServiceOperation(((RsrcCtxWrapper) ctx).principal().getAuthorizedService(), caller);
+
+        dbService.executeDeleteAssertion(ctx, domainName, policyName, version, assertionId, auditRef, caller);
+    }
+
+    void validatePolicyAssertions(List<Assertion> assertions, final String roleDomainName, final String caller) {
 
         if (assertions == null) {
             return;
         }
 
+        // send this to func 'validatePolicyAssertion' since it doesn't need to
+        // retrieve the roleList for every assertion
+
+        Set<String> roleNamesCache = new HashSet<>();
         for (Assertion assertion : assertions) {
-            validatePolicyAssertion(assertion, caller);
+            validatePolicyAssertion(assertion, roleDomainName, roleNamesCache, caller);
         }
     }
 
-    void validatePolicyAssertion(Assertion assertion, String caller) {
-
-        // extract the domain name from the resource
-
-        final String resource = assertion.getResource();
-        int idx = resource.indexOf(':');
-        if (idx == -1) {
-            throw ZMSUtils.requestError("Missing domain name from assertion resource: "
-                    + resource, caller);
+    void validatePolicyAssertionConditions(List<Assertion> assertions, String caller) {
+        if (assertions == null) {
+            return;
         }
-
-        // we need to validate our domain name with special
-        // case of * that is allowed to match any domain
-
-        String domainName = resource.substring(0, idx);
-        if (!domainName.equals("*")) {
-            validate(domainName, TYPE_DOMAIN_NAME, caller);
+        for (Assertion a : assertions) {
+            if (a.getConditions() != null) {
+                validateAssertionConditions(a.getConditions(), caller);
+            }
         }
+    }
 
-        // we'll also verify that the resource does not contain
-        // any control characters since those cause issues when
-        // data is serialized/deserialized and signature is generated
+    void validatePolicyAssertion(Assertion assertion, final String roleDomainName, Set<String> roleNamesSet,
+            final String caller) {
 
-        if (StringUtils.containsControlCharacter(resource)) {
-            throw ZMSUtils.requestError("Assertion resource contains control characters: "
-                    + resource, caller);
-        }
+        // validate the overall structure of the assertion object
 
-        // verify the action is not empty and does not contain
-        // any control characters
+        ZMSUtils.validatePolicyAssertion(validator, assertion, false, caller);
 
-        final String action = assertion.getAction();
-        if (action == null || action.isEmpty()) {
-            throw ZMSUtils.requestError("Assertion action cannot be empty", caller);
-        }
+        // if enabled, we are not going to allow any user to add/update
+        // an assertion that the associated role does not exist
+        // retrieve role list only if it hasn't been made for
+        // another assertion in the same domain already
 
-        if (StringUtils.containsControlCharacter(action)) {
-            throw ZMSUtils.requestError("Assertion action contains control characters: "
-                    + resource, caller);
+        if (validatePolicyAssertionRoles.get() == Boolean.TRUE) {
+
+            if (roleNamesSet.isEmpty()) {
+                roleNamesSet.addAll(dbService.listRoles(roleDomainName));
+            }
+
+            validateRoleAssociatedIsExist(roleNamesSet, assertion.getRole(), roleDomainName, caller);
         }
     }
 
@@ -4645,17 +5971,18 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
     }
 
     @Override
-    public void putPolicy(ResourceContext ctx, String domainName, String policyName, String auditRef, Policy policy) {
+    public Response putPolicy(ResourceContext ctx, String domainName, String policyName, String auditRef,
+            Boolean returnObj, String resourceOwner, Policy policy) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
-
+        validateResourceOwner(resourceOwner, caller);
         validate(domainName, TYPE_DOMAIN_NAME, caller);
         validate(policyName, TYPE_COMPOUND_NAME, caller);
         validate(policy, TYPE_POLICY, caller);
@@ -4672,6 +5999,9 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         setRequestDomain(ctx, domainName);
         policyName = policyName.toLowerCase();
         AthenzObject.POLICY.convertToLowerCase(policy);
+        if (policy.getActive() == null) {
+            policy.setActive(Boolean.TRUE);
+        }
 
         // we are not going to allow any user to update
         // the admin policy since that is required
@@ -4690,23 +6020,61 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         }
 
         // validate to make sure we have expected values for assertion fields
+        // also that all the roles that associates does exists
 
-        validatePolicyAssertions(policy.getAssertions(), caller);
+        validatePolicyAssertions(policy.getAssertions(), domainName, caller);
+        validatePolicyAssertionConditions(policy.getAssertions(), caller);
 
-        dbService.executePutPolicy(ctx, domainName, policyName, policy, auditRef, caller);
+        // verify resource ownership for the request. If the object returned
+        // is not null then it indicates that the object must be modified
+        // with the given resource ownership details
+
+        Policy originalPolicy = dbService.getPolicy(domainName, policyName, policy.getVersion());
+        ResourcePolicyOwnership resourceOwnership = ResourceOwnership.verifyPolicyResourceOwnership(
+                originalPolicy, !ZMSUtils.isCollectionEmpty(policy.getAssertions()), resourceOwner, caller);
+
+        Policy dbPolicy = dbService.executePutPolicy(ctx, domainName, policyName, policy,
+                originalPolicy, auditRef, caller, returnObj);
+
+        // update resource ownership if required
+
+        updateResourcePolicyOwnership(ctx, domainName, policyName, resourceOwnership, auditRef, caller);
+
+        return ZMSUtils.returnPutResponse(returnObj, dbPolicy);
     }
 
-    public void deletePolicy(ResourceContext ctx, String domainName, String policyName, String auditRef) {
+    void updateResourcePolicyOwnership(ResourceContext ctx, final String domainName, final String policyName,
+            ResourcePolicyOwnership resourceOwnership, final String auditRef, final String caller) {
+
+        if (resourceOwnership == null) {
+            return;
+        }
+
+        // need to apply the resource ownership if required, but we'll ignore any errors
+        // since this is not critical for the operation and the changes
+        // have already been successfully applied in the data store. the error
+        // has already been logged by the generated exception so no need to log it again
+
+        try {
+            dbService.executePutResourcePolicyOwnership(ctx, domainName, policyName, resourceOwnership,
+                    auditRef, caller);
+        } catch (Exception ignored) {
+        }
+    }
+
+    @Override
+    public void deletePolicy(ResourceContext ctx, String domainName, String policyName, String auditRef,
+            String resourceOwner) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
-
+        validateResourceOwner(resourceOwner, caller);
         validate(domainName, TYPE_DOMAIN_NAME, caller);
         validate(policyName, TYPE_ENTITY_NAME, caller);
 
@@ -4730,6 +6098,14 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             throw ZMSUtils.requestError("deletePolicy: admin policy cannot be deleted", caller);
         }
 
+        // verify resource ownership for the request
+
+        Policy policy = dbService.getPolicy(domainName, policyName, null);
+        if (policy == null) {
+            throw ZMSUtils.notFoundError("Policy does not exist", caller);
+        }
+
+        ResourceOwnership.verifyPolicyDeleteResourceOwnership(policy, resourceOwner, caller);
         dbService.executeDeletePolicy(ctx, domainName, policyName, auditRef, caller);
     }
 
@@ -4741,6 +6117,13 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         }
 
         for (Policy policy : domain.getPolicies()) {
+
+            // ignore any inactive/multi-version policies
+
+            if (policy.getActive() == Boolean.FALSE) {
+                continue;
+            }
+
             if (AuthzHelper.matchDelegatedTrustPolicy(policy, roleName, roleMember, domain.getRoles(), groupMemberFetcher)) {
                 return true;
             }
@@ -4958,10 +6341,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
     boolean verifyServicePublicKey(String key) {
         try {
-            PublicKey pub = Crypto.loadPublicKey(Crypto.ybase64DecodeString(key));
-            if (LOG.isDebugEnabled()) {
-                LOG.debug("verifyServicePublicKey: public key looks valid: {}", pub);
-            }
+            Crypto.loadPublicKey(Crypto.ybase64DecodeString(key));
         } catch (Exception ex) {
             LOG.error("verifyServicePublicKey: Invalid Public Key: {}", ex.getMessage());
             return false;
@@ -4975,7 +6355,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         // It's okay to not specify any public keys
 
         List<PublicKeyEntry> publicKeyList = service.getPublicKeys();
-        if (publicKeyList == null || publicKeyList.size() == 0) {
+        if (ZMSUtils.isCollectionEmpty(publicKeyList)) {
             return true;
         }
 
@@ -4987,28 +6367,58 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         return true;
     }
 
-    public boolean isValidServiceName(final String serviceName) {
+    public boolean isValidServiceName(final String domainName, final String serviceName, StringBuilder errorMessage) {
+
+        // first check the list of configured reserved names
 
         if (reservedServiceNames != null && reservedServiceNames.contains(serviceName)) {
+            errorMessage.append("reserved service name");
             return false;
         }
 
-        return serviceNameMinLength <= 0 || serviceNameMinLength <= serviceName.length();
+        // if we're not allowed to have underscores in service names then
+        // we need to check if the service exists or not since we do not
+        // want to block managing service accounts that were created before
+        // the option was enforced or the domain is configured to allow
+        // services with underscores
+
+        if (allowUnderscoreInServiceNames.get() == Boolean.FALSE && serviceName.indexOf('_') != -1) {
+            if ((!isDomainFeatureFlagEnabled(domainName, ZMSConsts.ZMS_FEATURE_ALLOW_SERVICE_UNDERSCORE)) &&
+                    dbService.getServiceIdentity(domainName, serviceName, true) == null) {
+                errorMessage.append("service name with underscore not allowed");
+                return false;
+            }
+        }
+
+        // finally, return result based on the configured minimum length of the service name
+
+        if (serviceNameMinLength > 0 && serviceNameMinLength > serviceName.length()) {
+            errorMessage.append("service name length too short");
+            return false;
+        }
+
+        return true;
+    }
+
+    boolean isDomainFeatureFlagEnabled(final String domainName, int flag) {
+        Domain domain = dbService.getDomain(domainName, false);
+        Integer featureFlags = domain.getFeatureFlags();
+        return featureFlags != null && (featureFlags & flag) != 0;
     }
 
     @Override
-    public void putServiceIdentity(ResourceContext ctx, String domainName, String serviceName,
-                                   String auditRef, ServiceIdentity service) {
+    public Response putServiceIdentity(ResourceContext ctx, String domainName, String serviceName,
+            String auditRef, Boolean returnObj, String resourceOwner, ServiceIdentity service) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
-
+        validateResourceOwner(resourceOwner, caller);
         validate(domainName, TYPE_DOMAIN_NAME, caller);
         validate(serviceName, TYPE_SIMPLE_NAME, caller);
         validate(service, TYPE_SERVICE_IDENTITY, caller);
@@ -5024,8 +6434,9 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         // validate that the service name is valid
 
-        if (!isValidServiceName(serviceName)) {
-            throw ZMSUtils.requestError("putServiceIdentity: Invalid/Reserved service name", caller);
+        StringBuilder errorMessage = new StringBuilder(64);
+        if (!isValidServiceName(domainName, serviceName, errorMessage)) {
+            throw ZMSUtils.requestError("putServiceIdentity: " + errorMessage, caller);
         }
 
         // verify that request is properly authenticated for this request
@@ -5045,7 +6456,43 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
                 + service.getProviderEndpoint() + " - must be http(s) and in configured domain", caller);
         }
 
-        dbService.executePutServiceIdentity(ctx, domainName, serviceName, service, auditRef, caller);
+        // verify resource ownership for the request. If the object returned
+        // is not null then it indicates that the object must be modified
+        // with the given resource ownership details
+
+        ServiceIdentity originalService = dbService.getServiceIdentity(domainName, serviceName, false);
+
+        ResourceServiceIdentityOwnership resourceOwnership = ResourceOwnership.verifyServiceResourceOwnership(
+                originalService, !ZMSUtils.isCollectionEmpty(service.getPublicKeys()),
+                !ZMSUtils.isCollectionEmpty(service.getHosts()), resourceOwner, caller);
+
+        ServiceIdentity dbServiceIdentity = dbService.executePutServiceIdentity(ctx, domainName,
+                serviceName, service, originalService, auditRef, caller, returnObj);
+
+        // update resource ownership if required
+
+        updateResourceServiceOwnership(ctx, domainName, serviceName, resourceOwnership, auditRef, caller);
+
+        return ZMSUtils.returnPutResponse(returnObj, dbServiceIdentity);
+    }
+
+    void updateResourceServiceOwnership(ResourceContext ctx, final String domainName, final String serviceName,
+            ResourceServiceIdentityOwnership resourceOwnership, final String auditRef, final String caller) {
+
+        if (resourceOwnership == null) {
+            return;
+        }
+
+        // need to apply the resource ownership if required, but we'll ignore any errors
+        // since this is not critical for the operation and the changes
+        // have already been successfully applied in the data store. the error
+        // has already been logged by the generated exception so no need to log it again
+
+        try {
+            dbService.executePutResourceServiceOwnership(ctx, domainName, serviceName, resourceOwnership,
+                    auditRef, caller);
+        } catch (Exception ignored) {
+        }
     }
 
     @Override
@@ -5055,7 +6502,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         final String caller = "putservicesystemmeta";
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
@@ -5087,6 +6534,32 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         dbService.executePutServiceIdentitySystemMeta(ctx, domainName, serviceName, meta, attribute, auditRef, caller);
     }
 
+    @Override
+    public void putResourceServiceIdentityOwnership(ResourceContext ctx, String domainName,
+            String serviceName, String auditRef, ResourceServiceIdentityOwnership resourceOwnership) {
+
+        final String caller = ctx.getApiName();
+        logPrincipal(ctx);
+
+        if (readOnlyMode.get()) {
+            throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
+        }
+
+        validateRequest(ctx.request(), caller);
+        validate(domainName, TYPE_DOMAIN_NAME, caller);
+        validate(serviceName, TYPE_SIMPLE_NAME, caller);
+        validateResourceOwnership(resourceOwnership, caller);
+
+        // for consistent handling of all requests, we're going to convert
+        // all incoming object values into lower case
+
+        domainName = domainName.toLowerCase();
+        setRequestDomain(ctx, domainName);
+        serviceName = serviceName.toLowerCase();
+
+        dbService.executePutResourceServiceOwnership(ctx, domainName, serviceName, resourceOwnership, auditRef, caller);
+    }
+
     public ServiceIdentity getServiceIdentity(ResourceContext ctx, String domainName, String serviceName) {
 
         final String caller = ctx.getApiName();
@@ -5113,18 +6586,19 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         return service;
     }
 
-    public void deleteServiceIdentity(ResourceContext ctx, String domainName,
-            String serviceName, String auditRef) {
+    @Override
+    public void deleteServiceIdentity(ResourceContext ctx, String domainName, String serviceName,
+            String auditRef, String resourceOwner) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
-
+        validateResourceOwner(resourceOwner, caller);
         validate(domainName, TYPE_DOMAIN_NAME, caller);
         validate(serviceName, TYPE_SIMPLE_NAME, caller);
 
@@ -5140,10 +6614,22 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         verifyAuthorizedServiceOperation(((RsrcCtxWrapper) ctx).principal().getAuthorizedService(), caller);
 
+        // make sure no domain is dependent on the service
+
+        verifyNoDomainDependenciesOnService(domainName + "." + serviceName, caller);
+
+        // verify resource ownership for the request
+
+        ServiceIdentity service = dbService.getServiceIdentity(domainName, serviceName, true);
+        if (service == null) {
+            throw ZMSUtils.notFoundError("Service does not exist", caller);
+        }
+
+        ResourceOwnership.verifyServiceDeleteResourceOwnership(service, resourceOwner, caller);
         dbService.executeDeleteServiceIdentity(ctx, domainName, serviceName, auditRef, caller);
     }
 
-    List<ServiceIdentity> setupServiceIdentityList(AthenzDomain domain, Boolean publicKeys, Boolean hosts) {
+    List<ServiceIdentity> setupServiceIdentityList(AthenzDomain domain, Boolean publicKeys, Boolean hosts, String tagKey, String tagValue) {
 
         // if we're asked to return the public keys and hosts as well then we
         // just need to return the data as is without any modifications
@@ -5156,11 +6642,13 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             for (ServiceIdentity service : domain.getServices()) {
                 ServiceIdentity newService = new ServiceIdentity()
                         .setName(service.getName())
+                        .setDescription(service.getDescription())
                         .setModified(service.getModified())
                         .setExecutable(service.getExecutable())
                         .setGroup(service.getGroup())
                         .setUser(service.getUser())
-                        .setProviderEndpoint(service.getProviderEndpoint());
+                        .setProviderEndpoint(service.getProviderEndpoint())
+                        .setTags(service.getTags());
                 if (publicKeys == Boolean.TRUE) {
                     newService.setPublicKeys(service.getPublicKeys());
                 } else if (hosts == Boolean.TRUE) {
@@ -5170,17 +6658,29 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             }
         }
 
+        if (tagKey != null) {
+            services = services.stream()
+                    .filter(service -> filterByTag(tagKey, tagValue, service, ServiceIdentity::getTags))
+                    .collect(Collectors.toList());
+        }
+
         return services;
     }
 
     public ServiceIdentities getServiceIdentities(ResourceContext ctx, String domainName,
-            Boolean publicKeys, Boolean hosts) {
+            Boolean publicKeys, Boolean hosts, String tagKey, String tagValue) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
         validateRequest(ctx.request(), caller);
         validate(domainName, TYPE_DOMAIN_NAME, caller);
+        if (!StringUtil.isEmpty(tagKey)) {
+            validate(tagKey, TYPE_TAG_KEY, caller);
+        }
+        if (!StringUtil.isEmpty(tagValue)) {
+            validate(tagValue, TYPE_TAG_COMPOUND_VALUE, caller);
+        }
 
         // for consistent handling of all requests, we're going to convert
         // all incoming object values into lower case (e.g. domain, role,
@@ -5197,7 +6697,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
                     + domainName + "'", caller);
         }
 
-        result.setList(setupServiceIdentityList(domain, publicKeys, hosts));
+        result.setList(setupServiceIdentityList(domain, publicKeys, hosts, tagKey, tagValue));
         return result;
     }
 
@@ -5220,8 +6720,8 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             skip = skip.toLowerCase();
         }
 
-        List<String> names = new ArrayList<>();
-        String next = processListRequest(domainName, AthenzObject.SERVICE_IDENTITY, limit, skip, names);
+        List<String> names = new ArrayList<>(dbService.listServiceIdentities(domainName));
+        final String next = processListRequest(limit, skip, names);
         ServiceIdentityList result = new ServiceIdentityList().setNames(names);
         if (next != null) {
             result.setNext(next);
@@ -5257,18 +6757,19 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         return entry;
     }
 
+    @Override
     public void deletePublicKeyEntry(ResourceContext ctx, String domainName, String serviceName,
-            String keyId, String auditRef) {
+            String keyId, String auditRef, String resourceOwner) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
-
+        validateResourceOwner(resourceOwner, caller);
         validate(domainName, TYPE_DOMAIN_NAME, caller);
         validate(serviceName, TYPE_SIMPLE_NAME, caller);
 
@@ -5290,17 +6791,17 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
     @Override
     public void putPublicKeyEntry(ResourceContext ctx, String domainName, String serviceName,
-            String keyId, String auditRef, PublicKeyEntry keyEntry) {
+            String keyId, String auditRef, String resourceOwner, PublicKeyEntry keyEntry) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
-
+        validateResourceOwner(resourceOwner, caller);
         validate(domainName, TYPE_DOMAIN_NAME, caller);
         validate(serviceName, TYPE_SIMPLE_NAME, caller);
         validate(keyEntry, TYPE_PUBLIC_KEY_ENTRY, caller);
@@ -5331,7 +6832,26 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             throw ZMSUtils.requestError("putPublicKeyEntry: Invalid public key", caller);
         }
 
+        // quick check to see if we have a valid service
+
+        ServiceIdentity service = dbService.getServiceIdentity(domainName, serviceName, true);
+        if (service == null) {
+            throw ZMSUtils.notFoundError("putPublicKeyEntry: Unable to retrieve service: " +
+                    ResourceUtils.serviceResourceName(domainName, serviceName), caller);
+        }
+
+        // verify resource ownership for the request. If the object returned
+        // is not null then it indicates that the object must be modified
+        // with the given resource ownership details
+
+        ResourceServiceIdentityOwnership resourceOwnership =
+                ResourceOwnership.verifyServicePublicKeysResourceOwnership(service, resourceOwner, caller);
+
         dbService.executePutPublicKeyEntry(ctx, domainName, serviceName, keyEntry, auditRef, caller);
+
+        // update resource ownership if required
+
+        updateResourceServiceOwnership(ctx, domainName, serviceName, resourceOwnership, auditRef, caller);
     }
 
     String removeQuotes(String value) {
@@ -5405,13 +6925,30 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
                         return null;
                     }
                     signedDomain.getDomain().setAzureSubscription(azureSubscription);
+                    signedDomain.getDomain().setAzureTenant(domain.getAzureTenant());
+                    signedDomain.getDomain().setAzureClient(domain.getAzureClient());
                     break;
-                case META_ATTR_YPM_ID:
+                case ZMSConsts.SYSTEM_META_GCP_PROJECT:
+                    final String gcpProject = domain.getGcpProject();
+                    if (gcpProject == null) {
+                        return null;
+                    }
+                    signedDomain.getDomain().setGcpProject(gcpProject);
+                    signedDomain.getDomain().setGcpProjectNumber(domain.getGcpProjectNumber());
+                    break;
+                case ZMSConsts.SYSTEM_META_YPM_ID:
                     final Integer ypmId = domain.getYpmId();
                     if (ypmId == null || ypmId == 0) {
                         return null;
                     }
                     signedDomain.getDomain().setYpmId(ypmId);
+                    break;
+                case ZMSConsts.SYSTEM_META_PRODUCT_ID:
+                    final String productId = domain.getProductId();
+                    if (productId == null) {
+                        return null;
+                    }
+                    signedDomain.getDomain().setProductId(productId);
                     break;
                 case ZMSConsts.SYSTEM_META_BUSINESS_SERVICE:
                     final String businessService = domain.getBusinessService();
@@ -5420,27 +6957,39 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
                     }
                     signedDomain.getDomain().setBusinessService(businessService);
                     break;
-                case META_ATTR_ALL:
-                    DomainData domainData = signedDomain.getDomain();
-                    domainData.setDescription(domain.getDescription());
-                    domainData.setAccount(domain.getAccount());
-                    domainData.setAzureSubscription(domain.getAzureSubscription());
-                    domainData.setYpmId(domain.getYpmId());
-                    domainData.setApplicationId(domain.getApplicationId());
-                    domainData.setMemberExpiryDays(domain.getMemberExpiryDays());
-                    domainData.setServiceExpiryDays(domain.getServiceExpiryDays());
-                    domainData.setGroupExpiryDays(domain.getGroupExpiryDays());
-                    domainData.setRoleCertExpiryMins(domain.getRoleCertExpiryMins());
-                    domainData.setServiceCertExpiryMins(domain.getServiceCertExpiryMins());
-                    domainData.setTokenExpiryMins(domain.getTokenExpiryMins());
-                    domainData.setOrg(domain.getOrg());
-                    domainData.setAuditEnabled(domain.getAuditEnabled());
-                    domainData.setTags(domain.getTags());
-                    domainData.setBusinessService(domain.getBusinessService());
+                case ZMSConsts.SYSTEM_META_ATTR_ALL:
+                    setDomainDataAttributes(signedDomain.getDomain(), domain);
                     break;
             }
         }
         return signedDomain;
+    }
+
+    void setDomainDataAttributes(DomainData domainData, Domain domain) {
+        domainData.setDescription(domain.getDescription());
+        domainData.setAccount(domain.getAccount());
+        domainData.setAzureSubscription(domain.getAzureSubscription());
+        domainData.setAzureTenant(domain.getAzureTenant());
+        domainData.setAzureClient(domain.getAzureClient());
+        domainData.setGcpProject(domain.getGcpProject());
+        domainData.setGcpProjectNumber(domain.getGcpProjectNumber());
+        domainData.setYpmId(domain.getYpmId());
+        domainData.setProductId(domain.getProductId());
+        domainData.setApplicationId(domain.getApplicationId());
+        domainData.setMemberExpiryDays(domain.getMemberExpiryDays());
+        domainData.setServiceExpiryDays(domain.getServiceExpiryDays());
+        domainData.setGroupExpiryDays(domain.getGroupExpiryDays());
+        domainData.setRoleCertExpiryMins(domain.getRoleCertExpiryMins());
+        domainData.setServiceCertExpiryMins(domain.getServiceCertExpiryMins());
+        domainData.setTokenExpiryMins(domain.getTokenExpiryMins());
+        domainData.setOrg(domain.getOrg());
+        domainData.setAuditEnabled(domain.getAuditEnabled());
+        domainData.setTags(domain.getTags());
+        domainData.setBusinessService(domain.getBusinessService());
+        domainData.setSignAlgorithm(domain.getSignAlgorithm());
+        domainData.setCertDnsDomain(domain.getCertDnsDomain());
+        domainData.setMemberPurgeExpiryDays(domain.getMemberPurgeExpiryDays());
+        domainData.setContacts(domain.getContacts());
     }
 
     SignedDomain retrieveSignedDomain(Domain domain, final String metaAttr, boolean setMetaDataOnly, boolean masterCopy, boolean includeConditions) {
@@ -5497,7 +7046,10 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         }
         domainData.setAccount(athenzDomain.getDomain().getAccount());
         domainData.setAzureSubscription(athenzDomain.getDomain().getAzureSubscription());
+        domainData.setAzureTenant(athenzDomain.getDomain().getAzureTenant());
+        domainData.setAzureClient(athenzDomain.getDomain().getAzureClient());
         domainData.setYpmId(athenzDomain.getDomain().getYpmId());
+        domainData.setProductId(athenzDomain.getDomain().getProductId());
         domainData.setApplicationId(athenzDomain.getDomain().getApplicationId());
         domainData.setSignAlgorithm(athenzDomain.getDomain().getSignAlgorithm());
         domainData.setBusinessService(athenzDomain.getDomain().getBusinessService());
@@ -5523,10 +7075,14 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         if (athenzDomain.getDomain().getServiceExpiryDays() != null) {
             domainData.setServiceExpiryDays(athenzDomain.getDomain().getServiceExpiryDays());
         }
+        if (athenzDomain.getDomain().getMemberPurgeExpiryDays() != null) {
+            domainData.setMemberPurgeExpiryDays(athenzDomain.getDomain().getMemberPurgeExpiryDays());
+        }
 
-        // set the domain tags
+        // set the domain tags and contacts
 
         domainData.setTags(athenzDomain.getDomain().getTags());
+        domainData.setContacts(athenzDomain.getDomain().getContacts());
 
         // set the roles, services, groups and entities
 
@@ -5583,14 +7139,14 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         boolean includeConditions = Boolean.TRUE == conditions;
         long timestamp = getModTimestamp(matchingTag);
 
-        // if this is one of our system principals then we're going to
+        // if this is one of our system principals then we're going
         // to use the master copy instead of read-only replicas
         // unless we're configured to always use read-only replicas
         // for all signed domain operations
 
         Principal principal = ((RsrcCtxWrapper) ctx).principal();
         boolean masterCopy = (useMasterCopyForSignedDomains || master == Boolean.TRUE)
-                && principal.getFullName().startsWith("sys.");
+                && principal.getFullName().startsWith("sys.") && !readOnlyMode.get();
 
         // if we're given a specific domain then we don't need to
         // retrieve the list of modified domains
@@ -5619,12 +7175,13 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
                 if (timestamp != 0 && youngestDomMod <= timestamp) {
                     EntityTag eTag = new EntityTag(domain.getModified().toString());
                     return Response.status(ResourceException.NOT_MODIFIED)
-                            .header("ETag", eTag.toString()).build();
+                            .header("ETag", ENTITY_TAG_HEADER_DELEGATE.toString(eTag)).build();
                 }
 
                 // generate our signed domain object
 
-                SignedDomain signedDomain = retrieveSignedDomain(domain, metaAttr, setMetaDataOnly, masterCopy, includeConditions);
+                SignedDomain signedDomain = retrieveSignedDomain(domain, metaAttr, setMetaDataOnly,
+                        masterCopy, includeConditions);
 
                 if (signedDomain != null) {
                     sdList.add(signedDomain);
@@ -5650,12 +7207,17 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
             if (matchingTag == null) {
                 EntityTag eTag = new EntityTag(Timestamp.fromMillis(0).toString());
-                matchingTag = eTag.toString();
+                matchingTag = ENTITY_TAG_HEADER_DELEGATE.toString(eTag);
             }
 
-            DomainMetaList dmlist = dbService.listModifiedDomains(timestamp);
+            // fetching the list of modified domains must always be carried out
+            // against our master write database unless the server is running in
+            // read-only mode in which case it indicates that our master write
+            // db is not available thus we'll use the read replica
+
+            DomainMetaList dmlist = dbService.listModifiedDomains(timestamp, !readOnlyMode.get());
             List<Domain> modlist = dmlist.getDomains();
-            if (modlist == null || modlist.size() == 0) {
+            if (ZMSUtils.isCollectionEmpty(modlist)) {
                 return Response.status(ResourceException.NOT_MODIFIED)
                         .header("ETag", matchingTag).build();
             }
@@ -5671,7 +7233,8 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
                 // generate our signed domain object
 
-                SignedDomain signedDomain = retrieveSignedDomain(dmod, metaAttr, setMetaDataOnly, masterCopy, includeConditions);
+                SignedDomain signedDomain = retrieveSignedDomain(dmod, metaAttr, setMetaDataOnly,
+                        masterCopy, includeConditions);
 
                 // it's possible that our domain was deleted by another
                 // thread while we were processing this request so
@@ -5695,11 +7258,11 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         EntityTag eTag = new EntityTag(youngest.toString());
 
         return Response.status(ResourceException.OK).entity(sdoms)
-                .header("ETag", eTag.toString()).build();
+                .header("ETag", ENTITY_TAG_HEADER_DELEGATE.toString(eTag)).build();
     }
 
     @Override
-    public JWSDomain getJWSDomain(ResourceContext ctx, String domainName) {
+    public Response getJWSDomain(ResourceContext ctx, String domainName, Boolean signatureP1363Format, String matchingTag) {
 
         final String caller = ctx.getApiName();
 
@@ -5714,71 +7277,75 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         domainName = domainName.toLowerCase();
         setRequestDomain(ctx, domainName);
-
-        // generate our signed domain object
-
-        JWSDomain jwsDomain = retrieveJWSDomain(domainName);
-        if (jwsDomain == null) {
-            throw ZMSUtils.notFoundError("Unable to retrieve domain=" + domainName, caller);
-        }
-
-        return jwsDomain;
-    }
-
-    JWSDomain retrieveJWSDomain(final String domainName) {
-
-        // get the policies, roles, and service identities to create the
-        // DomainData
-
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("retrieveJWSDomain: retrieving domain {}", domainName);
-        }
+        long timestamp = getModTimestamp(matchingTag);
 
         AthenzDomain athenzDomain = getAthenzDomain(domainName, true, false);
         if (athenzDomain == null) {
-            return null;
+            throw ZMSUtils.notFoundError("No such domain: " + domainName, caller);
         }
+
+        long domainModTime = athenzDomain.getDomain().getModified().millis();
+        EntityTag eTag = new EntityTag(athenzDomain.getDomain().getModified().toString());
+
+        if (timestamp != 0 && domainModTime <= timestamp) {
+            return Response
+                    .status(ResourceException.NOT_MODIFIED)
+                    .header("ETag", ENTITY_TAG_HEADER_DELEGATE.toString(eTag))
+                    .build();
+        }
+
+        // generate our signed domain object and return in response
+
+        return Response
+                .status(ResourceException.OK)
+                .entity(generateJWSDomain(athenzDomain, signatureP1363Format))
+                .header("ETag", ENTITY_TAG_HEADER_DELEGATE.toString(eTag))
+                .build();
+    }
+
+    JWSDomain generateJWSDomain(AthenzDomain athenzDomain, Boolean signatureP1363Format) {
 
         // set all domain attributes including roles and services
 
         final Domain domain = athenzDomain.getDomain();
+        final String domainName = domain.getName();
 
         DomainData domainData = new DomainData()
                 .setName(domainName)
                 .setModified(domain.getModified())
-                .setEnabled(domain.getEnabled())
-                .setAuditEnabled(domain.getAuditEnabled())
-                .setAccount(domain.getAccount())
-                .setAzureSubscription(domain.getAzureSubscription())
-                .setYpmId(domain.getYpmId())
-                .setApplicationId(domain.getApplicationId())
-                .setSignAlgorithm(domain.getSignAlgorithm())
-                .setServiceCertExpiryMins(domain.getServiceCertExpiryMins())
-                .setRoleCertExpiryMins(domain.getRoleCertExpiryMins())
-                .setTokenExpiryMins(domain.getTokenExpiryMins())
-                .setServiceExpiryDays(domain.getServiceExpiryDays())
-                .setGroupExpiryDays(domain.getGroupExpiryDays())
-                .setDescription(domain.getDescription())
-                .setOrg(domain.getOrg())
-                .setCertDnsDomain(domain.getCertDnsDomain())
-                .setMemberExpiryDays(domain.getMemberExpiryDays())
-                .setTags(domain.getTags())
-                .setRoles(athenzDomain.getRoles())
-                .setServices(athenzDomain.getServices());
+                .setEnabled(domain.getEnabled());
+        setDomainDataAttributes(domainData, domain);
+
+        // set our roles/groups/entities
+
+        domainData.setRoles(athenzDomain.getRoles());
+        domainData.setGroups(athenzDomain.getGroups());
+        domainData.setServices(athenzDomain.getServices());
+        domainData.setEntities(athenzDomain.getEntities());
 
         // generate the domain policy object that includes the domain
-        // name and all policies.
+        // name and all policies. However, for signature, we're going
+        // generate one for the active policies only without any
+        // conditions for backward compatibility reasons
 
         DomainPolicies domainPolicies = new DomainPolicies().setDomain(domainName);
         domainPolicies.setPolicies(getDomainPolicyList(athenzDomain.getPolicies(), false));
+        final String signature = Crypto.sign(SignUtils.asCanonicalString(domainPolicies), privateKey.getKey());
+
+        // reset the policy list to include all policies
+
+        domainPolicies.setPolicies(athenzDomain.getPolicies());
+
         SignedPolicies signedPolicies = new SignedPolicies();
         signedPolicies.setContents(domainPolicies);
+        signedPolicies.setSignature(signature).setKeyId(privateKey.getId());
+
         domainData.setPolicies(signedPolicies);
 
-        return signJwsDomain(domainData);
+        return signJwsDomain(domainData, signatureP1363Format);
     }
 
-    JWSDomain signJwsDomain(DomainData domainData) {
+    JWSDomain signJwsDomain(DomainData domainData, Boolean signatureP1363Format) {
 
         // https://tools.ietf.org/html/rfc7515#section-7.2.2
         // first generate the json output of our object
@@ -5791,28 +7358,32 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
             // generate our domain data payload and encode it
 
-            final byte[] jsonDomain = jsonMapper.writeValueAsBytes(domainData);
-            final byte[] encodedDomain = encoder.encode(jsonDomain);
+            final byte[] jsonDomainData = jsonMapper.writeValueAsBytes(domainData);
+            final byte[] encodedDomainData = encoder.encode(jsonDomainData);
 
             // generate our protected header - just includes the key id + algorithm
 
             final String protectedHeader = "{\"kid\":\"" + privateKey.getId() + "\",\"alg\":\"" + privateKey.getAlgorithm() + "\"}";
-            final byte[] encodedHeader = encoder.encode(protectedHeader.getBytes(StandardCharsets.UTF_8));
+            final byte[] encodedProtectedHeader = encoder.encode(protectedHeader.getBytes(StandardCharsets.UTF_8));
 
             // combine protectedHeader . payload and sign the result
 
-            final byte[] signature = encoder.encode(Crypto.sign(
-                    Bytes.concat(encodedHeader, PERIOD, encodedDomain), privateKey.getKey(), Crypto.SHA256));
+            byte[] signature = Crypto.sign(Bytes.concat(encodedProtectedHeader, PERIOD, encodedDomainData),
+                    privateKey.getKey(), Crypto.SHA256);
+            if (signatureP1363Format == Boolean.TRUE && privateKey.getAlgorithm() == SignatureAlgorithm.ES256) {
+                signature = Crypto.convertSignatureFromDERToP1363Format(signature, Crypto.SHA256);
+            }
+            final byte[] encodedSignature = encoder.encode(signature);
 
-            // our header contains a single entry with the keyid
+            // our header contains a single entry with the kid
 
             final Map<String, String> headerMap = new HashMap<>();
-            headerMap.put("keyid", privateKey.getId());
+            headerMap.put("kid", privateKey.getId());
 
             jwsDomain = new JWSDomain().setHeader(headerMap)
-                    .setPayload(new String(encodedDomain))
-                    .setProtectedHeader(new String(encodedHeader))
-                    .setSignature(new String(signature));
+                    .setPayload(new String(encodedDomainData))
+                    .setProtectedHeader(new String(encodedProtectedHeader))
+                    .setSignature(new String(encodedSignature));
 
         } catch (Exception ex) {
             LOG.error("Unable to generate signed athenz domain object", ex);
@@ -5833,6 +7404,13 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         List<Policy> policyList = new ArrayList<>();
 
         for (Policy policy : policies) {
+
+            // ignore any inactive/multi-version policies
+
+            if (policy.getActive() == Boolean.FALSE) {
+                continue;
+            }
+
             Policy newPolicy = new Policy()
                     .setModified(policy.getModified())
                     .setName(policy.getName());
@@ -6120,22 +7698,6 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         return true;
     }
 
-    String providerServiceDomain(String provider) {
-        int n = provider.lastIndexOf('.');
-        if (n <= 0 || n == provider.length() - 1) {
-            return null;
-        }
-        return provider.substring(0, n);
-    }
-
-    String providerServiceName(String provider) {
-        int n = provider.lastIndexOf('.');
-        if (n <= 0 || n == provider.length() - 1) {
-            return null;
-        }
-        return provider.substring(n + 1);
-    }
-
     @Override
     public void putTenancy(ResourceContext ctx, String tenantDomain, String provider,
             String auditRef, Tenancy detail) {
@@ -6143,7 +7705,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
@@ -6172,8 +7734,8 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         String authorizedService = ((RsrcCtxWrapper) ctx).principal().getAuthorizedService();
         verifyAuthorizedServiceOperation(authorizedService, caller);
 
-        String provSvcDomain = providerServiceDomain(provider); // provider service domain
-        String provSvcName = providerServiceName(provider); // provider service name
+        String provSvcDomain = ZMSUtils.providerServiceDomain(provider); // provider service domain
+        String provSvcName = ZMSUtils.providerServiceName(provider); // provider service name
 
         // we can't have the provider and tenant be in the same domain
         // as we don't allow delegation of roles onto themselves
@@ -6200,7 +7762,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         if (!Boolean.FALSE.equals(detail.getCreateAdminRole())) {
             // set up our tenant admin policy so provider can check admin's access
 
-            dbService.setupTenantAdminPolicy(tenantDomain, provSvcDomain,
+            dbService.setupTenantAdminPolicy(ctx, tenantDomain, provSvcDomain,
                     provSvcName, auditRef, caller);
         }
 
@@ -6211,6 +7773,33 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         if (authzServiceTokenOperation) {
             setupTenantAdminPolicyInProvider(ctx, provSvcDomain, provSvcName, tenantDomain,
                     false, auditRef, caller);
+
+            // If listed as service provider, register dependency between the provider service and the tenant domain (unless dependency exist
+            // following creation of a previous resource group)
+
+            tenancyRegisterDomainDependency(ctx, tenantDomain, provider, auditRef, caller);
+        }
+    }
+
+    private void tenancyRegisterDomainDependency(ResourceContext ctx, String tenantDomain, String provider,
+                                                 String auditRef, String caller) {
+        if (serviceProviderManager.isServiceProvider(provider)) {
+            DomainList domainList = dbService.listDomainDependencies(provider);
+            if (!domainList.getNames().contains(tenantDomain)) {
+                dbService.putDomainDependency(ctx, tenantDomain, provider, auditRef, caller);
+            }
+        }
+    }
+
+    private void tenancyDeregisterDomainDependency(ResourceContext ctx, String tenantDomain, String provSvcDomain,
+                                                   String provSvcName, String auditRef, String caller) {
+        final String serviceToDeregister = provSvcDomain + "." + provSvcName;
+        if (serviceProviderManager.isServiceProvider(serviceToDeregister)) {
+            boolean tenantDomainRolesExist = isTenantDomainRolesExist(tenantDomain, provSvcDomain, provSvcName);
+            DomainList domainList = dbService.listDomainDependencies(serviceToDeregister);
+            if (!tenantDomainRolesExist && domainList.getNames().contains(tenantDomain)) {
+                dbService.deleteDomainDependency(ctx, tenantDomain, serviceToDeregister, auditRef, caller);
+            }
         }
     }
 
@@ -6220,7 +7809,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
@@ -6244,8 +7833,8 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         // make sure we have a valid provider service
 
-        String provSvcDomain = providerServiceDomain(provider);
-        String provSvcName   = providerServiceName(provider);
+        String provSvcDomain = ZMSUtils.providerServiceDomain(provider);
+        String provSvcName   = ZMSUtils.providerServiceName(provider);
 
         if (dbService.getServiceIdentity(provSvcDomain, provSvcName, true) == null) {
             throw ZMSUtils.notFoundError("Unable to retrieve service: " + provider, caller);
@@ -6261,6 +7850,10 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         if (authzServiceTokenOperation) {
             dbService.executeDeleteTenantRoles(ctx, provSvcDomain, provSvcName, tenantDomain, null,
                 auditRef, caller);
+
+            // If listed as service provider, check if there are remaining resource group roles. If not - de-register dependency between the provider service and the tenant domain
+
+            tenancyDeregisterDomainDependency(ctx, tenantDomain, provSvcDomain, provSvcName, auditRef, caller);
         }
 
         // now clean-up local domain roles and policies for this tenant
@@ -6276,7 +7869,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
@@ -6305,7 +7898,8 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         // validate our detail object against uri components
 
-        if (!validateTenancyObject(detail, tenantDomain, providerDomain + "." + providerService)) {
+        final String provider = providerDomain + "." + providerService;
+        if (!validateTenancyObject(detail, tenantDomain, provider)) {
             throw ZMSUtils.requestError("Invalid tenancy object", caller);
         }
 
@@ -6319,6 +7913,11 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         setupTenantAdminPolicyInProvider(ctx, providerDomain, providerService, tenantDomain,
                 false, auditRef, caller);
+
+        // If listed as service provider, register dependency between the provider service and the tenant domain (unless dependency exist
+        // following creation of a previous resource group)
+
+        tenancyRegisterDomainDependency(ctx, tenantDomain, provider, auditRef, caller);
     }
 
     @Override
@@ -6328,7 +7927,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
@@ -6357,6 +7956,10 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         dbService.executeDeleteTenantRoles(ctx, providerDomain, providerService, tenantDomain,
                 null, auditRef, caller);
+
+        // If listed as service provider, check if there are remaining resource group roles. If not - de-register dependency between the provider service and the tenant domain
+
+        tenancyDeregisterDomainDependency(ctx, tenantDomain, providerDomain, providerService, auditRef, caller);
     }
 
     boolean validateTenancyObject(Tenancy tenant, final String tenantDomain, final String providerService) {
@@ -6385,8 +7988,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         // we must have at least one role in the object
 
-        List<TenantRoleAction> list = roles.getRoles();
-        return (list != null && list.size() > 0);
+        return (!ZMSUtils.isCollectionEmpty(roles.getRoles()));
     }
 
     boolean validateProviderResourceGroupRolesObject(ProviderResourceGroupRoles roles, final String providerDomain,
@@ -6407,8 +8009,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         // we must have at least one role in the object
 
-        List<TenantRoleAction> list = roles.getRoles();
-        return (list != null && list.size() > 0);
+        return (!ZMSUtils.isCollectionEmpty(roles.getRoles()));
     }
 
     // put the trust roles into provider domain
@@ -6421,7 +8022,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
@@ -6476,6 +8077,13 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         dbService.executePutTenantRoles(ctx, provSvcDomain, provSvcName, tenantDomain,
                 resourceGroup, detail.getRoles(), false, auditRef, caller);
+
+        // If listed as service provider, register dependency between the provider service and the tenant domain (unless dependency exist
+        // following creation of a previous resource group)
+
+        final String provider = provSvcDomain + "." + provSvcName;
+        tenancyRegisterDomainDependency(ctx, tenantDomain, provider, auditRef, caller);
+
         return detail;
     }
 
@@ -6528,7 +8136,6 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         // look for dangling roles and policies
         //
         int assertionCount = 0;
-        int roleWildcardCount = 0;
         Set<String> usedRoleSet = new HashSet<>(); // keep track of roles used by policies
         Set<String> providerSet = new HashSet<>(); // keep track of providers from assume_role policies
 
@@ -6538,6 +8145,13 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         List<DanglingPolicy> danglingPolicies = new ArrayList<>();
         List<Policy> policies = domain.getPolicies();
         for (Policy policy : policies) {
+
+            // ignore any inactive/multi-version policies
+
+            if (policy.getActive() == Boolean.FALSE) {
+                continue;
+            }
+
             String pname = ZMSUtils.removeDomainPrefix(policy.getName(), domainName, POLICY_PREFIX);
             if (LOG.isDebugEnabled()) {
                 LOG.debug("getDomainDataCheck: processing policy={} in domain={}", pname, domainName);
@@ -6576,29 +8190,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
                 }
 
                 String roleName = assertion.getRole();
-
-                // check for wildcard role
-                if (roleName.lastIndexOf('*') != -1) {
-                    roleWildcardCount++;
-                    // make sure there is at least 1 role that can match
-                    // this wildcard - else its a dangling policy
-                    String rolePattern = StringUtils.patternFromGlob(roleName);
-                    boolean wildCardMatch = false;
-                    for (String role: roleSet) {
-                        if (role.matches(rolePattern)) {
-                            wildCardMatch = true;
-                            break;
-                        }
-                    }
-                    if (!wildCardMatch) { // dangling policy
-                        DanglingPolicy dp = new DanglingPolicy();
-                        // we need to remove the domain:role. and domain:policy prefixes
-                        // according to RDL definitions for role and policy names
-                        dp.setRoleName(ZMSUtils.removeDomainPrefix(roleName, domainName, ROLE_PREFIX));
-                        dp.setPolicyName(ZMSUtils.removeDomainPrefix(pname, domainName, POLICY_PREFIX));
-                        danglingPolicies.add(dp);
-                    }
-                } else if (roleSet.contains(roleName)) {
+                if (roleSet.contains(roleName)) {
                     usedRoleSet.add(roleName);
                 } else { // dangling policy
                     DanglingPolicy dp = new DanglingPolicy();
@@ -6614,7 +8206,6 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         DomainDataCheck ddc = new DomainDataCheck();
         ddc.setPolicyCount(policies.size());
         ddc.setAssertionCount(assertionCount);
-        ddc.setRoleWildCardCount(roleWildcardCount);
         if (!danglingPolicies.isEmpty()) {
             ddc.setDanglingPolicies(danglingPolicies);
         }
@@ -6633,8 +8224,8 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         }
 
         if (LOG.isDebugEnabled()) {
-            LOG.debug("getDomainDataCheck: domain={} policy-count={} assertion-count={} wildcard-count={} dangling-policies={} dangling-roles={}",
-                    domainName, policies.size(), assertionCount, roleWildcardCount, danglingPolicies.size(), roleSet.size());
+            LOG.debug("getDomainDataCheck: domain={} policy-count={} assertion-count={} dangling-policies={} dangling-roles={}",
+                    domainName, policies.size(), assertionCount, danglingPolicies.size(), roleSet.size());
         }
 
         // Tenant Domain Check: does each provider fully support this tenant?
@@ -6653,9 +8244,9 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             int idx = provSvc.indexOf(".res_group.");
             String provSvcDomain;
             if (idx == -1) {
-                provSvcDomain = providerServiceDomain(provSvc);
+                provSvcDomain = ZMSUtils.providerServiceDomain(provSvc);
             } else {
-                provSvcDomain = providerServiceDomain(provSvc.substring(0, idx));
+                provSvcDomain = ZMSUtils.providerServiceDomain(provSvc.substring(0, idx));
             }
 
             AthenzDomain providerDomain = getAthenzDomain(provSvcDomain, true);
@@ -6725,6 +8316,12 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
             // Check for assume_role containing the provider in the tenantDomain
             for (Policy policy : tenantDomain.getPolicies()) {
+
+                // ignore any inactive/multi-version policies
+                if (policy.getActive() == Boolean.FALSE) {
+                    continue;
+                }
+
                 List<Assertion> assertions = policy.getAssertions();
                 if (assertions == null) {
                     continue;
@@ -6753,13 +8350,14 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         return ddc;
     }
 
+    @Override
     public void deleteProviderResourceGroupRoles(ResourceContext ctx, String tenantDomain,
              String provSvcDomain, String provSvcName, String resourceGroup, String auditRef) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
@@ -6798,7 +8396,23 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
             dbService.executeDeleteTenantRoles(ctx, provSvcDomain, provSvcName, tenantDomain,
                 resourceGroup, auditRef, caller);
+
+            // If listed as service provider, check if there are remaining resource group roles.
+            // If not - de-register dependency between the provider service and the tenant domain
+
+            tenancyDeregisterDomainDependency(ctx, tenantDomain, provSvcDomain, provSvcName, auditRef, caller);
         }
+    }
+
+    private boolean isTenantDomainRolesExist(String tenantDomain, String provSvcDomain, String provSvcName) {
+        final String provider = provSvcDomain + "." + provSvcName;
+        List<String> dependentResourceGroups = getDependentServiceResourceGroupList(tenantDomain).getServiceAndResourceGroups().stream()
+                .filter(dependency -> dependency.getDomain().equals(tenantDomain) && dependency.getService().equals(provider))
+                .findAny()
+                .map(DependentServiceResourceGroup::getResourceGroups)
+                .orElse(new ArrayList<>());
+
+        return !dependentResourceGroups.isEmpty();
     }
 
     public ProviderResourceGroupRoles getProviderResourceGroupRoles(ResourceContext ctx, String tenantDomain,
@@ -6893,8 +8507,8 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
     }
 
     /**
-     * This sets up the assume roles in the tenant. If the tenants admin user
-     * token has been authorized by the provider, the providers domain will be
+     * This sets up the assume roles in the tenant. If the tenant's admin user
+     * token has been authorized by the provider, the provider's domain will be
      * updated as well, thus completing the tenancy on-boarding in a single step.
     **/
     @Override
@@ -6905,7 +8519,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
@@ -6953,11 +8567,10 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         if (!Boolean.FALSE.equals(detail.getCreateAdminRole())) {
             // set up our tenant admin policy so provider can check admin's access
-
-            dbService.setupTenantAdminPolicy(tenantDomain, provSvcDomain, provSvcName, auditRef, caller);
+            dbService.setupTenantAdminPolicy(ctx, tenantDomain, provSvcDomain, provSvcName, auditRef, caller);
         }
 
-        // now we're going to setup our roles
+        // now we're going to set up our roles
 
         List<TenantRoleAction> roleActions = detail.getRoles();
         List<String> roles = new ArrayList<>();
@@ -6969,7 +8582,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         // based on its action and set the caller as a member in each role
 
         dbService.executePutProviderRoles(ctx, tenantDomain, provSvcDomain, provSvcName, resourceGroup,
-            roles, auditRef, caller);
+            roles, detail.getSkipPrincipalMember(), auditRef, caller);
 
         // at this point the tenant side is complete. If the token was a chained
         // token signed by the provider service then we're going to process the
@@ -6978,7 +8591,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         String authorizedService = ((RsrcCtxWrapper) ctx).principal().getAuthorizedService();
         if (isAuthorizedProviderService(authorizedService, provSvcDomain, provSvcName, ((RsrcCtxWrapper) ctx).principal())) {
 
-            // first we need to setup the admin roles in case this
+            // first we need to set up the admin roles in case this
             // happens to be the first resource group
 
             setupTenantAdminPolicyInProvider(ctx, provSvcDomain, provSvcName, tenantDomain,
@@ -6988,6 +8601,11 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
             dbService.executePutTenantRoles(ctx, provSvcDomain, provSvcName, tenantDomain,
                     resourceGroup, roleActions, false, auditRef, caller);
+
+            // If listed as service provider, register dependency between the provider service and the tenant domain (unless dependency exist
+            // following creation of a previous resource group)
+
+            tenancyRegisterDomainDependency(ctx, tenantDomain, authorizedService, auditRef, caller);
         }
 
         return detail;
@@ -7013,7 +8631,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         // if no match then we're going to default action of empty string
 
-        Policy policy = dbService.getPolicy(provSvcDomain, roleName); // policy has same name
+        Policy policy = dbService.getPolicy(provSvcDomain, roleName, null); // policy has same name
         if (policy == null) {
             return "";
         }
@@ -7092,13 +8710,14 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         return troles;
     }
 
+    @Override
     public void deleteTenantResourceGroupRoles(ResourceContext ctx, String provSvcDomain,
             String provSvcName, String tenantDomain, String resourceGroup, String auditRef) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
@@ -7125,10 +8744,68 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         dbService.executeDeleteTenantRoles(ctx, provSvcDomain, provSvcName, tenantDomain,
                 resourceGroup, auditRef, caller);
+
+        // If listed as service provider, check if there are remaining resource group roles.
+        // If not - de-register dependency between the provider service and the tenant domain
+
+        tenancyDeregisterDomainDependency(ctx, tenantDomain, provSvcDomain, provSvcName, auditRef, caller);
     }
 
     void validateRequest(HttpServletRequest request, String caller) {
         validateRequest(request, caller, false);
+    }
+
+    void validateResourceOwner(final String resourceOwner, final String caller) {
+        if (!StringUtil.isEmpty(resourceOwner)) {
+            validate(resourceOwner, TYPE_SIMPLE_NAME, caller);
+            if (resourceOwner.length() > 32) {
+                throw ZMSUtils.requestError("Invalid resource owner: " + resourceOwner +
+                        " : name length cannot exceed 32 characters", caller);
+            }
+        }
+    }
+
+    void validateResourceOwnership(ResourceDomainOwnership resourceOwnership, final String caller) {
+        if (resourceOwnership == null) {
+            throw ZMSUtils.requestError("Invalid resource domain ownership: null", caller);
+        }
+        validateResourceOwner(resourceOwnership.getObjectOwner(), caller);
+        validateResourceOwner(resourceOwnership.getMetaOwner(), caller);
+    }
+
+    void validateResourceOwnership(ResourceRoleOwnership resourceOwnership, final String caller) {
+        if (resourceOwnership == null) {
+            throw ZMSUtils.requestError("Invalid resource role ownership: null", caller);
+        }
+        validateResourceOwner(resourceOwnership.getObjectOwner(), caller);
+        validateResourceOwner(resourceOwnership.getMetaOwner(), caller);
+        validateResourceOwner(resourceOwnership.getMembersOwner(), caller);
+    }
+
+    void validateResourceOwnership(ResourceGroupOwnership resourceOwnership, final String caller) {
+        if (resourceOwnership == null) {
+            throw ZMSUtils.requestError("Invalid resource group ownership: null", caller);
+        }
+        validateResourceOwner(resourceOwnership.getObjectOwner(), caller);
+        validateResourceOwner(resourceOwnership.getMetaOwner(), caller);
+        validateResourceOwner(resourceOwnership.getMembersOwner(), caller);
+    }
+
+    void validateResourceOwnership(ResourcePolicyOwnership resourceOwnership, final String caller) {
+        if (resourceOwnership == null) {
+            throw ZMSUtils.requestError("Invalid resource policy ownership: null", caller);
+        }
+        validateResourceOwner(resourceOwnership.getObjectOwner(), caller);
+        validateResourceOwner(resourceOwnership.getAssertionsOwner(), caller);
+    }
+
+    void validateResourceOwnership(ResourceServiceIdentityOwnership resourceOwnership, final String caller) {
+        if (resourceOwnership == null) {
+            throw ZMSUtils.requestError("Invalid resource service ownership: null", caller);
+        }
+        validateResourceOwner(resourceOwnership.getObjectOwner(), caller);
+        validateResourceOwner(resourceOwnership.getPublicKeysOwner(), caller);
+        validateResourceOwner(resourceOwnership.getHostsOwner(), caller);
     }
 
     void validateRequest(HttpServletRequest request, String caller, boolean statusRequest) {
@@ -7136,7 +8813,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         // first validate if we're required process this over TLS only
 
         if (secureRequestsOnly && !request.isSecure()) {
-            throw ZMSUtils.requestError(caller + "request must be over TLS", caller);
+            throw ZMSUtils.requestError(caller + " request must be over TLS", caller);
         }
 
         // second check if this is a status port so we can only
@@ -7159,26 +8836,14 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
     }
 
     void validate(Object val, String type, String caller) {
-        if (val == null) {
-            throw ZMSUtils.requestError("Missing or malformed " + type, caller);
-        }
-
-        try {
-            Result result = validator.validate(val, type);
-            if (!result.valid) {
-                throw ZMSUtils.requestError("Invalid " + type + " error: " + result.error, caller);
-            }
-        } catch (Exception ex) {
-            LOG.error("Object validation exception", ex);
-            throw ZMSUtils.requestError("Invalid " + type + " error: " + ex.getMessage(), caller);
-        }
+        ZMSUtils.validateObject(validator, val, type, caller);
     }
 
     List<String> validatedAdminUsers(List<String> lst) {
 
         final String caller = "validatedadminusers";
 
-        if (lst == null || lst.size() == 0) {
+        if (ZMSUtils.isCollectionEmpty(lst)) {
             throw ZMSUtils.requestError("validatedAdminUsers: Missing adminUsers", caller);
         }
         Set<String> users = new HashSet<>();
@@ -7189,8 +8854,28 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         return new ArrayList<>(users);
     }
 
+    void updateResourceDomainOwnership(ResourceContext ctx, final String domainName,
+            ResourceDomainOwnership resourceOwnership, final String auditRef, final String caller) {
+
+        if (resourceOwnership == null) {
+            return;
+        }
+
+        // need to apply the resource ownership if required, but we'll ignore any errors
+        // since this is not critical for the operation and the changes
+        // have already been successfully applied in the data store. the error
+        // has already been logged by the generated exception so no need to log it again
+
+        try {
+            dbService.executePutResourceDomainOwnership(ctx, domainName, resourceOwnership, auditRef, caller);
+        } catch (Exception ignored) {
+        }
+    }
+
     Domain createTopLevelDomain(ResourceContext ctx, Domain domain, List<String> adminUsers,
-                List<String> solutionTemplates, String auditRef) {
+                List<String> solutionTemplates, ResourceDomainOwnership resourceOwnership,
+                final String auditRef, final String caller) {
+
         List<String> users = validatedAdminUsers(adminUsers);
         Domain newDomain = dbService.makeDomain(ctx, domain, users, solutionTemplates, auditRef);
 
@@ -7198,11 +8883,17 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         // the meta attributes in the meta store if required
 
         updateNewDomainMetaStoreDetails(domain);
+
+        // update resource ownership if required
+
+        updateResourceDomainOwnership(ctx, domain.getName(), resourceOwnership, auditRef, caller);
+
         return newDomain;
     }
 
     Domain createSubDomain(ResourceContext ctx, Domain domain, List<String> adminUsers,
-                List<String> solutionTemplates, String auditRef, String caller) {
+                List<String> solutionTemplates, ResourceDomainOwnership resourceOwnership,
+                String auditRef, String caller) {
 
         // verify length of full sub domain name
 
@@ -7218,6 +8909,11 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         // the meta attributes in the meta store if required
 
         updateNewDomainMetaStoreDetails(domain);
+
+        // update resource ownership if required
+
+        updateResourceDomainOwnership(ctx, domain.getName(), resourceOwnership, auditRef, caller);
+
         return newDomain;
     }
 
@@ -7360,7 +9056,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             LOG.debug("putDefaultAdmins: domain={}", domainName);
         }
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
@@ -7405,11 +9101,17 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
                 LOG.info("putDefaultAdmins: Adding domain admin role because no domain admin role was found for domain: {}", domainName);
             }
             adminRole = ZMSUtils.makeAdminRole(domainName, new ArrayList<>());
-            dbService.executePutRole(ctx, domainName, ADMIN_ROLE_NAME, adminRole, auditRef, caller);
+            dbService.executePutRole(ctx, domainName, ADMIN_ROLE_NAME, adminRole, null, auditRef, caller, false);
         }
 
         Policy adminPolicy = null;
         for (Policy policy : domain.getPolicies()) {
+
+            // ignore any inactive/multi-version policies
+            if (policy.getActive() == Boolean.FALSE) {
+                continue;
+            }
+
             if (ADMIN_POLICY_NAME.equals(ZMSUtils.removeDomainPrefix(policy.getName(), domainName, POLICY_PREFIX))) {
                 adminPolicy = policy;
                 break;
@@ -7426,7 +9128,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             }
             //Create and add the admin policy
             adminPolicy = ZMSUtils.makeAdminPolicy(domainName, adminRole);
-            dbService.executePutPolicy(ctx, domainName, ADMIN_POLICY_NAME, adminPolicy, auditRef, caller);
+            dbService.executePutPolicy(ctx, domainName, ADMIN_POLICY_NAME, adminPolicy, null, auditRef, caller, false);
         }
 
         addDefaultAdminAssertion(ctx, domainName, adminPolicy, auditRef, caller);
@@ -7497,7 +9199,9 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             adminPolicy.setAssertions(new ArrayList<>());
         }
         ZMSUtils.addAssertion(adminPolicy, domainAllResources, "*", domainAdminRole, AssertionEffect.ALLOW);
-        dbService.executePutPolicy(ctx, domainName, ADMIN_POLICY_NAME, adminPolicy, auditRef, caller);
+        Policy originalPolicy = dbService.getPolicy(domainName, ADMIN_POLICY_NAME, adminPolicy.getVersion());
+        dbService.executePutPolicy(ctx, domainName, ADMIN_POLICY_NAME, adminPolicy, originalPolicy,
+                auditRef, caller, false);
     }
 
     void removeAdminDenyAssertions(ResourceContext ctx, final String domainName, List<Policy> policies,
@@ -7565,16 +9269,8 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             }
 
             String policyName = ZMSUtils.removeDomainPrefix(policy.getName(), domainName, POLICY_PREFIX);
-            if (assertions.size() == 0) {
-                if (LOG.isInfoEnabled()) {
-                    LOG.info("Removing  policy: {} because it did not have any assertions after removing a DENY" +
-                            " assertion for the domain admin role.", policyName);
-                }
-
-                dbService.executeDeletePolicy(ctx, domainName, policyName, auditRef, caller);
-            } else {
-                dbService.executePutPolicy(ctx, domainName, policyName, policy, auditRef, caller);
-            }
+            Policy originalPolicy = dbService.getPolicy(domainName, policyName, policy.getVersion());
+            dbService.executePutPolicy(ctx, domainName, policyName, policy, originalPolicy, auditRef, caller, false);
         }
     }
 
@@ -7599,7 +9295,14 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
                                 adminName, roleName);
                     }
 
-                    dbService.executeDeleteMembership(ctx, domainName, roleName, adminName, auditRef, caller);
+                    // we're going to ignore any exceptions and just log the errors
+
+                    try {
+                        dbService.executeDeleteMembership(ctx, domainName, roleName, adminName, auditRef, caller);
+                    } catch (Exception ex) {
+                        LOG.error("removeAdminMembers: unable to remove member: {} from role: {}, error: {}",
+                                adminName, roleName, ex.getMessage());
+                    }
                 }
             }
         }
@@ -7619,7 +9322,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
                 }
                 RoleMember roleMember = new RoleMember().setMemberName(adminName);
                 dbService.executePutMembership(ctx, domainName, ADMIN_ROLE_NAME,
-                        roleMember, auditRef, caller);
+                        roleMember, auditRef, caller, false);
             }
         }
     }
@@ -7824,6 +9527,39 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
     }
 
     @Override
+    public Info getInfo(ResourceContext ctx) {
+
+        final String caller = ctx.getApiName();
+        logPrincipal(ctx);
+        validateRequest(ctx.request(), caller);
+
+        if (serverInfo == null) {
+            fetchInfoFromManifest(ctx.servletContext());
+        }
+
+        return serverInfo;
+    }
+
+    synchronized void fetchInfoFromManifest(ServletContext servletContext) {
+
+        if (serverInfo != null) {
+            return;
+        }
+        Info info = new Info();
+        Properties prop = new Properties();
+        try {
+            prop.load(servletContext.getResourceAsStream("/META-INF/MANIFEST.MF"));
+            info.setBuildJdkSpec(prop.getProperty("Build-Jdk-Spec"));
+            info.setImplementationTitle(prop.getProperty("Implementation-Title"));
+            info.setImplementationVendor(prop.getProperty("Implementation-Vendor"));
+            info.setImplementationVersion(prop.getProperty("Implementation-Version"));
+        } catch (Exception ex) {
+            LOG.error("Unable to read war /META-INF/MANIFEST.MF", ex);
+        }
+        serverInfo = info;
+    }
+
+    @Override
     public Status getStatus(ResourceContext ctx) {
 
         final String caller = ctx.getApiName();
@@ -7833,11 +9569,11 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         validateRequest(ctx.request(), caller, true);
 
-        // for now we're going to verify our database connectivity
-        // in case of failure we're going to return not found
+        // we're going to verify our database connectivity
+        // by listing our system domains. In case of failure
+        // we're going to return not found
 
-        DomainList dlist = listDomains(null, null, null, null, 0, false);
-        if (dlist.getNames() == null || dlist.getNames().isEmpty()) {
+        if (dbService.listDomains(SYS_AUTH, 0, false).isEmpty()) {
             throw ZMSUtils.notFoundError("Error - no domains available", caller);
         }
 
@@ -7891,23 +9627,25 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         // we are going to log our principal and validate that it
         // contains expected data
 
-        final Principal ctxPrincipal = ((RsrcCtxWrapper) ctx).principal();
-        ((RsrcCtxWrapper) ctx).logPrincipal(ctxPrincipal);
-        if (ctxPrincipal != null && ctxPrincipal.getFullName() != null) {
-            validate(ctxPrincipal.getFullName(), TYPE_SERVICE_NAME, "logPrincipal");
+        final String principalName = ((RsrcCtxWrapper) ctx).logPrincipal();
+        if (principalName != null) {
+            validate(principalName, TYPE_SERVICE_NAME, "logPrincipal");
         }
     }
 
-    public ResourceContext newResourceContext(HttpServletRequest request,
-                                              HttpServletResponse response,
-                                              String apiName) {
+    public ResourceContext newResourceContext(ServletContext servletContext, HttpServletRequest request,
+            HttpServletResponse response, String apiName) {
+
         Object timerMetric = metric.startTiming("zms_api_latency", null, null, request.getMethod(), apiName.toLowerCase());
+
         // check to see if we want to allow this URI to be available
         // with optional authentication support
 
         boolean optionalAuth = StringUtils.requestUriMatch(request.getRequestURI(),
                 authFreeUriSet, authFreeUriList);
-        return new RsrcCtxWrapper(request, response, authorities, optionalAuth, this, timerMetric, apiName);
+        boolean eventPublishersEnabled = !domainChangePublishers.isEmpty();
+        return new RsrcCtxWrapper(servletContext, request, response, authorities, optionalAuth, this,
+                timerMetric, apiName, eventPublishersEnabled);
     }
 
     @Override
@@ -7918,7 +9656,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
     static String getServerHostName() {
 
         String serverHostName = System.getProperty(ZMSConsts.ZMS_PROP_HOSTNAME);
-        if (serverHostName == null || serverHostName.isEmpty()) {
+        if (StringUtil.isEmpty(serverHostName)) {
             try {
                 InetAddress localhost = java.net.InetAddress.getLocalHost();
                 serverHostName = localhost.getCanonicalHostName();
@@ -7937,9 +9675,9 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         Authority authority;
         try {
-            authority = (Authority) Class.forName(className).newInstance();
-        } catch (InstantiationException | IllegalAccessException | ClassNotFoundException e) {
-            LOG.error("Invalid Authority class: {} error: {}", className, e.getMessage());
+            authority = (Authority) Class.forName(className).getDeclaredConstructor().newInstance();
+        } catch (Exception ex) {
+            LOG.error("Invalid Authority class: {}", className, ex);
             return null;
         }
         return authority;
@@ -7957,19 +9695,12 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
     boolean isAllowedSystemMetaDelete(Principal principal, final String reqDomain, final String attribute,
             final String objectType) {
 
-        // the authorization policy resides in official sys.auth domain
-
-        AthenzDomain domain = getAthenzDomain(SYS_AUTH, true);
-
         // evaluate our domain's roles and policies to see if access
         // is allowed or not for the given operation and resource
         // our action are always converted to lowercase
 
         String resource = SYS_AUTH + ":meta." + objectType + "." + attribute + "." + reqDomain;
-        AccessStatus accessStatus = evaluateAccess(domain, principal.getFullName(), "delete",
-                resource, null, null, principal);
-
-        return accessStatus == AccessStatus.ALLOWED;
+        return isAllowedSystemAccess(principal, "delete", resource);
     }
 
     @Override
@@ -7979,7 +9710,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
@@ -8012,16 +9743,18 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
     }
 
     @Override
-    public void putRoleMeta(ResourceContext ctx, String domainName, String roleName, String auditRef, RoleMeta meta) {
+    public void putRoleMeta(ResourceContext ctx, String domainName, String roleName, String auditRef,
+            String resourceOwner, RoleMeta meta) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
+        validateResourceOwner(resourceOwner, caller);
         validate(domainName, TYPE_DOMAIN_NAME, caller);
         validate(roleName, TYPE_ENTITY_NAME, caller);
 
@@ -8042,6 +9775,10 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         roleName = roleName.toLowerCase();
         AthenzObject.ROLE_META.convertToLowerCase(meta);
 
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("putRoleMeta: name={}, role={} meta={}", domainName, roleName, meta);
+        }
+
         // validate the user authority settings if they're provided
 
         validateUserAuthorityAttributes(meta.getUserAuthorityFilter(), meta.getUserAuthorityExpiration(), caller);
@@ -8053,10 +9790,30 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         // make sure to fetch our domain and role objects
 
-        Role role = dbService.getRole(domainName, roleName, false, false, false);
+        AthenzDomain domain = getAthenzDomain(domainName, false);
+        Role role = getRoleFromDomain(roleName, domain);
+
         if (role == null) {
-            throw ZMSUtils.notFoundError("Invalid role name specified", caller);
+            throw ZMSUtils.notFoundError("Invalid domain/role name specified", caller);
         }
+
+        // validate audit enabled flag for the given role
+
+        validateRoleMetaAuditEnabledFlag(meta, role, domain.getDomain(), caller);
+
+        // authorization check since we have 2 actions: update and update_meta
+        // that allow access callers to manage metadata in a role
+
+        if (!isAllowedPutRoleMetaAccess(principal, domain, role.getName())) {
+            throw ZMSUtils.forbiddenError("putRoleMeta: principal is not authorized to update metadata", caller);
+        }
+
+        // verify resource ownership for the request. If the object returned
+        // is not null then it indicates that the object must be modified
+        // with the given resource ownership details
+
+        ResourceRoleOwnership resourceOwnership = ResourceOwnership.verifyRoleMetaResourceOwnership(
+                role, resourceOwner, caller);
 
         // we need to validate that if the role contains groups then the
         // group members must have the same filters otherwise we will not
@@ -8065,11 +9822,25 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         validateGroupMemberAuthorityAttributes(role, meta.getUserAuthorityFilter(),
                 meta.getUserAuthorityExpiration(), caller);
 
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("putRoleMeta: name={}, role={} meta={}", domainName, roleName, meta);
-        }
-
         dbService.executePutRoleMeta(ctx, domainName, roleName, role, meta, auditRef, caller);
+
+        // update resource ownership if required
+
+        updateResourceRoleOwnership(ctx, domainName, roleName, resourceOwnership, auditRef, caller);
+    }
+
+    void validateRoleMetaAuditEnabledFlag(RoleMeta meta, Role role, Domain domain, final String caller) {
+
+        if (meta.getAuditEnabled() == Boolean.TRUE) {
+            if (domain.getAuditEnabled() != Boolean.TRUE) {
+                throw ZMSUtils.requestError("Role cannot be set as audit-enabled if the domain is not audit-enabled", caller);
+            }
+            if (role.getAuditEnabled() != Boolean.TRUE && role.getRoleMembers() != null && !role.getRoleMembers().isEmpty()) {
+                throw ZMSUtils.requestError("Only system admins can set the role as audit-enabled if it already has members", caller);
+            }
+        } else {
+            meta.setAuditEnabled(role.getAuditEnabled());
+        }
     }
 
     void validateGroupMemberAuthorityAttributes(Role role, final String userAuthorityFilter,
@@ -8084,10 +9855,11 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         // go through all role members and if we have any groups validate
         // that the group has the requested filters set
 
-        for (RoleMember roleMember : role.getRoleMembers()) {
+        for (RoleMember roleMember : ZMSUtils.emptyIfNull(role.getRoleMembers())) {
 
             final String memberName = roleMember.getMemberName();
-            if (ZMSUtils.principalType(memberName, userDomainPrefix, addlUserCheckDomainPrefixList) != Principal.Type.GROUP) {
+            if (PrincipalUtils.principalType(memberName, userDomainPrefix, addlUserCheckDomainPrefixList,
+                    headlessUserDomainPrefix) != Principal.Type.GROUP) {
                 continue;
             }
 
@@ -8125,7 +9897,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
@@ -8202,10 +9974,14 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
             final String userAuthorityFilter = enforcedUserAuthorityFilter(role.getUserAuthorityFilter(),
                     domain.getDomain().getUserAuthorityFilter());
-            boolean disallowGroups = ADMIN_ROLE_NAME.equals(roleName);
+            Set<String> userAuthorityFilterSet = StringUtil.isEmpty(userAuthorityFilter) ?
+                    null : Set.of(userAuthorityFilter.split(","));
+
+            boolean disallowGroups = disallowGroupsInAdminRole.get() == Boolean.TRUE && ADMIN_ROLE_NAME.equals(roleName);
+            PrincipalDomainFilter principalDomainFilter = new PrincipalDomainFilter(role.getPrincipalDomainFilter());
             validateRoleMemberPrincipal(roleMember.getMemberName(), roleMember.getPrincipalType(),
-                    userAuthorityFilter, role.getUserAuthorityExpiration(), role.getAuditEnabled(),
-                    disallowGroups, caller);
+                    userAuthorityFilterSet, role.getUserAuthorityExpiration(), principalDomainFilter,
+                    role.getAuditEnabled(), disallowGroups, caller);
         }
 
         dbService.executePutMembershipDecision(ctx, domainName, roleName, roleMember, auditRef, caller);
@@ -8220,41 +9996,36 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         // out the authorization in the sys.auth.audit domains
 
         if (role.getAuditEnabled() == Boolean.TRUE) {
+
             if (!isAllowedAuditRoleMembershipApproval(principal, domain)) {
                 throw ZMSUtils.forbiddenError("principal " + principal.getFullName()
                         + " is not authorized to approve / reject members", caller);
             }
-            return;
-        }
 
-        // otherwise we're going to do a standard check if the principal
-        // is authorized to update the domain role membership
+        } else {
 
-        if (!isAllowedPutMembershipAccess(principal, domain, role.getName())) {
-            throw ZMSUtils.forbiddenError("principal " + principal.getFullName()
-                    + " is not authorized to approve / reject members", caller);
+            // otherwise, we're going to do a standard check if the principal
+            // is authorized to update the domain role membership
+
+            if (!isAllowedPutMembershipAccess(principal, domain, role.getName())) {
+                throw ZMSUtils.forbiddenError("principal " + principal.getFullName()
+                        + " is not authorized to approve / reject members", caller);
+            }
         }
 
         // if the user is allowed to make changes in the domain but
-        // the role is review enabled then we need to make sure
+        // the role is review or audit enabled then we need to make sure
         // the approver cannot be the same as the requester
 
-        if (role.getReviewEnabled() == Boolean.TRUE) {
+        if (role.getReviewEnabled() == Boolean.TRUE || role.getAuditEnabled() == Boolean.TRUE) {
 
             Membership pendingMember = dbService.getMembership(domain.getName(),
                     ZMSUtils.extractRoleName(domain.getName(), role.getName()),
                     roleMember.getMemberName(), 0, true);
 
-            // if the member is not found then we're going to throw a not found exception
-
-            if (!pendingMember.getIsMember()) {
-                throw ZMSUtils.notFoundError("pending member " + roleMember.getMemberName()
-                        + " not found", caller);
-            }
-
-            if (pendingMember.getRequestPrincipal().equalsIgnoreCase(principal.getFullName())) {
+            if (principal.getFullName().equalsIgnoreCase(pendingMember.getRequestPrincipal())) {
                 throw ZMSUtils.forbiddenError("principal " + principal.getFullName()
-                        + " cannot approve his/her own request", caller);
+                        + " cannot approve / reject own request", caller);
             }
         }
     }
@@ -8268,41 +10039,36 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         // out the authorization in the sys.auth.audit domains
 
         if (group.getAuditEnabled() == Boolean.TRUE) {
+
             if (!isAllowedAuditRoleMembershipApproval(principal, domain)) {
                 throw ZMSUtils.forbiddenError("principal " + principal.getFullName()
                         + " is not authorized to approve / reject members", caller);
             }
-            return;
-        }
 
-        // otherwise we're going to do a standard check if the principal
-        // is authorized to update the domain group membership
+        } else {
 
-        if (!isAllowedPutMembershipAccess(principal, domain, group.getName())) {
-            throw ZMSUtils.forbiddenError("principal " + principal.getFullName()
-                    + " is not authorized to approve / reject members", caller);
+            // otherwise, we're going to do a standard check if the principal
+            // is authorized to update the domain group membership
+
+            if (!isAllowedPutMembershipAccess(principal, domain, group.getName())) {
+                throw ZMSUtils.forbiddenError("principal " + principal.getFullName()
+                        + " is not authorized to approve / reject members", caller);
+            }
         }
 
         // if the user is allowed to make changes in the domain but
-        // the role is review enabled then we need to make sure
+        // the role is review or audit enabled then we need to make sure
         // the approver cannot be the same as the requester
 
-        if (group.getReviewEnabled() == Boolean.TRUE) {
+        if (group.getReviewEnabled() == Boolean.TRUE || group.getAuditEnabled() == Boolean.TRUE) {
 
             GroupMembership pendingMember = dbService.getGroupMembership(domain.getName(),
                     ZMSUtils.extractGroupName(domain.getName(), group.getName()),
                     groupMember.getMemberName(), 0, true);
 
-            // if the member is not found then we're going to throw a not found exception
-
-            if (!pendingMember.getIsMember()) {
-                throw ZMSUtils.notFoundError("pending member " + groupMember.getMemberName()
-                        + " not found", caller);
-            }
-
-            if (pendingMember.getRequestPrincipal().equalsIgnoreCase(principal.getFullName())) {
+            if (principal.getFullName().equalsIgnoreCase(pendingMember.getRequestPrincipal())) {
                 throw ZMSUtils.forbiddenError("principal " + principal.getFullName()
-                        + " cannot approve his/her own request", caller);
+                        + " cannot approve / reject own request", caller);
             }
         }
     }
@@ -8320,8 +10086,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         // our action are always converted to lowercase
 
         String resource = ZMSConsts.SYS_AUTH_AUDIT_BY_DOMAIN + ":audit." + reqDomain.getDomain().getName();
-        AccessStatus accessStatus = evaluateAccess(authDomain, principal.getFullName(),
-                "update", resource, null, null, principal);
+        AccessStatus accessStatus = hasAccess(authDomain, "update", resource, principal, null);
         if (accessStatus == AccessStatus.ALLOWED) {
             return true;
         }
@@ -8331,16 +10096,16 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         authDomain = getAthenzDomain(ZMSConsts.SYS_AUTH_AUDIT_BY_ORG, true);
         resource = ZMSConsts.SYS_AUTH_AUDIT_BY_ORG + ":audit." + reqDomain.getDomain().getOrg();
-        accessStatus = evaluateAccess(authDomain, principal.getFullName(),
-                "update", resource, null, null, principal);
+        accessStatus = hasAccess(authDomain, "update", resource, principal, null);
 
         return accessStatus == AccessStatus.ALLOWED;
     }
 
     Role getRoleFromDomain(final String roleName, AthenzDomain domain) {
         if (domain != null && domain.getRoles() != null) {
+            final String resourceRoleName = ResourceUtils.roleResourceName(domain.getName(), roleName);
             for (Role role : domain.getRoles()) {
-                if (role.getName().equalsIgnoreCase(ResourceUtils.roleResourceName(domain.getName(), roleName))) {
+                if (role.getName().equalsIgnoreCase(resourceRoleName)) {
                     return role;
                 }
             }
@@ -8350,8 +10115,9 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
     Group getGroupFromDomain(final String groupName, AthenzDomain domain) {
         if (domain != null && domain.getGroups() != null) {
+            final String resourceGroupName = ResourceUtils.groupResourceName(domain.getName(), groupName);
             for (Group group : domain.getGroups()) {
-                if (group.getName().equalsIgnoreCase(ResourceUtils.groupResourceName(domain.getName(), groupName))) {
+                if (group.getName().equalsIgnoreCase(resourceGroupName)) {
                     return group;
                 }
             }
@@ -8359,14 +10125,52 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         return null;
     }
 
-    boolean isAllowedPutMembershipAccess(Principal principal, final AthenzDomain domain, final String roleName) {
+    Policy getPolicyFromDomain(final String policyName, AthenzDomain domain) {
+        if (domain != null && domain.getPolicies() != null) {
+            final String resourcePolicyName = ResourceUtils.policyResourceName(domain.getName(), policyName);
+            for (Policy policy : domain.getPolicies()) {
+                if (policy.getName().equalsIgnoreCase(resourcePolicyName)) {
+                    return policy;
+                }
+            }
+        }
+        return null;
+    }
+
+    boolean isAllowedPutMembershipAccess(Principal principal, final AthenzDomain domain, final String resourceName) {
 
         // evaluate our domain's roles and policies to see if either update or update_members
         // action is allowed for the given role (update allows access to manage both members
         // and metadata while update_members only allows access to manage members).
 
-        return evaluateAccess(domain, principal.getFullName(), "update", roleName, null, null, principal) == AccessStatus.ALLOWED ||
-                evaluateAccess(domain, principal.getFullName(), "update_members", roleName, null, null, principal) == AccessStatus.ALLOWED;
+        return isAllowedActionOnResource(principal, domain, resourceName, "update", "update_members");
+    }
+
+    boolean isAllowedPutRoleMetaAccess(Principal principal, final AthenzDomain domain, final String roleName) {
+
+        // evaluate our domain's roles and policies to see if either update or update_meta
+        // action is allowed for the given role (update allows access to manage both members
+        // and metadata while update_meta only allows access to manage metadata).
+
+        return isAllowedActionOnResource(principal, domain, roleName, "update", "update_meta");
+    }
+
+    private boolean isAllowedActionOnResource(Principal principal, final AthenzDomain domain,
+            final String resourceName, String... actions) {
+
+        // evaluate our domain's roles and policies to see if one of the actions specified
+        // is allowed for the given resource (role or group):
+        // update - allows access to manage both members and metadata
+        // update_members - only allows access to manage members
+        // update_meta - only allows access to manage metadata
+
+        for (String action : actions) {
+            if (hasAccess(domain, action, resourceName, principal, null) == AccessStatus.ALLOWED) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     boolean isAllowedPutMembership(Principal principal, final AthenzDomain domain, final Role role,
@@ -8380,9 +10184,20 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             // can not be set to active/approved. It has to be approved by audit/review admins.
             // for all other roles, set member status to active/approved immediately
 
-            boolean auditEnabled = (role.getAuditEnabled() == Boolean.TRUE || role.getReviewEnabled() == Boolean.TRUE);
-            member.setActive(!auditEnabled);
-            member.setApproved(!auditEnabled);
+            updateRoleMemberActiveState(member, role);
+            return true;
+
+        } else if (isRoleSelfRenewAllowed(role, principal, member)) {
+
+            // even with update access, if the role is audit/review enabled, member status
+            // can not be set to active/approved. It has to be approved by audit/review admins.
+            // for all other roles, set member status to active/approved immediately
+
+            updateRoleMemberActiveState(member, role);
+
+            // we need to update the expiration before returning
+
+            updateRoleMemberSelfRenewExpiration(member, role.getSelfRenewMins());
             return true;
 
         } else if (role.getSelfServe() == Boolean.TRUE) {
@@ -8394,6 +10209,63 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             member.setActive(false);
             member.setApproved(false);
             return true;
+        }
+
+        return false;
+    }
+
+    void updateRoleMemberActiveState(RoleMember member, Role role) {
+
+        // even with update access, if the role is audit/review enabled, member status
+        // can not be set to active/approved. It has to be approved by audit/review admins.
+        // for all other roles, set member status to active/approved immediately
+
+        boolean auditEnabled = (role.getAuditEnabled() == Boolean.TRUE || role.getReviewEnabled() == Boolean.TRUE);
+        member.setActive(!auditEnabled);
+        member.setApproved(!auditEnabled);
+    }
+
+    void updateRoleMemberSelfRenewExpiration(RoleMember member, int expiryMins) {
+
+        // only set the expiry based on the self-renew minutes if the
+        // member either does not have one set or it's set to a value
+        // that is longer than what's configured by the self-renew mins
+
+        long selfRenewExpiry = System.currentTimeMillis() + TimeUnit.MILLISECONDS.convert(expiryMins, TimeUnit.MINUTES);
+        Timestamp memberExpiry = member.getExpiration();
+        if (memberExpiry == null || memberExpiry.millis() > selfRenewExpiry) {
+            member.setExpiration(Timestamp.fromMillis(selfRenewExpiry));
+        }
+    }
+
+    boolean isRoleSelfRenewAllowed(Role role, Principal principal, RoleMember member) {
+
+        // to allow self renew the following conditions must be met
+        // 1. role self-renew option is enabled
+        // 2. role self-renew-mins has valid number of minutes
+        // 3. the principal is the same as the member name
+        // 4. the member is an existing role member (regardless expired or not)
+
+        if (role.getSelfRenew() != Boolean.TRUE) {
+            return false;
+        }
+
+        if (role.getSelfRenewMins() == null || role.getSelfRenewMins() <= 0) {
+            return false;
+        }
+
+        if (!principal.getFullName().equals(member.getMemberName())) {
+            return false;
+        }
+
+        if (role.getRoleMembers() == null) {
+            return false;
+        }
+
+        for (RoleMember roleMember : role.getRoleMembers()) {
+            if (roleMember.getMemberName().equals(member.getMemberName())) {
+                return true;
+            }
         }
 
         return false;
@@ -8419,7 +10291,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
     }
 
     @Override
-    public DomainRoleMembership getPendingDomainRoleMembersList(ResourceContext ctx, String principal) {
+    public DomainRoleMembership getPendingDomainRoleMembersList(ResourceContext ctx, String principal, String domainName) {
 
         final String caller = ctx.getApiName();
 
@@ -8428,49 +10300,63 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         validateRequest(ctx.request(), caller);
 
-        String checkPrincipal;
-        if (principal != null && !principal.isEmpty()) {
+        // validate domain if not null/empty or * (for all domains)
+        String checkDomainName = null;
+        if (!StringUtil.isEmpty(domainName)) {
+            if (!("*".equals(domainName))) {
+                validate(domainName, TYPE_DOMAIN_NAME, caller);
+            }
+            checkDomainName = domainName.toLowerCase();
+        }
+
+        // validate principal if not null/empty
+        // get principal from certificate if domain and principal is null
+
+        String checkPrincipal = null;
+        if (!StringUtil.isEmpty(principal)) {
             validate(principal, TYPE_ENTITY_NAME, caller);
             checkPrincipal = normalizeDomainAliasUser(principal.toLowerCase());
-        } else {
+        } else if (StringUtil.isEmpty(checkDomainName)) {
             checkPrincipal = ctxPrincipal.getFullName();
         }
 
         if (LOG.isDebugEnabled()) {
-            LOG.debug("getpendingdomainrolememberslist principal: ({})", checkPrincipal);
+            LOG.debug("getpendingdomainrolememberslist principal: ({}), domainName: ({})", checkPrincipal, checkDomainName);
         }
 
-        return dbService.getPendingDomainRoleMembers(checkPrincipal);
+        return dbService.getPendingDomainRoleMembers(checkPrincipal, checkDomainName);
     }
 
     @Override
     public UserAuthorityAttributeMap getUserAuthorityAttributeMap(ResourceContext ctx) {
+
         final String caller = ctx.getApiName();
-
         logPrincipal(ctx);
-
         validateRequest(ctx.request(), caller);
 
-        Map<String, UserAuthorityAttributes> attriuteMap = new HashMap<>();
-        attriuteMap.put("bool", new UserAuthorityAttributes().setValues(new ArrayList<>(userAuthority.booleanAttributesSupported())));
-        attriuteMap.put("date", new UserAuthorityAttributes().setValues(new ArrayList<>(userAuthority.dateAttributesSupported())));
+        Map<String, UserAuthorityAttributes> attributeMap = new HashMap<>();
+        if (userAuthority != null) {
+            attributeMap.put("bool", new UserAuthorityAttributes().setValues(new ArrayList<>(userAuthority.booleanAttributesSupported())));
+            attributeMap.put("date", new UserAuthorityAttributes().setValues(new ArrayList<>(userAuthority.dateAttributesSupported())));
+        }
         UserAuthorityAttributeMap userAuthorityAttributeMap = new UserAuthorityAttributeMap();
-        userAuthorityAttributeMap.setAttributes(attriuteMap);
+        userAuthorityAttributeMap.setAttributes(attributeMap);
         return userAuthorityAttributeMap;
     }
 
     @Override
-    public void putRoleReview(ResourceContext ctx, String domainName, String roleName, String auditRef, Role role) {
+    public Response putRoleReview(ResourceContext ctx, String domainName, String roleName, String auditRef,
+            Boolean returnObj, String resourceOwner, Role role) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
-
+        validateResourceOwner(resourceOwner, caller);
         validate(domainName, TYPE_DOMAIN_NAME, caller);
         validate(roleName, TYPE_ENTITY_NAME, caller);
         validate(role, TYPE_ROLE, caller);
@@ -8502,10 +10388,31 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         }
 
         Role dbRole = getRoleFromDomain(roleName, domain);
+        if (dbRole == null) {
+            throw ZMSUtils.notFoundError("No such role: " + roleName, caller);
+        }
+
+        // authorization check: verify the principal is authorized update role membership
+
+        if (!isAllowedPutMembershipAccess(((RsrcCtxWrapper) ctx).principal(), domain, dbRole.getName())) {
+            throw ZMSUtils.forbiddenError("principal is not authorized to review role members", caller);
+        }
+
+        // verify resource ownership for the request. If the object returned
+        // is not null then it indicates that the object must be modified
+        // with the given resource ownership details
+
+        ResourceRoleOwnership resourceOwnership = ResourceOwnership.verifyRoleMembersResourceOwnership(
+                dbRole, resourceOwner, caller);
 
         // normalize and remove duplicate members
 
         normalizeRoleMembers(role);
+
+        // validate all members specified in the review request
+
+        PrincipalDomainFilter principalDomainFilter = new PrincipalDomainFilter(dbRole.getPrincipalDomainFilter());
+        validateRoleMemberPrincipals(role, domain.getDomain().getUserAuthorityFilter(), principalDomainFilter, false, caller);
 
         // update role expiry based on our configurations
 
@@ -8520,11 +10427,43 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         // process our request
 
-        dbService.executePutRoleReview(ctx, domainName, roleName, role, memberExpiryDueDays,
-                memberReminderDueDays, auditRef, caller);
+        Role updatedRole = dbService.executePutRoleReview(ctx, domainName, roleName, role, memberExpiryDueDays,
+                memberReminderDueDays, auditRef, caller, returnObj);
+
+        // update resource ownership if required
+
+        updateResourceRoleOwnership(ctx, domainName, roleName, resourceOwnership, auditRef, caller);
+
+        return ZMSUtils.returnPutResponse(returnObj, updatedRole);
     }
 
-    List<Group> setupGroupList(AthenzDomain domain, Boolean members) {
+    @Override
+    public void putResourceRoleOwnership(ResourceContext ctx, String domainName, String roleName,
+            String auditRef, ResourceRoleOwnership resourceOwnership) {
+
+        final String caller = ctx.getApiName();
+        logPrincipal(ctx);
+
+        if (readOnlyMode.get()) {
+            throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
+        }
+
+        validateRequest(ctx.request(), caller);
+        validate(domainName, TYPE_DOMAIN_NAME, caller);
+        validate(roleName, TYPE_ENTITY_NAME, caller);
+        validateResourceOwnership(resourceOwnership, caller);
+
+        // for consistent handling of all requests, we're going to convert
+        // all incoming object values into lower case
+
+        domainName = domainName.toLowerCase();
+        setRequestDomain(ctx, domainName);
+        roleName = roleName.toLowerCase();
+
+        dbService.executePutResourceRoleOwnership(ctx, domainName, roleName, resourceOwnership, auditRef, caller);
+    }
+
+    List<Group> setupGroupList(AthenzDomain domain, Boolean members, String tagKey, String tagValue) {
 
         // if we're asked to return the members as well then we
         // just need to return the data as is without any modifications
@@ -8543,22 +10482,36 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
                         .setMemberExpiryDays(group.getMemberExpiryDays())
                         .setServiceExpiryDays(group.getServiceExpiryDays())
                         .setReviewEnabled(group.getReviewEnabled())
-                        .setLastReviewedDate(group.getLastReviewedDate());
+                        .setLastReviewedDate(group.getLastReviewedDate())
+                        .setTags(group.getTags());
                 groups.add(newGroup);
             }
+        }
+
+        // filter groups by their tags
+        if (tagKey != null) {
+            groups = groups.stream()
+                    .filter(group -> filterByTag(tagKey, tagValue, group, Group::getTags))
+                    .collect(Collectors.toList());
         }
 
         return groups;
     }
 
     @Override
-    public Groups getGroups(ResourceContext ctx, String domainName, Boolean members) {
+    public Groups getGroups(ResourceContext ctx, String domainName, Boolean members, String tagKey, String tagValue) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
         validateRequest(ctx.request(), caller);
         validate(domainName, TYPE_DOMAIN_NAME, caller);
+        if (!StringUtil.isEmpty(tagKey)) {
+            validate(tagKey, TYPE_TAG_KEY, caller);
+        }
+        if (!StringUtil.isEmpty(tagValue)) {
+            validate(tagValue, TYPE_TAG_COMPOUND_VALUE, caller);
+        }
 
         // for consistent handling of all requests, we're going to convert
         // all incoming object values into lower case (e.g. domain, role,
@@ -8574,7 +10527,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             throw ZMSUtils.notFoundError("Domain not found: '" + domainName + "'", caller);
         }
 
-        result.setList(setupGroupList(domain, members));
+        result.setList(setupGroupList(domain, members, tagKey, tagValue));
         return result;
     }
 
@@ -8661,20 +10614,26 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         group.setGroupMembers(new ArrayList<>(normalizedMembers.values()));
     }
 
-    void validateGroupMemberPrincipals(final Group group, final String domainUserAuthorityFilter, final String caller) {
+    void validateGroupMemberPrincipals(final Group group, final String domainUserAuthorityFilter,
+            PrincipalDomainFilter principalDomainFilter, final String caller) {
 
         // make sure we have either one of the options enabled for verification
 
         final String userAuthorityFilter = enforcedUserAuthorityFilter(group.getUserAuthorityFilter(),
                 domainUserAuthorityFilter);
+        Set<String> userAuthorityFilterSet = StringUtil.isEmpty(userAuthorityFilter) ?
+                null : Set.of(userAuthorityFilter.split(","));
 
         for (GroupMember groupMember : group.getGroupMembers()) {
             validateGroupMemberPrincipal(groupMember.getMemberName(), groupMember.getPrincipalType(),
-                    userAuthorityFilter, caller);
+                    userAuthorityFilterSet, principalDomainFilter, caller);
         }
     }
 
     void updateGroupMemberUserAuthorityExpiry(final Group group, final String caller) {
+
+        // getUserAuthorityExpiryAttr also verifies that we have a valid
+        // user authority configured in the server
 
         final String userAuthorityExpiry = getUserAuthorityExpiryAttr(group.getUserAuthorityExpiration());
         if (userAuthorityExpiry == null) {
@@ -8686,7 +10645,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             // we only process users and automatically ignore services which
             // are not handled by user authority
 
-            if (ZMSUtils.isUserDomainPrincipal(groupMember.getMemberName(), userDomainPrefix,
+            if (PrincipalUtils.isUserDomainPrincipal(groupMember.getMemberName(), userDomainPrefix,
                     addlUserCheckDomainPrefixList)) {
 
                 // if we don't have an expiry specified for the user
@@ -8697,23 +10656,28 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
                     throw ZMSUtils.requestError("Invalid member: " + groupMember.getMemberName() +
                             ". No expiry date attribute specified in user authority", caller);
                 }
-                groupMember.setExpiration(Timestamp.fromDate(expiry));
+
+                // only update the expiry if the current expiry is greater
+                // than the user authority expiry
+
+                groupMember.setExpiration(ZMSUtils.smallestExpiry(groupMember.getExpiration(), Timestamp.fromDate(expiry)));
             }
         }
     }
 
     @Override
-    public void putGroup(ResourceContext ctx, String domainName, String groupName, String auditRef, Group group) {
+    public Response putGroup(ResourceContext ctx, String domainName, String groupName, String auditRef,
+            Boolean returnObj, String resourceOwner, Group group) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
-
+        validateResourceOwner(resourceOwner, caller);
         validate(domainName, TYPE_DOMAIN_NAME, caller);
         validate(groupName, TYPE_ENTITY_NAME, caller);
         validate(group, TYPE_GROUP, caller);
@@ -8749,6 +10713,15 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             throw ZMSUtils.notFoundError("No such domain: " + domainName, caller);
         }
 
+        Group originalGroup = dbService.getGroup(domainName, groupName, false, false);
+
+        // verify resource ownership for the request. If the object returned
+        // is not null then it indicates that the object must be modified
+        // with the given resource ownership details
+
+        ResourceGroupOwnership resourceOwnership = ResourceOwnership.verifyGroupResourceOwnership(
+                originalGroup, !ZMSUtils.isCollectionEmpty(group.getGroupMembers()), resourceOwner, caller);
+
         // normalize and remove duplicate members
 
         normalizeGroupMembers(group);
@@ -8756,15 +10729,12 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         // check to see if we need to validate user and service members
         // and possibly user authority filter restrictions
 
-        validateGroupMemberPrincipals(group, domain.getUserAuthorityFilter(), caller);
+        PrincipalDomainFilter principalDomainFilter = new PrincipalDomainFilter(group.getPrincipalDomainFilter());
+        validateGroupMemberPrincipals(group, domain.getUserAuthorityFilter(), principalDomainFilter, caller);
 
-        // if the group is review enabled then it cannot contain
-        // group members as we want review and audit enabled roles
-        // to be enabled as such and then add individual members
+        // validate group review-enabled and/or audit-enabled flags
 
-        if (group.getReviewEnabled() == Boolean.TRUE && !group.getGroupMembers().isEmpty()) {
-            throw ZMSUtils.requestError("Set review enabled flag using group meta api", caller);
-        }
+        validateGroupReviewAuditFlag(domain, group, caller);
 
         // update group expiry based on our configurations
 
@@ -8777,7 +10747,55 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         // process our request
 
-        dbService.executePutGroup(ctx, domainName, groupName, group, auditRef);
+        Group dbGroup = dbService.executePutGroup(ctx, domainName, groupName, group, originalGroup,
+                auditRef, returnObj);
+
+        // update resource ownership if required
+
+        updateResourceGroupOwnership(ctx, domainName, groupName, resourceOwnership, auditRef, caller);
+
+        return ZMSUtils.returnPutResponse(returnObj, dbGroup);
+    }
+
+    void updateResourceGroupOwnership(ResourceContext ctx, final String domainName, final String groupName,
+            ResourceGroupOwnership resourceOwnership, final String auditRef, final String caller) {
+
+        if (resourceOwnership == null) {
+            return;
+        }
+
+        // need to apply the resource ownership if required, but we'll ignore any errors
+        // since this is not critical for the operation and the changes
+        // have already been successfully applied in the data store. the error
+        // has already been logged by the generated exception so no need to log it again
+
+        try {
+            dbService.executePutResourceGroupOwnership(ctx, domainName, groupName, resourceOwnership,
+                    auditRef, caller);
+        } catch (Exception ignored) {
+        }
+    }
+
+    void validateGroupReviewAuditFlag(final Domain domain, final Group group, final String caller) {
+
+        // group cannot be requested to be audit-enabled if the domain is not audit enabled
+
+        if (group.getAuditEnabled() == Boolean.TRUE && domain.getAuditEnabled() != Boolean.TRUE) {
+            throw ZMSUtils.requestError("Group cannot be set as audit-enabled if the domain is not audit-enabled", caller);
+        }
+
+        // if the group is review and/or audit enabled then it cannot contain
+        // group members as we want review and audit enabled roles
+        // to be enabled as such and then add individual members
+
+        if (!group.getGroupMembers().isEmpty()) {
+            if (group.getReviewEnabled() == Boolean.TRUE) {
+                throw ZMSUtils.requestError("Set review-enabled flag using group meta api", caller);
+            }
+            if (group.getAuditEnabled() == Boolean.TRUE) {
+                throw ZMSUtils.requestError("Only system admins can set the group as audit-enabled if it has members", caller);
+            }
+        }
     }
 
     void updateGroupMemberExpiration(MemberDueDays memberExpiryDueDays,
@@ -8786,8 +10804,8 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         updateGroupMemberDueDate(
                 memberExpiryDueDays,
                 groupMembers,
-                groupMember -> groupMember.getExpiration(),
-                (groupMember, expiration) -> groupMember.setExpiration(expiration));
+                GroupMember::getExpiration,
+                GroupMember::setExpiration);
     }
 
     private void updateGroupMemberDueDate(MemberDueDays memberExpiryDueDays,
@@ -8800,21 +10818,22 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
                 groupMembers,
                 dueDateGetter,
                 dueDateSetter,
-                groupMember -> groupMember.getPrincipalType());
+                GroupMember::getPrincipalType);
     }
 
     @Override
-    public void deleteGroup(ResourceContext ctx, String domainName, String groupName, String auditRef) {
+    public void deleteGroup(ResourceContext ctx, String domainName, String groupName, String auditRef,
+            String resourceOwner) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
-
+        validateResourceOwner(resourceOwner, caller);
         validate(domainName, TYPE_DOMAIN_NAME, caller);
         validate(groupName, TYPE_ENTITY_NAME, caller);
 
@@ -8838,6 +10857,15 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         groupMemberConsistencyCheck(domainName, ResourceUtils.groupResourceName(domainName, groupName), false, caller);
 
+        // verify resource ownership for the request
+
+        Group group = dbService.getGroup(domainName, groupName, false, false);
+        if (group == null) {
+            throw ZMSUtils.notFoundError("Group does not exist", caller);
+        }
+
+        ResourceOwnership.verifyGroupDeleteResourceOwnership(group, resourceOwner, caller);
+
         // everything is ok, so we should go ahead and delete the group
 
         dbService.executeDeleteGroup(ctx, domainName, groupName, auditRef);
@@ -8847,7 +10875,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         DomainRoleMember drm = null;
         try {
-            drm = dbService.getPrincipalRoles(groupResourceName, null);
+            drm = dbService.getPrincipalRoles(groupResourceName, null, null);
         } catch (ResourceException ignored) {
         }
 
@@ -8912,35 +10940,34 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         return dbService.getGroupMembership(domainName, groupName, memberName, expiryTimestamp, false);
     }
 
-    void setGroupMemberExpiration(final AthenzDomain domain, final Group group, final GroupMember groupMember, final GroupMembership membership, final String caller) {
+    void setGroupMemberExpiration(final AthenzDomain domain, final Group group, final GroupMember groupMember,
+                                  final GroupMembership membership, final String caller) {
 
         switch (Principal.Type.getType(groupMember.getPrincipalType())) {
 
             case USER:
 
-                Timestamp userAuthorityExpiry = getUserAuthorityExpiry(groupMember.memberName, group.getUserAuthorityExpiration(), caller);
-                if (userAuthorityExpiry != null) {
-                    groupMember.setExpiration(userAuthorityExpiry);
-                } else {
-                    groupMember.setExpiration(memberDueDateTimestamp(domain.getDomain().getMemberExpiryDays(),
-                            group.getMemberExpiryDays(), membership.getExpiration()));
-                }
+                Timestamp userAuthorityExpiry = getUserAuthorityExpiry(groupMember.memberName,
+                        group.getUserAuthorityExpiration(), caller);
+                Timestamp memberExpiry = memberDueDateTimestamp(domain.getDomain().getMemberExpiryDays(),
+                        group.getMemberExpiryDays(), membership.getExpiration());
+                groupMember.setExpiration(ZMSUtils.smallestExpiry(memberExpiry, userAuthorityExpiry));
                 break;
 
             case SERVICE:
+            case USER_HEADLESS:
 
                 groupMember.setExpiration(memberDueDateTimestamp(domain.getDomain().getServiceExpiryDays(),
                         group.getServiceExpiryDays(), membership.getExpiration()));
                 break;
 
             case GROUP:
-                LOG.error("Group member can't be of type group");
-                throw new RuntimeException("Group member can't be of type group");
+                throw ZMSUtils.requestError("Group member can't be of type group", caller);
         }
     }
 
     boolean isAllowedPutGroupMembership(Principal principal, final AthenzDomain domain, final Group group,
-                                   final GroupMember groupMember) {
+            final GroupMember groupMember) {
 
         // first lets check if the principal has update access on the group
 
@@ -8950,9 +10977,20 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             // can not be set to active/approved. It has to be approved by audit/review admins.
             // for all other groups, set member status to active/approved immediately
 
-            boolean auditEnabled = (group.getAuditEnabled() == Boolean.TRUE || group.getReviewEnabled() == Boolean.TRUE);
-            groupMember.setActive(!auditEnabled);
-            groupMember.setApproved(!auditEnabled);
+            updateGroupMemberActiveState(groupMember, group);
+            return true;
+
+        } else if (isGroupSelfRenewAllowed(group, principal, groupMember)) {
+
+            // even with update access, if the group is audit/review enabled, member status
+            // can not be set to active/approved. It has to be approved by audit/review admins.
+            // for all other groups, set member status to active/approved immediately
+
+            updateGroupMemberActiveState(groupMember, group);
+
+            // we need to update the expiration before returning
+
+            updateGroupMemberSelfRenewExpiration(groupMember, group.getSelfRenewMins());
             return true;
 
         } else if (group.getSelfServe() == Boolean.TRUE) {
@@ -8969,18 +11007,76 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         return false;
     }
 
+    void updateGroupMemberActiveState(GroupMember member, Group group) {
+
+        // even with update access, if the group is audit/review enabled, member status
+        // can not be set to active/approved. It has to be approved by audit/review admins.
+        // for all other groups, set member status to active/approved immediately
+
+        boolean auditEnabled = (group.getAuditEnabled() == Boolean.TRUE || group.getReviewEnabled() == Boolean.TRUE);
+        member.setActive(!auditEnabled);
+        member.setApproved(!auditEnabled);
+    }
+
+    void updateGroupMemberSelfRenewExpiration(GroupMember member, int expiryMins) {
+
+        // only set the expiry based on the self-renew minutes if the
+        // member either does not have one set or it's set to a value
+        // that is longer than what's configured by the self-renew mins
+
+        long selfRenewExpiry = System.currentTimeMillis() + TimeUnit.MILLISECONDS.convert(expiryMins, TimeUnit.MINUTES);
+        Timestamp memberExpiry = member.getExpiration();
+        if (memberExpiry == null || memberExpiry.millis() > selfRenewExpiry) {
+            member.setExpiration(Timestamp.fromMillis(selfRenewExpiry));
+        }
+    }
+
+    boolean isGroupSelfRenewAllowed(Group group, Principal principal, GroupMember member) {
+
+        // to allow self renew the following conditions must be met
+        // 1. group self-renew option is enabled
+        // 2. group self-renew-mins has valid number of minutes
+        // 3. the principal is the same as the member name
+        // 4. the member is an existing group member (regardless expired or not)
+
+        if (group.getSelfRenew() != Boolean.TRUE) {
+            return false;
+        }
+
+        if (group.getSelfRenewMins() == null || group.getSelfRenewMins() <= 0) {
+            return false;
+        }
+
+        if (!principal.getFullName().equals(member.getMemberName())) {
+            return false;
+        }
+
+        if (group.getGroupMembers() == null) {
+            return false;
+        }
+
+        for (GroupMember groupMember : group.getGroupMembers()) {
+            if (groupMember.getMemberName().equals(member.getMemberName())) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     @Override
-    public void putGroupMembership(ResourceContext ctx, String domainName, String groupName, String memberName, String auditRef, GroupMembership membership) {
+    public Response putGroupMembership(ResourceContext ctx, String domainName, String groupName, String memberName,
+            String auditRef, Boolean returnObj, String resourceOwner, GroupMembership membership) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
-
+        validateResourceOwner(resourceOwner, caller);
         validate(domainName, TYPE_DOMAIN_NAME, caller);
         setRequestDomain(ctx, domainName);
         validate(groupName, TYPE_ENTITY_NAME, caller);
@@ -9023,6 +11119,13 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             throw ZMSUtils.requestError("Invalid groupname specified", caller);
         }
 
+        // verify resource ownership for the request. If the object returned
+        // is not null then it indicates that the object must be modified
+        // with the given resource ownership details
+
+        ResourceGroupOwnership resourceOwnership = ResourceOwnership.verifyGroupMembersResourceOwnership(
+                group, resourceOwner, caller);
+
         // create and normalize the role member object
 
         GroupMember groupMember = new GroupMember();
@@ -9034,7 +11137,12 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         final String userAuthorityFilter = enforcedUserAuthorityFilter(group.getUserAuthorityFilter(),
                 domain.getDomain().getUserAuthorityFilter());
-        validateGroupMemberPrincipal(groupMember.getMemberName(), groupMember.getPrincipalType(), userAuthorityFilter, caller);
+        Set<String> userAuthorityFilterSet = StringUtil.isEmpty(userAuthorityFilter) ?
+                null : Set.of(userAuthorityFilter.split(","));
+
+        PrincipalDomainFilter principalDomainFilter = new PrincipalDomainFilter(group.getPrincipalDomainFilter());
+        validateGroupMemberPrincipal(groupMember.getMemberName(), groupMember.getPrincipalType(),
+                userAuthorityFilterSet, principalDomainFilter, caller);
 
         // authorization check which also automatically updates
         // the active and approved flags for the request
@@ -9045,7 +11153,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         // add the member to the specified role
 
-        dbService.executePutGroupMembership(ctx, domainName, group, groupMember, auditRef);
+       GroupMembership dbGroup = dbService.executePutGroupMembership(ctx, domainName, group, groupMember, auditRef, returnObj);
 
         // new group member with pending status. Notify approvers
 
@@ -9053,20 +11161,27 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             sendGroupMembershipApprovalNotification(domainName, domain.getDomain().getOrg(), groupName,
                     groupMember.getMemberName(), auditRef, principal.getFullName(), group);
         }
+
+        // update resource ownership if required
+
+        updateResourceGroupOwnership(ctx, domainName, groupName, resourceOwnership, auditRef, caller);
+
+        return ZMSUtils.returnPutResponse(returnObj, dbGroup);
     }
 
     @Override
-    public void deleteGroupMembership(ResourceContext ctx, String domainName, String groupName, String memberName, String auditRef) {
+    public void deleteGroupMembership(ResourceContext ctx, String domainName, String groupName, String memberName,
+            String auditRef, String resourceOwner) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
-
+        validateResourceOwner(resourceOwner, caller);
         validate(domainName, TYPE_DOMAIN_NAME, caller);
         validate(groupName, TYPE_ENTITY_NAME, caller);
         validate(memberName, TYPE_MEMBER_NAME, caller);
@@ -9080,11 +11195,32 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         groupName = groupName.toLowerCase();
         memberName = memberName.toLowerCase();
 
+        final Principal principal = ((RsrcCtxWrapper) ctx).principal();
+
         // verify that request is properly authenticated for this request
 
-        verifyAuthorizedServiceGroupOperation(((RsrcCtxWrapper) ctx).principal().getAuthorizedService(), caller, groupName);
+        verifyAuthorizedServiceGroupOperation(principal.getAuthorizedService(), caller, groupName);
 
-        dbService.executeDeleteGroupMembership(ctx, domainName, groupName, normalizeDomainAliasUser(memberName), auditRef);
+        // extract our role object to get its attributes
+
+        AthenzDomain domain = getAthenzDomain(domainName, false);
+        Group group = getGroupFromDomain(groupName, domain);
+
+        if (group == null) {
+            throw ZMSUtils.notFoundError("Invalid domain/group name specified", caller);
+        }
+
+        // authorization check since we have 2 actions: update and update_members
+        // that allow access callers to manage members in a group plus we allow
+        // delete operation if the principal matches membername
+
+        final String normalizedMember = normalizeDomainAliasUser(memberName);
+        if (!(principal.getFullName().equals(normalizedMember) || isAllowedPutMembershipAccess(principal, domain, group.getName()))) {
+            throw ZMSUtils.forbiddenError("deleteGroupMembership: principal is not authorized to delete members", caller);
+        }
+
+        ResourceOwnership.verifyGroupMembersDeleteResourceOwnership(group, resourceOwner, caller);
+        dbService.executeDeleteGroupMembership(ctx, domainName, groupName, normalizedMember, auditRef);
     }
 
     boolean isAllowedDeletePendingGroupMembership(Principal principal, final String domainName,
@@ -9112,7 +11248,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
@@ -9185,7 +11321,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
@@ -9218,16 +11354,18 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
     }
 
     @Override
-    public void putGroupMeta(ResourceContext ctx, String domainName, String groupName, String auditRef, GroupMeta meta) {
+    public void putGroupMeta(ResourceContext ctx, String domainName, String groupName, String auditRef,
+            String resourceOwner, GroupMeta meta) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
+        validateResourceOwner(resourceOwner, caller);
         validate(domainName, TYPE_DOMAIN_NAME, caller);
         validate(groupName, TYPE_ENTITY_NAME, caller);
 
@@ -9248,6 +11386,10 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         groupName = groupName.toLowerCase();
         AthenzObject.GROUP_META.convertToLowerCase(meta);
 
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("putGroupMeta: name={}, role={} meta={}", domainName, groupName, meta);
+        }
+
         // validate the user authority settings if they're provided
 
         validateUserAuthorityAttributes(meta.getUserAuthorityFilter(), meta.getUserAuthorityExpiration(), caller);
@@ -9257,11 +11399,45 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         Principal principal = ((RsrcCtxWrapper) ctx).principal();
         verifyAuthorizedServiceOperation(principal.getAuthorizedService(), caller);
 
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("putGroupMeta: name={}, role={} meta={}", domainName, groupName, meta);
+        // make sure to fetch our domain and role objects
+
+        AthenzDomain domain = getAthenzDomain(domainName, false);
+        Group group = getGroupFromDomain(groupName, domain);
+
+        if (group == null) {
+            throw ZMSUtils.notFoundError("Invalid domain/group name specified", caller);
         }
 
-        dbService.executePutGroupMeta(ctx, domainName, groupName, meta, auditRef);
+        // validate audit enabled flag for the given role
+
+        validateGroupMetaAuditEnabledFlag(meta, group, domain.getDomain(), caller);
+
+        // verify resource ownership for the request. If the object returned
+        // is not null then it indicates that the object must be modified
+        // with the given resource ownership details
+
+        ResourceGroupOwnership resourceOwnership = ResourceOwnership.verifyGroupMetaResourceOwnership(
+                group, resourceOwner, caller);
+
+        dbService.executePutGroupMeta(ctx, domainName, groupName, group, meta, auditRef);
+
+        // update resource ownership if required
+
+        updateResourceGroupOwnership(ctx, domainName, groupName, resourceOwnership, auditRef, caller);
+    }
+
+    void validateGroupMetaAuditEnabledFlag(GroupMeta meta, Group group, Domain domain, final String caller) {
+
+        if (meta.getAuditEnabled() == Boolean.TRUE) {
+            if (domain.getAuditEnabled() != Boolean.TRUE) {
+                throw ZMSUtils.requestError("Group cannot be set as audit-enabled if the domain is not audit-enabled", caller);
+            }
+            if (group.getAuditEnabled() != Boolean.TRUE && group.getGroupMembers() != null && !group.getGroupMembers().isEmpty()) {
+                throw ZMSUtils.requestError("Only system admins can set the group as audit-enabled if it already has members", caller);
+            }
+        } else {
+            meta.setAuditEnabled(group.getAuditEnabled());
+        }
     }
 
     @Override
@@ -9271,7 +11447,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
@@ -9317,8 +11493,8 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         }
 
         // initially create the group member and only set the
-        // user name which is all we need in case we need to
-        // lookup the pending entry for review approval
+        // username which is all we need in case we need to
+        // look up the pending entry for review approval
         // we'll set the state and expiration after the
         // authorization check is successful
 
@@ -9347,25 +11523,30 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
             final String userAuthorityFilter = enforcedUserAuthorityFilter(group.getUserAuthorityFilter(),
                     domain.getDomain().getUserAuthorityFilter());
+            Set<String> userAuthorityFilterSet = StringUtil.isEmpty(userAuthorityFilter) ?
+                    null : Set.of(userAuthorityFilter.split(","));
+
+            PrincipalDomainFilter principalDomainFilter = new PrincipalDomainFilter(group.getPrincipalDomainFilter());
              validateGroupMemberPrincipal(groupMember.getMemberName(), groupMember.getPrincipalType(),
-                     userAuthorityFilter, caller);
+                     userAuthorityFilterSet, principalDomainFilter, caller);
         }
 
         dbService.executePutGroupMembershipDecision(ctx, domainName, group, groupMember, auditRef);
     }
 
     @Override
-    public void putGroupReview(ResourceContext ctx, String domainName, String groupName, String auditRef, Group group) {
+    public Response putGroupReview(ResourceContext ctx, String domainName, String groupName, String auditRef,
+            Boolean returnObj, String resourceOwner, Group group) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
-
+        validateResourceOwner(resourceOwner, caller);
         validate(domainName, TYPE_DOMAIN_NAME, caller);
         validate(groupName, TYPE_ENTITY_NAME, caller);
         validate(group, TYPE_GROUP, caller);
@@ -9396,22 +11577,52 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             throw ZMSUtils.notFoundError("No such domain: " + domainName, caller);
         }
 
+        Group dbGroup = getGroupFromDomain(groupName, domain);
+        if (dbGroup == null) {
+            throw ZMSUtils.notFoundError("No such group: " + groupName, caller);
+        }
+
+        // authorization check: verify the principal is authorized update role membership
+
+        if (!isAllowedPutMembershipAccess(((RsrcCtxWrapper) ctx).principal(), domain, dbGroup.getName())) {
+            throw ZMSUtils.forbiddenError("principal is not authorized to review group members", caller);
+        }
+
+        // verify resource ownership for the request. If the object returned
+        // is not null then it indicates that the object must be modified
+        // with the given resource ownership details
+
+        ResourceGroupOwnership resourceOwnership = ResourceOwnership.verifyGroupMembersResourceOwnership(
+                dbGroup, resourceOwner, caller);
+
         // normalize and remove duplicate members
 
         normalizeGroupMembers(group);
 
+        // validate all members specified in the review request
+
+        PrincipalDomainFilter principalDomainFilter = new PrincipalDomainFilter(dbGroup.getPrincipalDomainFilter());
+        validateGroupMemberPrincipals(group, domain.getDomain().getUserAuthorityFilter(), principalDomainFilter, caller);
+
         // update group expiry based on our configurations
 
-        MemberDueDays memberExpiryDueDays = new MemberDueDays(domain.getDomain(), group);
+        MemberDueDays memberExpiryDueDays = new MemberDueDays(domain.getDomain(), dbGroup);
         updateGroupMemberExpiration(memberExpiryDueDays, group.getGroupMembers());
 
         // process our request
 
-        dbService.executePutGroupReview(ctx, domainName, groupName, group, memberExpiryDueDays, auditRef);
+        Group updatedGroup = dbService.executePutGroupReview(ctx, domainName, groupName, group,
+                memberExpiryDueDays, auditRef, returnObj);
+
+        // update resource ownership if required
+
+        updateResourceGroupOwnership(ctx, domainName, groupName, resourceOwnership, auditRef, caller);
+
+        return ZMSUtils.returnPutResponse(returnObj, updatedGroup);
     }
 
     @Override
-    public DomainGroupMembership getPendingDomainGroupMembersList(ResourceContext ctx, String principal) {
+    public DomainGroupMembership getPendingDomainGroupMembersList(ResourceContext ctx, String principal, String domainName) {
         final String caller = ctx.getApiName();
 
         final Principal ctxPrincipal = ((RsrcCtxWrapper) ctx).principal();
@@ -9419,24 +11630,62 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         validateRequest(ctx.request(), caller);
 
-        String checkPrincipal;
-        if (principal != null && !principal.isEmpty()) {
+        // validate domain if not null/empty or * (for all domains)
+        String checkDomainName = null;
+        if (!StringUtil.isEmpty(domainName)) {
+            if (!("*".equals(domainName))) {
+                validate(domainName, TYPE_DOMAIN_NAME, caller);
+            }
+            checkDomainName = domainName.toLowerCase();
+        }
+
+        // validate principal if not null/empty
+        // get principal from certificate if domain and principal is null
+
+        String checkPrincipal = null;
+        if (!StringUtil.isEmpty(principal)) {
             validate(principal, TYPE_ENTITY_NAME, caller);
             checkPrincipal = normalizeDomainAliasUser(principal.toLowerCase());
-        } else {
+        } else if (StringUtil.isEmpty(checkDomainName)) {
             checkPrincipal = ctxPrincipal.getFullName();
         }
 
         if (LOG.isDebugEnabled()) {
-            LOG.debug("getpendingdomaingroupmemberslist principal: ({})", checkPrincipal);
+            LOG.debug("getpendingdomaingroupmemberslist principal: ({}), domainName: ({})", checkPrincipal, checkDomainName);
         }
 
-        return dbService.getPendingDomainGroupMembers(checkPrincipal);
+        return dbService.getPendingDomainGroupMembers(checkPrincipal, checkDomainName);
+    }
+
+    @Override
+    public void putResourceGroupOwnership(ResourceContext ctx, String domainName,
+            String groupName, String auditRef, ResourceGroupOwnership resourceOwnership) {
+
+        final String caller = ctx.getApiName();
+        logPrincipal(ctx);
+
+        if (readOnlyMode.get()) {
+            throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
+        }
+
+        validateRequest(ctx.request(), caller);
+        validate(domainName, TYPE_DOMAIN_NAME, caller);
+        validate(groupName, TYPE_ENTITY_NAME, caller);
+        validateResourceOwnership(resourceOwnership, caller);
+
+        // for consistent handling of all requests, we're going to convert
+        // all incoming object values into lower case
+
+        domainName = domainName.toLowerCase();
+        setRequestDomain(ctx, domainName);
+        groupName = groupName.toLowerCase();
+
+        dbService.executePutResourceGroupOwnership(ctx, domainName, groupName, resourceOwnership, auditRef, caller);
     }
 
     void validateUserAuthorityFilterAttribute(final String authorityFilter, final String caller)  {
 
-        if (authorityFilter != null && !authorityFilter.isEmpty()) {
+        if (!StringUtil.isEmpty(authorityFilter)) {
             if (userAuthority == null) {
                 throw ZMSUtils.requestError("User Authority filter specified without a valid user authority", caller);
             }
@@ -9450,23 +11699,27 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         }
     }
 
+    /**
+     * All AssertionCondition objects part of AssertionConditions will share the same condition id.
+     * Since a logical condition can have multiple assertion conditions which are realized using
+     * AND operation. e.g. AssertionConditions has a list of AssertionCondition
+     * containing 3 conditions, A=1, B=2, C=3 then all these will go in to DB against the same
+     * condition id and will be evaluated as (A=1 AND B=2 AND C=3)
+     * If an assertion is required to have multiple of such tuples, this api call needs to be repeated for each.
+     */
     @Override
-// all AssertionCondition objects part of AssertionConditions will share the same condition id. Since a logical condition can have
-// multiple assertion conditions which are realized using AND operation. e.g. AssertionConditions has a list of AssertionCondition
-// containing 3 conditions, A=1, B=2, C=3 then all these will go in to DB against the same condition id and will be evaluated as
-// (A=1 AND B=2 AND C=3)
-// If an assertion is required to have multiple of such tuples, this api call needs to be repeated for each.
-    public AssertionConditions putAssertionConditions(ResourceContext ctx, String domainName, String policyName, Long assertionId, String auditRef, AssertionConditions assertionConditions) {
+    public AssertionConditions putAssertionConditions(ResourceContext ctx, String domainName, String policyName,
+            Long assertionId, String auditRef, String resourceOwner, AssertionConditions assertionConditions) {
 
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
-
+        validateResourceOwner(resourceOwner, caller);
         validate(domainName, TYPE_DOMAIN_NAME, caller);
         validate(policyName, TYPE_COMPOUND_NAME, caller);
         validate(assertionConditions, TYPE_ASSERTION_CONDITIONS, caller);
@@ -9496,21 +11749,40 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         validateAssertionConditions(assertionConditions, caller);
 
-        dbService.executePutAssertionConditions(ctx, domainName, policyName, assertionId, assertionConditions, auditRef, caller);
+        // extract the policy for the resource ownership check
+
+        Policy dbPolicy = dbService.getPolicy(domainName, policyName, null);
+
+        // verify resource ownership for the request. If the object returned
+        // is not null then it indicates that the object must be modified
+        // with the given resource ownership details
+
+        ResourcePolicyOwnership resourceOwnership = dbPolicy == null ? null :
+                ResourceOwnership.verifyPolicyAssertionsResourceOwnership(dbPolicy, resourceOwner, caller);
+
+        dbService.executePutAssertionConditions(ctx, domainName, policyName, assertionId,
+                assertionConditions, auditRef, caller);
+
+        // update resource ownership if required
+
+        updateResourcePolicyOwnership(ctx, domainName, policyName, resourceOwnership, auditRef, caller);
+
         return assertionConditions;
     }
 
     @Override
-    public AssertionCondition putAssertionCondition(ResourceContext ctx, String domainName, String policyName, Long assertionId, String auditRef, AssertionCondition assertionCondition) {
+    public AssertionCondition putAssertionCondition(ResourceContext ctx, String domainName, String policyName,
+            Long assertionId, String auditRef, String resourceOwner, AssertionCondition assertionCondition) {
+
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
-
+        validateResourceOwner(resourceOwner, caller);
         validate(domainName, TYPE_DOMAIN_NAME, caller);
         validate(policyName, TYPE_COMPOUND_NAME, caller);
         validate(assertionCondition, TYPE_ASSERTION_CONDITION, caller);
@@ -9540,21 +11812,40 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
         validateAssertionCondition(assertionCondition, caller);
 
-        dbService.executePutAssertionCondition(ctx, domainName, policyName, assertionId, assertionCondition, auditRef, caller);
+        // extract the policy for the resource ownership check
+
+        Policy dbPolicy = dbService.getPolicy(domainName, policyName, null);
+
+        // verify resource ownership for the request. If the object returned
+        // is not null then it indicates that the object must be modified
+        // with the given resource ownership details
+
+        ResourcePolicyOwnership resourceOwnership = dbPolicy == null ? null :
+                ResourceOwnership.verifyPolicyAssertionsResourceOwnership(dbPolicy, resourceOwner, caller);
+
+        dbService.executePutAssertionCondition(ctx, domainName, policyName, assertionId,
+                assertionCondition, auditRef, caller);
+
+        // update resource ownership if required
+
+        updateResourcePolicyOwnership(ctx, domainName, policyName, resourceOwnership, auditRef, caller);
+
         return assertionCondition;
     }
 
     @Override
-    public void deleteAssertionConditions(ResourceContext ctx, String domainName, String policyName, Long assertionId, String auditRef) {
+    public void deleteAssertionConditions(ResourceContext ctx, String domainName, String policyName,
+            Long assertionId, String auditRef, String resourceOwner) {
+
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
-
+        validateResourceOwner(resourceOwner, caller);
         validate(domainName, TYPE_DOMAIN_NAME, caller);
         validate(policyName, TYPE_ENTITY_NAME, caller);
 
@@ -9582,16 +11873,18 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
     }
 
     @Override
-    public void deleteAssertionCondition(ResourceContext ctx, String domainName, String policyName, Long assertionId, Integer conditionId, String auditRef) {
+    public void deleteAssertionCondition(ResourceContext ctx, String domainName, String policyName,
+            Long assertionId, Integer conditionId, String auditRef, String resourceOwner) {
+
         final String caller = ctx.getApiName();
         logPrincipal(ctx);
 
-        if (readOnlyMode) {
+        if (readOnlyMode.get()) {
             throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
         }
 
         validateRequest(ctx.request(), caller);
-
+        validateResourceOwner(resourceOwner, caller);
         validate(domainName, TYPE_DOMAIN_NAME, caller);
         validate(policyName, TYPE_ENTITY_NAME, caller);
 
@@ -9618,6 +11911,163 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         dbService.executeDeleteAssertionCondition(ctx, domainName, policyName, assertionId, conditionId, auditRef, caller);
     }
 
+    @Override
+    public void putDomainDependency(ResourceContext ctx, String domainName, String auditRef, DependentService dependentService) {
+        final String caller = ctx.getApiName();
+        logPrincipal(ctx);
+
+        if (readOnlyMode.get()) {
+            throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
+        }
+
+        String service = (dependentService != null) ? dependentService.getService() : null;
+        service = getAuthorizedProviderService((RsrcCtxWrapper) ctx, service, caller);
+
+        validateRequest(ctx.request(), caller);
+
+        validate(domainName, TYPE_DOMAIN_NAME, caller);
+        validate(service, TYPE_SERVICE_NAME, caller);
+
+        // for consistent handling of all requests, we're going to convert
+        // all incoming object values into lower case (e.g. domain, role,
+        // policy, service, etc name)
+
+        domainName = domainName.toLowerCase();
+        setRequestDomain(ctx, domainName);
+        service = service.toLowerCase();
+
+        dbService.putDomainDependency(ctx, domainName, service, auditRef, caller);
+    }
+
+    @Override
+    public void deleteDomainDependency(ResourceContext ctx, String domainName, String service, String auditRef) {
+        final String caller = ctx.getApiName();
+        logPrincipal(ctx);
+
+        if (readOnlyMode.get()) {
+            throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
+        }
+
+        service = getAuthorizedProviderService((RsrcCtxWrapper) ctx, service, caller);
+
+        validateRequest(ctx.request(), caller);
+
+        validate(domainName, TYPE_DOMAIN_NAME, caller);
+        validate(service, TYPE_SERVICE_NAME, caller);
+
+        // for consistent handling of all requests, we're going to convert
+        // all incoming object values into lower case (e.g. domain, role,
+        // policy, service, etc name)
+
+        domainName = domainName.toLowerCase();
+        setRequestDomain(ctx, domainName);
+        service = service.toLowerCase();
+
+        dbService.deleteDomainDependency(ctx, domainName, service, auditRef, caller);
+    }
+
+    String getAuthorizedProviderService(RsrcCtxWrapper ctx, String service, String caller) {
+
+        // If system administrator - service is mandatory
+        // Otherwise ignore it and use the principal as dependent service
+
+        Principal principal = ctx.principal();
+        boolean isSysAdminUser = isSysAdminUser(principal, false);
+        if (isSysAdminUser) {
+            if (StringUtil.isEmpty(service)) {
+                throw ZMSUtils.requestError("service is mandatory", caller);
+            }
+        } else {
+            service = principal.getFullName();
+        }
+        service = service.toLowerCase();
+
+        if (!serviceProviderManager.isServiceProvider(service)) {
+            throw ZMSUtils.unauthorizedError(service + " is not an authorized service provider", caller);
+        }
+        return service;
+    }
+
+    @Override
+    public ServiceIdentityList getDependentServiceList(ResourceContext ctx, String domainName) {
+        final String caller = ctx.getApiName();
+        logPrincipal(ctx);
+
+        validateRequest(ctx.request(), caller);
+        validate(domainName, TYPE_DOMAIN_NAME, caller);
+
+        // for consistent handling of all requests, we're going to convert
+        // all incoming object values into lower case (e.g. domain, role,
+        // policy, service, etc name)
+
+        domainName = domainName.toLowerCase();
+        setRequestDomain(ctx, domainName);
+
+        return dbService.listServiceDependencies(domainName);
+    }
+
+    @Override
+    public DependentServiceResourceGroupList getDependentServiceResourceGroupList(ResourceContext ctx, String domainName) {
+        final String caller = ctx.getApiName();
+        logPrincipal(ctx);
+
+        validateRequest(ctx.request(), caller);
+        validate(domainName, TYPE_DOMAIN_NAME, caller);
+
+        // for consistent handling of all requests, we're going to convert
+        // all incoming object values into lower case (e.g. domain, role,
+        // policy, service, etc name)
+
+        domainName = domainName.toLowerCase();
+        setRequestDomain(ctx, domainName);
+
+        return getDependentServiceResourceGroupList(domainName);
+    }
+
+    private DependentServiceResourceGroupList getDependentServiceResourceGroupList(String domainName) {
+        ServiceIdentityList serviceIdentityList = dbService.listServiceDependencies(domainName);
+        final String finalDomainName = domainName;
+        List<DependentServiceResourceGroup> dependentServiceResourceGroups = serviceIdentityList.getNames().stream().map(service -> {
+            DependentServiceResourceGroup dependentServiceResourceGroup = new DependentServiceResourceGroup();
+            dependentServiceResourceGroup.setService(service);
+            dependentServiceResourceGroup.setDomain(finalDomainName);
+            dependentServiceResourceGroup.setResourceGroups(getResourceGroupsForProviderServiceTenantDomain(service, finalDomainName));
+            return dependentServiceResourceGroup;
+        }).collect(Collectors.toList());
+        return new DependentServiceResourceGroupList().setServiceAndResourceGroups(dependentServiceResourceGroups);
+    }
+
+    private List<String> getResourceGroupsForProviderServiceTenantDomain(final String service, final String tenantDomain) {
+        final String provSvcName = ZMSUtils.providerServiceName(service);
+        final String provSvcDomain = ZMSUtils.providerServiceDomain(service);
+        final String rolePrefix = ZMSUtils.getTenantResourceGroupRolePrefix(provSvcName, tenantDomain, "");
+        final List<String> tenantDomainRoles = dbService.listRoles(provSvcDomain);
+        return tenantDomainRoles.stream()
+                .filter(role -> role.startsWith(rolePrefix))
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public DomainList getDependentDomainList(ResourceContext ctx, String service) {
+        final String caller = ctx.getApiName();
+        logPrincipal(ctx);
+
+        validateRequest(ctx.request(), caller);
+        validate(service, TYPE_SERVICE_NAME, caller);
+
+        // for consistent handling of all requests, we're going to convert
+        // all incoming object values into lower case (e.g. domain, role,
+        // policy, service, etc name)
+
+        service = service.toLowerCase();
+
+        if (serviceProviderManager.isServiceProvider(service)) {
+            return dbService.listDomainDependencies(service);
+        } else {
+            throw ZMSUtils.requestError(service + " is not a registered service provider", caller);
+        }
+    }
+
     void validateAssertionConditions(AssertionConditions assertionConditions, String caller) {
         // TODO
     }
@@ -9628,7 +12078,7 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
 
     void validateUserAuthorityDateAttribute(final String authorityExpiration, final String caller) {
 
-        if (authorityExpiration != null && !authorityExpiration.isEmpty()) {
+        if (!StringUtil.isEmpty(authorityExpiration)) {
             if (userAuthority == null) {
                 throw ZMSUtils.requestError("User Authority expiry specified without a valid user authority", caller);
             }
@@ -9666,18 +12116,41 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
         }
     }
 
+    @Override
     public void recordMetrics(ResourceContext ctx, int httpStatus) {
-        final String principalDomainName = getPrincipalDomain(ctx);
-        final String domainName = getRequestDomainName(ctx);
-        final Object timerMetric = getTimerMetric(ctx);
-        final String httpMethod = (ctx != null) ? ctx.getHttpMethod() : null;
-        final String apiName = (ctx != null) ? ctx.getApiName() : null;
-        final String timerName = (apiName != null) ? apiName + "_timing" : null;
-        metric.increment("zms_api", domainName, principalDomainName, httpMethod, httpStatus, apiName);
-        metric.stopTiming(timerMetric, domainName, principalDomainName, httpMethod, httpStatus, timerName);
+        try {
+            final String principalDomainName = getPrincipalDomain(ctx);
+            final String domainName = getRequestDomainName(ctx);
+            final Object timerMetric = getTimerMetric(ctx);
+            final String httpMethod = (ctx != null) ? ctx.getHttpMethod() : null;
+            final String apiName = (ctx != null) ? ctx.getApiName() : null;
+            final String timerName = (apiName != null) ? apiName + "_timing" : null;
+            metric.increment("zms_api", domainName, principalDomainName, httpMethod, httpStatus, apiName);
+            metric.stopTiming(timerMetric, domainName, principalDomainName, httpMethod, httpStatus, timerName);
+        } catch (Exception ex) {
+            LOG.error("Got exception during recordMetrics", ex);
+        }
     }
 
-    static class ZMSGroupMembersFetcher implements AuthzHelper.GroupMembersFetcher {
+    @Override
+    public void publishChangeMessage(ResourceContext ctx, int httpStatus) {
+        if (domainChangePublishers == null || ctx.getDomainChangeMessages() == null) {
+            return;
+        }
+        if (httpStatus >= 200 && httpStatus <= 299) {
+            for (DomainChangeMessage changeMessage : ctx.getDomainChangeMessages()) {
+                for (ChangePublisher<DomainChangeMessage> publisher : domainChangePublishers) {
+                    try {
+                        publisher.publish(changeMessage);
+                    } catch (Exception ex) {
+                        LOG.error("Got exception during publishChangeMessage", ex);
+                    }
+                }
+            }
+        }
+    }
+    
+    public static class ZMSGroupMembersFetcher implements AuthzHelper.GroupMembersFetcher {
 
         DBService dbService;
         ZMSGroupMembersFetcher(DBService dbService) {
@@ -9695,5 +12168,143 @@ public class ZMSImpl implements Authorizer, KeyStore, ZMSHandler {
             }
             return group.getGroupMembers();
         }
+    }
+
+    @Override
+    public ReviewObjects getRolesForReview(ResourceContext ctx, String principal) {
+
+        final String caller = ctx.getApiName();
+        logPrincipal(ctx);
+
+        // If principal not specified, get roles for current user
+
+        if (StringUtil.isEmpty(principal)) {
+            principal = ((RsrcCtxWrapper) ctx).principal().getFullName();
+        }
+        validateRequest(ctx.request(), caller);
+        validate(principal, TYPE_RESOURCE_NAME, caller);
+
+        // for consistent handling of all requests, we're going to convert
+        // all incoming object values into lower case
+
+        principal = principal.toLowerCase();
+
+        if (!isAllowedObjectReviewLookup(((RsrcCtxWrapper) ctx).principal(), principal)) {
+            throw ZMSUtils.forbiddenError("principal is not authorized to request role review list", caller);
+        }
+
+        return dbService.getRolesForReview(principal);
+    }
+
+    @Override
+    public ReviewObjects getGroupsForReview(ResourceContext ctx, String principal) {
+
+        final String caller = ctx.getApiName();
+        logPrincipal(ctx);
+
+        // If principal not specified, get groups for current user
+
+        if (StringUtil.isEmpty(principal)) {
+            principal = ((RsrcCtxWrapper) ctx).principal().getFullName();
+        }
+        validateRequest(ctx.request(), caller);
+        validate(principal, TYPE_RESOURCE_NAME, caller);
+
+        // for consistent handling of all requests, we're going to convert
+        // all incoming object values into lower case
+
+        principal = principal.toLowerCase();
+
+        if (!isAllowedObjectReviewLookup(((RsrcCtxWrapper) ctx).principal(), principal)) {
+            throw ZMSUtils.forbiddenError("principal is not authorized to request group review list", caller);
+        }
+
+        return dbService.getGroupsForReview(principal);
+    }
+
+    boolean isAllowedObjectReviewLookup(Principal principal, final String checkPrincipal) {
+
+        // Role/Group Review list lookup requires one of these authorization checks
+        // 1. authenticated principal is the same as the check principal
+        // 2. system authorized ("access", "sys.auth:meta.review.lookup")
+
+        if (checkPrincipal.equals(principal.getFullName())) {
+            return true;
+        }
+
+        // if the check principal is another user, then this is not allowed
+        // unless the principal is authorized at system level
+        // evaluate our domain's roles and policies to see if access
+        // is allowed or not for the given operation and resource
+        // our action are always converted to lowercase
+
+        return isAllowedSystemAccess(principal, "access", SYS_AUTH + ":meta.review.lookup");
+    }
+
+    @Override
+    public void putPrincipalState(ResourceContext ctx, String principalName, String auditRef,
+            PrincipalState principalState) {
+
+        final String caller = ctx.getApiName();
+        logPrincipal(ctx);
+
+        if (readOnlyMode.get()) {
+            throw ZMSUtils.requestError(SERVER_READ_ONLY_MESSAGE, caller);
+        }
+
+        validateRequest(ctx.request(), caller);
+        validate(principalName, TYPE_MEMBER_NAME, caller);
+
+        if (StringUtil.isEmpty(auditRef)) {
+            throw ZMSUtils.requestError("Audit reference is required for this operation", caller);
+        }
+
+        // for consistent handling of all requests, we're going to convert
+        // all incoming object values into lower case
+
+        principalName = principalName.toLowerCase();
+        Principal statePrincipal = ZMSUtils.createPrincipalForName(principalName, userDomain, userDomainAlias);
+        if (statePrincipal == null) {
+            throw ZMSUtils.requestError("Invalid principal name: " + principalName, caller);
+        }
+
+        setRequestDomain(ctx, statePrincipal.getDomain());
+        final Principal principal = ((RsrcCtxWrapper) ctx).principal();
+
+        // carry out the authorization check for the request
+
+        AthenzDomain domain = getAthenzDomain(statePrincipal.getDomain(), false);
+        if (domain == null) {
+            throw ZMSUtils.notFoundError("Domain not found: " + statePrincipal.getDomain(), caller);
+        }
+
+        if (!isAllowedToUpdatePrincipalState(principal, domain, statePrincipal.getDomain(), statePrincipal.getName())) {
+            throw ZMSUtils.forbiddenError("Unauthorized to update principal state", caller);
+        }
+
+        dbService.executePutPrincipalState(ctx, statePrincipal.getDomain(), principalName,
+                principalState, auditRef, caller);
+    }
+
+    boolean isAllowedToUpdatePrincipalState(Principal principal, AthenzDomain domain, final String domainName,
+            final String serviceName) {
+
+        // The required authorization includes the following two options:
+        // 1. ("update", "{domainName}:service.{serviceName}") for the domain administrators
+        // 2. ("update", "sys.auth:state.{domainName}.{serviceName}") for the Athenz administrators
+
+        // first we're going to check the domain level authorization
+
+        if (hasAccess(domain, "update", domainName + ":service." + serviceName, principal, null) == AccessStatus.ALLOWED) {
+            return true;
+        }
+
+        // let's check the system level authorization
+
+        return isAllowedSystemAccess(principal, "update", SYS_AUTH + ":state." + domainName + "." + serviceName);
+    }
+
+    boolean isAllowedSystemAccess(Principal principal, final String action, final String resource) {
+        return hasAccess(getAthenzDomain(SYS_AUTH, true), action, resource, principal, null) == AccessStatus.ALLOWED;
     }
 }

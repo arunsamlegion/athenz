@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,16 @@ import Checkbox from '../denali/CheckBox';
 import DateUtils from '../utils/DateUtils';
 import NameUtils from '../utils/NameUtils';
 import RequestUtils from '../utils/RequestUtils';
+import SearchInput from '../denali/SearchInput';
+import { selectRoles } from '../../redux/selectors/roles';
+import { addMemberToRoles, getRoles } from '../../redux/thunks/roles';
+import { getDomainData } from '../../redux/thunks/domain';
+import { connect } from 'react-redux';
+import { selectDomainAuditEnabled } from '../../redux/selectors/domainData';
+import { USER_DOMAIN } from '../constants/constants';
+import InputDropdown from '../denali/InputDropdown';
+import { selectAllUsers } from '../../redux/selectors/user';
+import MemberUtils from '../utils/MemberUtils';
 
 const SectionsDiv = styled.div`
     width: 800px;
@@ -50,7 +60,12 @@ const StyledInputLabel = styled(InputLabel)`
     line-height: 36px;
 `;
 
-const StyledInput = styled(Input)`
+const StyledSearchInputDiv = styled.div`
+    width: 50%;
+    padding-bottom: 10px;
+`;
+
+const StyledInput = styled(InputDropdown)`
     max-width: 500px;
     margin-right: 10px;
     width: 300px;
@@ -66,7 +81,6 @@ const FlatPickrInputDiv = styled.div`
         background-color: rgba(53, 112, 244, 0.05);
         box-shadow: none;
         color: rgb(48, 48, 48);
-        height: 16px;
         min-width: 50px;
         text-align: left;
         border-width: 2px;
@@ -105,14 +119,18 @@ const StyledJustification = styled(Input)`
     margin-top: 5px;
 `;
 
-export default class AddMemberToRoles extends React.Component {
+class AddMemberToRoles extends React.Component {
     constructor(props) {
         super(props);
-        this.api = this.props.api;
         this.onSubmit = this.onSubmit.bind(this);
+        this.userSearch = this.userSearch.bind(this);
         this.state = {
             showModal: !!this.props.showAddMemberToRoles,
             checkedRoles: [],
+            roleNames: this.props.roles
+                .map((role) => NameUtils.getShortName(':role.', role.name))
+                .sort(),
+            searchText: '',
         };
         this.dateUtils = new DateUtils();
     }
@@ -160,11 +178,10 @@ export default class AddMemberToRoles extends React.Component {
                     : '',
         };
         // send api call and then reload existing members component
-        this.api
+        this.props
             .addMemberToRoles(
                 this.props.domain,
                 this.state.checkedRoles,
-                this.state.memberName,
                 member,
                 this.state.justification
                     ? this.state.justification
@@ -204,10 +221,21 @@ export default class AddMemberToRoles extends React.Component {
         this.setState({ checkedRoles });
     }
 
+    userSearch(part) {
+        return MemberUtils.userSearch(part, this.props.userList);
+    }
+
     render() {
         let roleCheckboxes = [];
-        this.props.roles.forEach((role) => {
-            const roleName = NameUtils.getShortName(':role.', role.name);
+        let roleNames;
+        if (this.state.searchText.trim() !== '') {
+            roleNames = this.state.roleNames.filter((roleName) =>
+                roleName.includes(this.state.searchText.trim())
+            );
+        } else {
+            roleNames = this.state.roleNames;
+        }
+        roleNames.forEach((roleName) => {
             let onCheckboxChanged = this.onCheckboxChanged.bind(this, roleName);
             roleCheckboxes.push(
                 <StyledRole key={roleName}>
@@ -233,14 +261,19 @@ export default class AddMemberToRoles extends React.Component {
                     </StyledInputLabel>
                     <ContentDiv>
                         <StyledInput
+                            fluid={true}
                             id='member-name'
                             name='member-name'
-                            value={this.state.memberName}
-                            onChange={this.inputChanged.bind(
-                                this,
-                                'memberName'
-                            )}
-                            placeholder='user.<shortid> or <domain>.<service>'
+                            itemToString={(i) => (i === null ? '' : i.value)}
+                            asyncSearchFunc={this.userSearch}
+                            onChange={(evt) =>
+                                this.setState({
+                                    ['memberName']: evt ? evt.value : '',
+                                })
+                            }
+                            placeholder={
+                                USER_DOMAIN + '.<shortid> or <domain>.<service>'
+                            }
                         />
                         <FlatPickrInputDiv>
                             <FlatPicker
@@ -279,6 +312,22 @@ export default class AddMemberToRoles extends React.Component {
                 <SectionDiv>
                     <StyledInputLabel htmlFor=''>Roles</StyledInputLabel>
                     <ContentDiv>
+                        <StyledSearchInputDiv>
+                            <SearchInput
+                                dark={false}
+                                name='search'
+                                fluid={true}
+                                value={this.state.searchText}
+                                placeholder={'Enter role name'}
+                                error={this.state.error}
+                                onChange={(event) =>
+                                    this.setState({
+                                        searchText: event.target.value,
+                                        error: false,
+                                    })
+                                }
+                            />
+                        </StyledSearchInputDiv>
                         <StyledRoleContainer>
                             <StyledRoles>{roleCheckboxes}</StyledRoles>
                         </StyledRoleContainer>
@@ -301,3 +350,23 @@ export default class AddMemberToRoles extends React.Component {
         );
     }
 }
+const mapStateToProps = (state, props) => {
+    return {
+        ...props,
+        roles: selectRoles(state),
+        justificationRequired: selectDomainAuditEnabled(state),
+        userList: selectAllUsers(state),
+    };
+};
+
+const mapDispatchToProps = (dispatch) => ({
+    getRoles: (domainName) => dispatch(getRoles(domainName)),
+    getDomainData: (domainName, userName) =>
+        dispatch(getDomainData(domainName, userName)),
+    addMemberToRoles: (domainName, roles, member, justification, _csrf) =>
+        dispatch(
+            addMemberToRoles(domainName, roles, member, justification, _csrf)
+        ),
+});
+
+export default connect(mapStateToProps, mapDispatchToProps)(AddMemberToRoles);

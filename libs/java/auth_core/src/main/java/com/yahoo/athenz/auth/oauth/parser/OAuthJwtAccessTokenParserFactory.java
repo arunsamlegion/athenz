@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,5 +27,5 @@ public interface OAuthJwtAccessTokenParserFactory {
      * @param keyStore keyStore
      * @return OAuthJwtAccessTokenParser instance
      */
-    public OAuthJwtAccessTokenParser create(KeyStore keyStore) throws IllegalArgumentException;
+    OAuthJwtAccessTokenParser create(KeyStore keyStore) throws IllegalArgumentException;
 }

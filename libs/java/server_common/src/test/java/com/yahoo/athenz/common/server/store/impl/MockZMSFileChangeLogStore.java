@@ -1,5 +1,5 @@
 /*
- *  Copyright 2020 Verizon Media
+ *  Copyright The Athenz Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -24,8 +24,6 @@ import static org.mockito.Mockito.when;
 import java.security.PrivateKey;
 import java.util.ArrayList;
 import java.util.List;
-
-import org.mockito.Mockito;
 
 import com.yahoo.athenz.zms.DomainList;
 import com.yahoo.athenz.zms.SignedDomains;

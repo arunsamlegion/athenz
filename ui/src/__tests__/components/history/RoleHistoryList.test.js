@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,16 +14,14 @@
  * limitations under the License.
  */
 import React from 'react';
-import { render } from '@testing-library/react';
 import CollectionHistoryList from '../../../components/history/CollectionHistoryList';
+import { renderWithRedux } from '../../../tests_utils/ComponentsTestUtils';
 
 describe('RoleHistoryList', () => {
-    // TODO - move this test from snapshot test
-    // update this test every 15 months as the min date of start date is 15 months in CollectionHistoryList.js
     it('should render', () => {
-        const startDate = '2021-01-20 07:51';
-        const endDate = '2021-01-20 07:55';
-        const { getByTestId } = render(
+        const startDate = '2024-01-20 07:51';
+        const endDate = '2024-01-20 07:55';
+        const { getByTestId } = renderWithRedux(
             <CollectionHistoryList startDate={startDate} endDate={endDate} />
         );
         const historyList = getByTestId('collection-history-list');

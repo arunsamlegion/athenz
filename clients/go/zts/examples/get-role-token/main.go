@@ -1,4 +1,4 @@
-// Copyright 2017 Yahoo Holdings, Inc.
+// Copyright The Athenz Authors
 // Licensed under the terms of the Apache version 2.0 license. See LICENSE file for terms
 
 // Get-role-token is a demo program to use the service cert present
@@ -9,9 +9,9 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/AthenZ/athenz/clients/go/zts"
 )
@@ -55,14 +55,14 @@ func main() {
 }
 
 func getTLSConfigFromFiles(keyFile, certFile string) (*tls.Config, error) {
-	keypem, err := ioutil.ReadFile(keyFile)
+	keypem, err := os.ReadFile(keyFile)
 	if err != nil {
-		return nil, fmt.Errorf("Unable to read keyfile: %q, error: %v", keyFile, err)
+		return nil, fmt.Errorf("unable to read keyfile: %q, error: %v", keyFile, err)
 	}
 
-	certpem, err := ioutil.ReadFile(certFile)
+	certpem, err := os.ReadFile(certFile)
 	if err != nil {
-		return nil, fmt.Errorf("Unable to read certfile: %q, error: %v", certFile, err)
+		return nil, fmt.Errorf("unable to read certfile: %q, error: %v", certFile, err)
 	}
 
 	return getTLSConfig(certpem, keypem)
@@ -71,7 +71,7 @@ func getTLSConfigFromFiles(keyFile, certFile string) (*tls.Config, error) {
 func getTLSConfig(certpem, keypem []byte) (*tls.Config, error) {
 	clientCert, err := tls.X509KeyPair(certpem, keypem)
 	if err != nil {
-		return nil, fmt.Errorf("Unable to formulate clientCert from key and cert bytes, error: %v", err)
+		return nil, fmt.Errorf("unable to formulate clientCert from key and cert bytes, error: %v", err)
 	}
 
 	config := &tls.Config{}

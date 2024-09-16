@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,22 @@
  */
 package com.yahoo.athenz.zpe;
 
+import com.yahoo.athenz.auth.token.AccessToken;
+import com.yahoo.athenz.auth.token.RoleToken;
+import com.yahoo.athenz.auth.util.Crypto;
+import com.yahoo.athenz.common.utils.SignUtils;
+import com.yahoo.athenz.zpe.AuthZpeClient.AccessCheckStatus;
+import com.yahoo.athenz.zts.DomainSignedPolicyData;
+import com.yahoo.athenz.zts.SignedPolicyData;
+import com.yahoo.rdl.JSON;
+import io.jsonwebtoken.SignatureAlgorithm;
+import org.mockito.Mockito;
+import org.mockserver.integration.ClientAndServer;
+import org.mockserver.model.HttpResponse;
+import org.testng.Assert;
+import org.testng.annotations.*;
+
+import javax.security.auth.x500.X500Principal;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -23,27 +39,15 @@ import java.nio.file.Paths;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.cert.X509Certificate;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 
-import javax.security.auth.x500.X500Principal;
-
-import com.yahoo.athenz.auth.token.AccessToken;
-import io.jsonwebtoken.SignatureAlgorithm;
-import org.mockito.Mockito;
-import org.testng.Assert;
-import org.testng.annotations.BeforeClass;
-import org.testng.annotations.BeforeMethod;
-import org.testng.annotations.DataProvider;
-import org.testng.annotations.Test;
-
-import com.yahoo.athenz.auth.token.RoleToken;
-import com.yahoo.athenz.auth.util.Crypto;
-import com.yahoo.athenz.common.utils.SignUtils;
-import com.yahoo.athenz.zpe.AuthZpeClient.AccessCheckStatus;
-import com.yahoo.athenz.zts.DomainSignedPolicyData;
-import com.yahoo.athenz.zts.SignedPolicyData;
-import com.yahoo.rdl.JSON;
-
+import static com.yahoo.athenz.zpe.ZpeConsts.ZPE_PROP_JWK_ATHENZ_CONF;
+import static org.mockito.Mockito.mock;
+import static org.mockserver.integration.ClientAndServer.startClientAndServer;
+import static org.mockserver.model.HttpRequest.request;
 import static org.testng.Assert.*;
 
 /**
@@ -55,11 +59,8 @@ public class TestAuthZpe {
     private PrivateKey ztsPrivateKeyK1;
     private PrivateKey ztsPrivateKeyK17;
     private PrivateKey ztsPrivateKeyK99;
-    private PrivateKey zmsPrivateKeyK0;
 
-    private final String roleVersion = "Z1";
-    private final long   expirationTime = 100; // 100 seconds
-    private final String salt = "aAkjbbDMhnLX";
+    private final long expirationTime = 100; // 100 seconds
 
     private RoleToken rToken0AnglerPublic = null;
     private RoleToken rToken0AnglerExpirePublic = null;
@@ -78,12 +79,11 @@ public class TestAuthZpe {
     @SuppressWarnings("ResultOfMethodCallIgnored")
     @BeforeClass
     public void beforeClass() throws IOException {
+        System.setProperty(ZPE_PROP_JWK_ATHENZ_CONF, TestAuthZpe.class.getClassLoader().getResource("jwk/athenz.conf").getPath());
+        System.setProperty(ZpeConsts.ZPE_PROP_CHECK_POLICY_ZMS_SIGNATURE, "true");
 
         Path path = Paths.get("./src/test/resources/unit_test_zts_private_k0.pem");
         ztsPrivateKeyK0 = Crypto.loadPrivateKey(new String((Files.readAllBytes(path))));
-
-        path = Paths.get("./src/test/resources/unit_test_zms_private_k0.pem");
-        zmsPrivateKeyK0 = Crypto.loadPrivateKey(new String((Files.readAllBytes(path))));
         
         path = Paths.get("./src/test/resources/unit_test_zts_private_k1.pem");
         ztsPrivateKeyK1 = Crypto.loadPrivateKey(new String((Files.readAllBytes(path))));
@@ -93,6 +93,9 @@ public class TestAuthZpe {
 
         path = Paths.get("./src/test/resources/unit_test_zts_private_k99.pem");
         ztsPrivateKeyK99 = Crypto.loadPrivateKey(new String((Files.readAllBytes(path))));
+
+        path = Paths.get("./src/test/resources/unit_test_zms_private_k0.pem");
+        PrivateKey zmsPrivateKeyK0 = Crypto.loadPrivateKey(new String((Files.readAllBytes(path))));
 
         List<String> roles = new ArrayList<>();
         roles.add("public");
@@ -123,9 +126,9 @@ public class TestAuthZpe {
         // ZPE update-load thread due to possible timing issue.
         // Then rename it with ".pol" suffix afterwards.
         // Issue: file is created, but file is empty because it has not 
-        // been written out yet - thus zpe thinks its a bad file and will
+        // been written out yet - thus zpe thinks it's a bad file and will
         // wait for it to get updated before trying to reload.
-        // Ouch, but the file doesnt get a change in modified timestamp so zpe
+        // Ouch, but the file doesn't get a change in modified timestamp so zpe
         // never reloads.
         
         path = Paths.get("./src/test/resources/angler.pol");
@@ -170,6 +173,11 @@ public class TestAuthZpe {
         file.renameTo(renamedFile);
     }
     
+    @AfterClass
+    public void afterClass() {
+        System.clearProperty(ZPE_PROP_JWK_ATHENZ_CONF);
+    }
+    
     @BeforeMethod
     private void loadFiles() {
         
@@ -193,7 +201,7 @@ public class TestAuthZpe {
 
         AuthZpeClient.setTokenAllowedOffset(-100);
 
-        // setup our public keys for access tokens
+        // set up our public keys for access tokens
 
         AuthZpeClient.addAccessTokenSignKeyResolverKey("0", Crypto.extractPublicKey(ztsPrivateKeyK0));
         AuthZpeClient.addAccessTokenSignKeyResolverKey("1", Crypto.extractPublicKey(ztsPrivateKeyK1));
@@ -202,6 +210,10 @@ public class TestAuthZpe {
     }
     
     private RoleToken createRoleToken(String svcDomain, List<String> roles, String keyId, long expiry) {
+
+        final String salt = "aAkjbbDMhnLX";
+        final String roleVersion = "Z1";
+
         RoleToken token = new RoleToken.Builder(roleVersion, svcDomain, roles)
             .salt(salt).expirationWindow(expiry).keyId(keyId).build();
         
@@ -382,7 +394,7 @@ public class TestAuthZpe {
         String angResource = "ANGler:stuff";
         StringBuilder roleName = new StringBuilder();
         
-        RoleToken tokenMock = Mockito.mock(RoleToken.class);
+        RoleToken tokenMock = mock(RoleToken.class);
         Mockito.when(tokenMock.getExpiryTime()).thenReturn(1L); // too old
         
         AccessCheckStatus status = AuthZpeClient.allowAccess(tokenMock, angResource, action, roleName);
@@ -490,7 +502,7 @@ public class TestAuthZpe {
         // the expired roletoken if we add it to the cache and then
         // try to use it again, but the cache clear test case sets
         // the timeout to 1secs so as soon as it's added, within a
-        // second it's removed so we can't wait until it's expired to
+        // second it's removed, so we can't wait until it's expired to
         // test again. so for know we'll just get invalid token
         
         AccessCheckStatus status = AuthZpeClient.allowAccess(rToken0AnglerExpirePublic.getSignedToken(), angResource, action);
@@ -644,7 +656,7 @@ public class TestAuthZpe {
 
     @Test
     public void testCleanupOfToken() {
-        // perform an allowed access check
+        // perform allowed access check
         String action      = "fish";
         String angResource = "angler:stockedpondBigBassLake";
         List<String> roles = new ArrayList<>();
@@ -1185,20 +1197,6 @@ public class TestAuthZpe {
     }
     
     @Test
-    public void testPatternFromGlob() {
-        assertEquals("^abc$", AuthZpeClient.patternFromGlob("abc"));
-        assertEquals("^abc.*$", AuthZpeClient.patternFromGlob("abc*"));
-        assertEquals("^abc.$", AuthZpeClient.patternFromGlob("abc?"));
-        assertEquals("^.*abc.$", AuthZpeClient.patternFromGlob("*abc?"));
-        assertEquals("^abc\\.abc:.*$", AuthZpeClient.patternFromGlob("abc.abc:*"));
-        assertEquals("^ab\\[a-c]c$", AuthZpeClient.patternFromGlob("ab[a-c]c"));
-        assertEquals("^ab.*\\.\\(\\)\\^\\$c$", AuthZpeClient.patternFromGlob("ab*.()^$c"));
-        assertEquals("^abc\\\\test\\\\$", AuthZpeClient.patternFromGlob("abc\\test\\"));
-        assertEquals("^ab\\{\\|c\\+$", AuthZpeClient.patternFromGlob("ab{|c+"));
-        assertEquals("^\\^\\$\\[\\(\\)\\\\\\+\\{\\..*.\\|$", AuthZpeClient.patternFromGlob("^$[()\\+{.*?|"));
-    }
-    
-    @Test
     public void testValidateRoleToken() {
         
         List<String> roles = new ArrayList<>();
@@ -1257,6 +1255,11 @@ public class TestAuthZpe {
     }
 
     @Test
+    public void testClose() {
+        AuthZpeClient.close();
+    }
+
+    @Test
     public void testgetZtsPublicKeyNull() {
         PublicKey key = AuthZpeClient.getZtsPublicKey("notexist");
         assertNull(key);
@@ -1284,9 +1287,9 @@ public class TestAuthZpe {
         AuthZpeClient.setX509CAIssuers(issuers);
 
         final String action = "read";
-        X509Certificate cert = Mockito.mock(X509Certificate.class);
-        X500Principal x500Principal = Mockito.mock(X500Principal.class);
-        X500Principal x500PrincipalS = Mockito.mock(X500Principal.class);
+        X509Certificate cert = mock(X509Certificate.class);
+        X500Principal x500Principal = mock(X500Principal.class);
+        X500Principal x500PrincipalS = mock(X500Principal.class);
         Mockito.when(x500Principal.getName()).thenReturn(issuer);
         Mockito.when(x500PrincipalS.getName()).thenReturn(subject);
         Mockito.when(cert.getIssuerX500Principal()).thenReturn(x500Principal);
@@ -1381,7 +1384,7 @@ public class TestAuthZpe {
 
         try {
             Thread.sleep(3000);
-        } catch (InterruptedException e) {
+        } catch (InterruptedException ignored) {
         }
 
         // we should now get null since the token is expired
@@ -1432,5 +1435,108 @@ public class TestAuthZpe {
 
         accessToken = AuthZpeClient.validateAccessToken("Bearer " + invalidKeyIdToken, null, null);
         assertNull(accessToken);
+    }
+
+    @Test
+    public void testFetchPublicKeysUsingSignKeyResolver() {
+        AuthZpeClient.setMillisBetweenZtsCalls(0);
+        String ecKeys = "{\n" +
+                "        \"keys\": [\n" +
+                "            {\n" +
+                "                \"kid\" : \"FdFYFzERwC2uCBB46pZQi4GG85LujR8obt-KWRBICVQ\",\n" +
+                "                \"kty\" : \"EC\",\n" +
+                "                \"crv\" : \"prime256v1\",\n" +
+                "                \"x\"   : \"SVqB4JcUD6lsfvqMr-OKUNUphdNn64Eay60978ZlL74\",\n" +
+                "                \"y\"   : \"lf0u0pMj4lGAzZix5u4Cm5CMQIgMNpkwy163wtKYVKI\",\n" +
+                "                \"d\"   : \"0g5vAEKzugrXaRbgKG0Tj2qJ5lMP4Bezds1_sTybkfk\"\n" +
+                "            }\n" +
+                "        ]\n" +
+                "    }";
+        HttpResponse response = new HttpResponse()
+                .withStatusCode(200)
+                .withBody(ecKeys);
+        ClientAndServer mockServer = startClientAndServer(1080);
+        mockServer
+                .when(request().withPath("/mockJwksUri"))
+                .respond(response);
+        
+        AuthZpeClient.setAccessTokenSignKeyResolver("http://127.0.0.1:1080/mockJwksUri", null);
+        assertNotNull(AuthZpeClient.getZtsPublicKey("FdFYFzERwC2uCBB46pZQi4GG85LujR8obt-KWRBICVQ"));
+        mockServer.stop();
+    }
+
+    @Test
+    public void testMaxCacheTokenSize() throws IOException {
+
+        // perform allowed access check
+
+        List<String> roles = new ArrayList<>();
+        roles.add("full_regex");
+        roles.add("matchall");
+        roles.add("matchstarts");
+        roles.add("matchcompare");
+        roles.add("matchregex");
+        String signedToken = createAccessToken("angler", roles, "0");
+
+        String action = "all";
+        String resource = "angler:stuff";
+
+        Path path = Paths.get("src/test/resources/mtls_token_spec.cert");
+        String certStr = new String(Files.readAllBytes(path));
+        X509Certificate cert = Crypto.loadX509Certificate(certStr);
+
+        // clear our cache
+
+        Map<String, AccessToken> roleMap = ZpeUpdPolLoader.getAccessTokenCacheMap();
+        roleMap.clear();
+
+        // successful access check should add the entry to the cache
+
+        AccessCheckStatus status = AuthZpeClient.allowAccess(signedToken, cert, null, resource, action);
+        Assert.assertEquals(status, AccessCheckStatus.ALLOW);
+
+        Assert.assertEquals(roleMap.size(), 1);
+
+        // with our new token cache size limit of 1 the size should not change
+
+        AuthZpeClient.setTokenCacheMaxValue(1);
+
+        roles.add("testrole1");
+        signedToken = createAccessToken("angler", roles, "0");
+        status = AuthZpeClient.allowAccess(signedToken, cert, null, resource, action);
+        Assert.assertEquals(status, AccessCheckStatus.ALLOW);
+
+        Assert.assertEquals(roleMap.size(), 1);
+
+        // set a negative value will be ignored, so we'll still
+        // have a single entry in the cache
+
+        AuthZpeClient.setTokenCacheMaxValue(-2);
+
+        status = AuthZpeClient.allowAccess(signedToken, cert, null, resource, action);
+        Assert.assertEquals(status, AccessCheckStatus.ALLOW);
+
+        Assert.assertEquals(roleMap.size(), 1);
+
+
+        // now let's increase the size and try again
+
+        AuthZpeClient.setTokenCacheMaxValue(10);
+
+        status = AuthZpeClient.allowAccess(signedToken, cert, null, resource, action);
+        Assert.assertEquals(status, AccessCheckStatus.ALLOW);
+
+        Assert.assertEquals(roleMap.size(), 2);
+
+        // let's set the limit to 0 and verify again
+
+        AuthZpeClient.setTokenCacheMaxValue(0);
+
+        roles.add("testrole2");
+        signedToken = createAccessToken("angler", roles, "0");
+        status = AuthZpeClient.allowAccess(signedToken, cert, null, resource, action);
+        Assert.assertEquals(status, AccessCheckStatus.ALLOW);
+
+        Assert.assertEquals(roleMap.size(), 3);
     }
 }

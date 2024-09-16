@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Oath Holdings, Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,23 +16,22 @@
 package com.yahoo.athenz.auth.util;
 
 import java.io.*;
+import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.security.NoSuchAlgorithmException;
-import java.security.PrivateKey;
-import java.security.PublicKey;
+import java.security.*;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
-import java.util.Date;
-import java.util.LinkedList;
-import java.util.List;
+import java.util.*;
+import java.util.function.Function;
 
 import static com.yahoo.athenz.auth.AuthorityConsts.ATHENZ_PROP_RESTRICTED_OU;
 import static org.mockito.Mockito.*;
 import static org.testng.Assert.*;
 
+import com.google.common.primitives.Bytes;
 import org.bouncycastle.asn1.DERIA5String;
 import org.bouncycastle.asn1.x500.RDN;
 import org.bouncycastle.asn1.x500.X500Name;
@@ -45,6 +44,7 @@ import org.testng.annotations.Test;
 public class CryptoTest {
 
     private final File rsaPrivateKey = new File("./src/test/resources/unit_test_rsa_private.key");
+    private final File rsaPkcs8PrivateKey = new File("./src/test/resources/unit_test_rsa_pkcs8_private.key");
     private final File rsaPublicKey = new File("./src/test/resources/rsa_public.key");
     private final File rsaPublicX590Cert = new File("./src/test/resources/rsa_public_x509.cert");
     private final File rsaPublicInvalidKey = new File("./src/test/resources/rsa_public_invalid.key");
@@ -68,6 +68,8 @@ public class CryptoTest {
     private final String serviceToken = "v=S1;d=coretech;n=storage;t=1234567000;e=123456800;h=localhost";
     private final String serviceRSASignature = "VsUlcNozK4as1FjPbowEE_DFDD8KWpQzphadfbt_TsMoCTLFpYrMzKTu_nHKemJmEi0bbPwj7hRLrIKEFu2VjQ--";
     private final String serviceECSignature = "MEQCIEBnyNCxp5GSeua3K9OenyetmVs4F68VB.Md1JRaU4OXAiBWAxlJLe74ZV4QDqapsD4FJm.MA3mv0FMcq.LEevJa0g--";
+
+    private static final byte[] PERIOD = {46};
 
     @Test
     public void testSignVerifyRSAKey() {
@@ -94,6 +96,20 @@ public class CryptoTest {
         assertEquals(signature, serviceRSASignature);
 
         PublicKey publicKey = Crypto.extractPublicKey(privateKey);
+        assertNotNull(publicKey);
+
+        assertTrue(Crypto.verify(serviceToken, publicKey, signature));
+    }
+
+    @Test
+    public void testSignVerifyPKCS8RsaKey() {
+        PrivateKey privateKey = Crypto.loadPrivateKey(rsaPkcs8PrivateKey);
+        assertNotNull(privateKey);
+
+        String signature = Crypto.sign(serviceToken, privateKey);
+        assertEquals(signature, serviceRSASignature);
+
+        PublicKey publicKey = Crypto.loadPublicKey(rsaPublicKey);
         assertNotNull(publicKey);
 
         assertTrue(Crypto.verify(serviceToken, publicKey, signature));
@@ -338,6 +354,7 @@ public class CryptoTest {
 
         assertTrue(Crypto.verify(serviceToken, publicKey, signature));
     }
+
     @Test
     public void testSignVerifyECParamsKeyException() {
         PrivateKey privateKey = Crypto.loadPrivateKey(ecPrivateParamsKey);
@@ -373,6 +390,7 @@ public class CryptoTest {
     public void testLoadPublicKeyException() {
         assertThrows(CryptoException.class, () -> Crypto.loadPublicKey(noFile));
     }
+
     @Test
     public void testSignVerifyECParamMixCurvesFail() {
 
@@ -611,22 +629,43 @@ public class CryptoTest {
 
     @Test
     public void testSHA256() {
-        byte [] checkByte = Crypto.sha256("check");
+        byte[] checkByte = Crypto.sha256("check");
         assertNotNull(checkByte);
     }
 
     @DataProvider
     public Object[][] x500Principal() {
-        return new Object[][] {
+        return new Object[][]{
                 {"CN=athenzcompany.com,O=foo", false},
                 {"CDDN=athenzcompany.com", true},
         };
     }
 
     @Test(dataProvider = "x500Principal")
-    public void testX509CSRrequest(String x500Principal, boolean badRequest) {
+    public void testGenerateX509CSRKeyTypeRSA(String x500Principal, boolean badRequest) {
         PublicKey publicKey = Crypto.loadPublicKey(rsaPublicKey);
         PrivateKey privateKey = Crypto.loadPrivateKey(rsaPrivateKey);
+        String certRequest = null;
+        GeneralName otherName1 = new GeneralName(GeneralName.otherName, new DERIA5String("role1"));
+        GeneralName otherName2 = new GeneralName(GeneralName.otherName, new DERIA5String("role2"));
+        GeneralName[] sanArray = new GeneralName[]{otherName1, otherName2};
+        try {
+            certRequest = Crypto.generateX509CSR(privateKey, publicKey, x500Principal, sanArray);
+        } catch (Exception e) {
+            if (!badRequest) {
+                fail("Should not have failed to create csr");
+            }
+        }
+        if (!badRequest) {
+            //Now validate the csr
+            Crypto.getPKCS10CertRequest(certRequest);
+        }
+    }
+
+    @Test(dataProvider = "x500Principal")
+    public void testGenerateX509CSRKeyTypeECDSA(String x500Principal, boolean badRequest) {
+        PublicKey publicKey = Crypto.loadPublicKey(ecPublicKey);
+        PrivateKey privateKey = Crypto.loadPrivateKey(ecPrivateKey);
         String certRequest = null;
         GeneralName otherName1 = new GeneralName(GeneralName.otherName, new DERIA5String("role1"));
         GeneralName otherName2 = new GeneralName(GeneralName.otherName, new DERIA5String("role2"));
@@ -672,6 +711,16 @@ public class CryptoTest {
             X509Certificate cert = (X509Certificate) cf.generateCertificate(inStream);
 
             assertEquals(Crypto.extractX509CertCommonName(cert), "athenz.syncer");
+        }
+    }
+
+    @Test
+    public void testExtractX509CertIssuerCommonName() throws Exception {
+        try (InputStream inStream = new FileInputStream("src/test/resources/valid_cn_x509.cert")) {
+            CertificateFactory cf = CertificateFactory.getInstance("X.509");
+            X509Certificate cert = (X509Certificate) cf.generateCertificate(inStream);
+
+            assertEquals(Crypto.extractX509CertIssuerCommonName(cert), "athenz.syncer");
         }
     }
 
@@ -808,7 +857,7 @@ public class CryptoTest {
     }
 
     @Test
-    public void testExtractX509CertOField() throws Exception{
+    public void testExtractX509CertOField() throws Exception {
         try (InputStream inStream = new FileInputStream("src/test/resources/valid_cn_x509.cert")) {
             CertificateFactory cf = CertificateFactory.getInstance("X.509");
             X509Certificate cert = (X509Certificate) cf.generateCertificate(inStream);
@@ -1105,7 +1154,7 @@ public class CryptoTest {
     }
 
     @Test
-    public void testExtractX509CertDnsNmaes() throws Exception{
+    public void testExtractX509CertDnsNmaes() throws Exception {
         try (InputStream inStream = new FileInputStream("src/test/resources/x509_altnames_singleip.cert")) {
             CertificateFactory cf = CertificateFactory.getInstance("X.509");
             X509Certificate cert = (X509Certificate) cf.generateCertificate(inStream);
@@ -1235,6 +1284,128 @@ public class CryptoTest {
     }
 
     @Test
+    public void testSignVerifyByteArrayECKeyP1363Format() {
+
+        PrivateKey privateKey = Crypto.loadPrivateKey(ecPrivateKey);
+        assertNotNull(privateKey);
+
+        byte[] derSignature = Crypto.sign(serviceToken.getBytes(StandardCharsets.UTF_8), privateKey, Crypto.SHA256);
+        assertNotNull(derSignature);
+        byte[] p1363Signature = Crypto.convertSignatureFromDERToP1363Format(derSignature, Crypto.SHA256);
+        assertNotNull(p1363Signature);
+
+        PublicKey publicKey = Crypto.loadPublicKey(ecPublicKey);
+        assertNotNull(publicKey);
+
+        try {
+            Crypto.verify(serviceToken.getBytes(StandardCharsets.UTF_8), publicKey, p1363Signature, Crypto.SHA256);
+            fail();
+        } catch (CryptoException ex) {
+            assertTrue(ex.getMessage().contains("SignatureException"));
+        }
+
+        // verify original signature still works
+
+        assertTrue(Crypto.verify(serviceToken.getBytes(StandardCharsets.UTF_8), publicKey, derSignature, Crypto.SHA256));
+
+        // verify invalid digest algorithm is handled accordingly
+
+        try {
+            Crypto.convertSignatureFromDERToP1363Format(derSignature, "SHA1");
+            fail();
+        } catch (CryptoException ex) {
+            assertTrue(ex.getMessage().contains("unknown signature size"));
+        }
+    }
+
+    @Test
+    public void testConvertSignatureFromP1363ToDERFormat() {
+
+        PrivateKey privateKey = Crypto.loadPrivateKey(ecPrivateKey);
+        assertNotNull(privateKey);
+
+        byte[] derSignature = Crypto.sign(serviceToken.getBytes(StandardCharsets.UTF_8), privateKey, Crypto.SHA256);
+        assertNotNull(derSignature);
+        byte[] p1363Signature = Crypto.convertSignatureFromDERToP1363Format(derSignature, Crypto.SHA256);
+        assertNotNull(p1363Signature);
+        byte[] testDerSignature = Crypto.convertSignatureFromP1363ToDERFormat(p1363Signature, Crypto.SHA256);
+        assertEquals(derSignature, testDerSignature);
+
+        try {
+            Crypto.convertSignatureFromP1363ToDERFormat(p1363Signature, "SHA1");
+            fail();
+        } catch (CryptoException ex) {
+            assertTrue(ex.getMessage().contains("unknown signature size"));
+        }
+    }
+
+    @Test
+    public void testNullSignatureValidation() throws NoSuchAlgorithmException {
+
+        KeyPair keyPair = KeyPairGenerator.getInstance("EC").generateKeyPair();
+
+        byte[] derSignature = Crypto.sign(serviceToken.getBytes(StandardCharsets.UTF_8), keyPair.getPrivate(), Crypto.SHA256);
+        assertNotNull(derSignature);
+        byte[] p1363Signature = Crypto.convertSignatureFromDERToP1363Format(derSignature, Crypto.SHA256);
+        assertNotNull(p1363Signature);
+
+        byte[] testDerSignature = Crypto.convertSignatureFromP1363ToDERFormat(p1363Signature, Crypto.SHA256);
+        assertTrue(Crypto.verify(serviceToken.getBytes(StandardCharsets.UTF_8), keyPair.getPublic(),
+                testDerSignature, Crypto.SHA256));
+
+        // now null out the p1363 signature
+
+        Arrays.fill(p1363Signature, (byte) 0);
+        testDerSignature = Crypto.convertSignatureFromP1363ToDERFormat(p1363Signature, Crypto.SHA256);
+        assertFalse(Crypto.verify(serviceToken.getBytes(StandardCharsets.UTF_8), keyPair.getPublic(),
+                testDerSignature, Crypto.SHA256));
+
+        // reset the provider to the jdk one since we default to bc
+
+        System.setProperty(Crypto.ATHENZ_CRYPTO_SIGNATURE_PROVIDER, "SunEC");
+        assertFalse(Crypto.verify(serviceToken.getBytes(StandardCharsets.UTF_8), keyPair.getPublic(),
+                testDerSignature, Crypto.SHA256));
+
+        System.clearProperty(Crypto.ATHENZ_CRYPTO_SIGNATURE_PROVIDER);
+    }
+
+    @Test
+    public void testConvertSignatureFromP1363ToDERFormatInvalidSize() {
+        try {
+            Crypto.convertSignatureFromP1363ToDERFormat("test".getBytes(StandardCharsets.UTF_8), Crypto.SHA256);
+            fail();
+        } catch (CryptoException ex) {
+            assertTrue(ex.getMessage().contains("invalid signature size"));
+        }
+    }
+
+    @Test
+    public void testConvertSignatureFromDERToP1363FormatInvalidData() {
+        try {
+            Crypto.convertSignatureFromDERToP1363Format("test".getBytes(StandardCharsets.UTF_8), Crypto.SHA256);
+            fail();
+        } catch (CryptoException ex) {
+            assertTrue(ex.getMessage().contains("failed to construct asn1 sequence"));
+        }
+
+        PrivateKey privateKey = Crypto.loadPrivateKey(ecPrivateKey);
+        assertNotNull(privateKey);
+
+        byte[] derSignature = Crypto.sign(serviceToken.getBytes(StandardCharsets.UTF_8), privateKey, Crypto.SHA256);
+        assertNotNull(derSignature);
+        // make the signature invalid
+        for (int i = 0; i < derSignature.length / 2; i++) {
+            derSignature[i] = 1;
+        }
+        try {
+            Crypto.convertSignatureFromDERToP1363Format(derSignature, Crypto.SHA256);
+            fail();
+        } catch (CryptoException ex) {
+            assertTrue(ex.getMessage().contains("failed to construct asn1 sequence"));
+        }
+    }
+
+    @Test
     public void testSignVerifyByteArrayRSAKey() {
 
         PrivateKey privateKey = Crypto.loadPrivateKey(rsaPrivateKey);
@@ -1261,4 +1432,255 @@ public class CryptoTest {
         }
     }
 
+    @Test
+    public void testGetDigestAlgorithm() {
+        assertEquals(Crypto.getDigestAlgorithm("ES256"), Crypto.SHA256);
+        assertEquals(Crypto.getDigestAlgorithm("RS256"), Crypto.SHA256);
+        assertEquals(Crypto.getDigestAlgorithm("ES384"), Crypto.SHA384);
+        assertEquals(Crypto.getDigestAlgorithm("RS384"), Crypto.SHA384);
+        assertEquals(Crypto.getDigestAlgorithm("ES512"), Crypto.SHA512);
+        assertEquals(Crypto.getDigestAlgorithm("RS512"), Crypto.SHA512);
+        assertNull(Crypto.getDigestAlgorithm("SHA1"));
+        assertNull(Crypto.getDigestAlgorithm("MD5"));
+    }
+
+    @Test
+    public void testValidateJWSDocument() {
+        // valid support
+        assertTrue(validateJWSDocumentWithKeys("rsa-0", "RS256", rsaPrivateKey));
+        assertTrue(validateJWSDocumentWithKeys("ec-0", "ES256", ecPrivateKey));
+        // invalid keys
+        assertFalse(validateJWSDocumentWithKeys("0", "RS256", rsaPrivateKey));
+        // invalid algorithm
+        assertFalse(validateJWSDocumentWithKeys("rsa-0", "RS512", rsaPrivateKey));
+    }
+
+    private boolean validateJWSDocumentWithKeys(final String kid, final String algorithm, File privateKeyFile) {
+
+        Map<String, PublicKey> keyMap = new HashMap<>();
+        keyMap.put("rsa-0", Crypto.loadPublicKey(rsaPublicKey));
+        keyMap.put("ec-0", Crypto.loadPublicKey(ecPublicKey));
+        Function<String, PublicKey> keyGetter = keyMap::get;
+
+        final Base64.Encoder encoder = Base64.getUrlEncoder().withoutPadding();
+        final String protectedHeader = "{\"kid\":\"" + kid + "\",\"alg\":\"" + algorithm + "\"}";
+        final byte[] encodedHeader = encoder.encode(protectedHeader.getBytes(StandardCharsets.UTF_8));
+
+        final String payload = "{\"domainName\":\"athenz\"}";
+        final byte[] encodedPayload = encoder.encode(payload.getBytes(StandardCharsets.UTF_8));
+
+        PrivateKey privateKey = Crypto.loadPrivateKey(privateKeyFile);
+
+        final byte[] signature = encoder.encode(Crypto.sign(
+                Bytes.concat(encodedHeader, PERIOD, encodedPayload), privateKey, Crypto.SHA256));
+        return Crypto.validateJWSDocument(new String(encodedHeader), new String(encodedPayload),
+                new String(signature), keyGetter);
+    }
+
+    @Test
+    public void validateJWSDocumentMissingKid() {
+
+        Function<String, PublicKey> keyGetter = (String keyId) -> null;
+        final Base64.Encoder encoder = Base64.getUrlEncoder().withoutPadding();
+        final String protectedHeader = "{\"alg\":\"ES256\"}";
+        final byte[] encodedHeader = encoder.encode(protectedHeader.getBytes(StandardCharsets.UTF_8));
+
+        final String payload = "{\"domainName\":\"athenz\"}";
+        final byte[] encodedPayload = encoder.encode(payload.getBytes(StandardCharsets.UTF_8));
+
+        PrivateKey privateKey = Crypto.loadPrivateKey(rsaPrivateKey);
+
+        final byte[] signature = encoder.encode(Crypto.sign(
+                Bytes.concat(encodedHeader, PERIOD, encodedPayload), privateKey, Crypto.SHA256));
+        assertFalse(Crypto.validateJWSDocument(new String(encodedHeader), new String(encodedPayload),
+                new String(signature), keyGetter));
+    }
+
+    @Test
+    public void validateJWSDocumentInvalidHeader() {
+
+        Function<String, PublicKey> keyGetter = (String keyId) -> null;
+        final Base64.Encoder encoder = Base64.getUrlEncoder().withoutPadding();
+        final String protectedHeader = "{\"alg\":\"ES256\"}";
+        final byte[] encodedHeader = encoder.encode(protectedHeader.getBytes(StandardCharsets.UTF_8));
+
+        final String payload = "{\"domainName\":\"athenz\"}";
+        final byte[] encodedPayload = encoder.encode(payload.getBytes(StandardCharsets.UTF_8));
+
+        PrivateKey privateKey = Crypto.loadPrivateKey(rsaPrivateKey);
+
+        final byte[] signature = encoder.encode(Crypto.sign(
+                Bytes.concat(encodedHeader, PERIOD, encodedPayload), privateKey, Crypto.SHA256));
+        assertFalse(Crypto.validateJWSDocument("invalid-header", new String(encodedPayload),
+                new String(signature), keyGetter));
+    }
+
+    @Test
+    public void testValidateJWSDocumentInvalidSignature() {
+
+        Map<String, PublicKey> keyMap = new HashMap<>();
+        keyMap.put("rsa-0", Crypto.loadPublicKey(rsaPublicKey));
+        keyMap.put("ec-0", Crypto.loadPublicKey(ecPublicKey));
+        Function<String, PublicKey> keyGetter = keyMap::get;
+
+        final Base64.Encoder encoder = Base64.getUrlEncoder().withoutPadding();
+        final String protectedHeader = "{\"kid\":\"ec-0\",\"alg\":\"ES256\"}";
+        final byte[] encodedHeader = encoder.encode(protectedHeader.getBytes(StandardCharsets.UTF_8));
+
+        final String payload = "{\"domainName\":\"athenz\"}";
+        final byte[] encodedPayload = encoder.encode(payload.getBytes(StandardCharsets.UTF_8));
+
+        assertFalse(Crypto.validateJWSDocument(new String(encodedHeader), new String(encodedPayload),
+                "invalid-signature", keyGetter));
+    }
+
+    @Test
+    public void testValidateJWSDocumentInvalidPublicKey() {
+
+        // we're going to return different public key for id
+        Map<String, PublicKey> keyMap = new HashMap<>();
+        keyMap.put("rsa-0", Crypto.loadPublicKey(ecPublicKey));
+        keyMap.put("ec-0", Crypto.loadPublicKey(rsaPublicKey));
+        Function<String, PublicKey> keyGetter = keyMap::get;
+
+        final Base64.Encoder encoder = Base64.getUrlEncoder().withoutPadding();
+        final String protectedHeader = "{\"kid\":\"ec-0\",\"alg\":\"ES256\"}";
+        final byte[] encodedHeader = encoder.encode(protectedHeader.getBytes(StandardCharsets.UTF_8));
+
+        final String payload = "{\"domainName\":\"athenz\"}";
+        final byte[] encodedPayload = encoder.encode(payload.getBytes(StandardCharsets.UTF_8));
+
+        PrivateKey privateKey = Crypto.loadPrivateKey(ecPrivateKey);
+
+        final byte[] signature = encoder.encode(Crypto.sign(
+                Bytes.concat(encodedHeader, PERIOD, encodedPayload), privateKey, Crypto.SHA256));
+        assertFalse(Crypto.validateJWSDocument(new String(encodedHeader), new String(encodedPayload),
+                new String(signature), keyGetter));
+    }
+
+    /**
+     * Unit tests from the Apache codec library correspoding to
+     * toIntegerBytes function
+     * https://github.com/apache/commons-codec/blob/master/src/test/java/org/apache/commons/codec/binary/Base64Test.java
+     */
+    @Test
+    public void testToIntegerBytes1() {
+        final Base64.Encoder encoder = Base64.getEncoder();
+
+        final String encodedInt1 = "li7dzDacuo67Jg7mtqEm2TRuOMU=";
+        final BigInteger bigInt1 = new BigInteger("85739377120809420210425962799" + "0318636601332086981");
+
+        assertEquals(encodedInt1, new String(encoder.encode(Crypto.toIntegerBytes(bigInt1, true))));
+    }
+
+    @Test
+    public void testToIntegerBytes2() {
+        final Base64.Encoder encoder = Base64.getEncoder();
+
+        final String encodedInt2 = "9B5ypLY9pMOmtxCeTDHgwdNFeGs=";
+        final BigInteger bigInt2 = new BigInteger("13936727572861167254666467268" + "91466679477132949611");
+
+        assertEquals(encodedInt2, new String(encoder.encode(Crypto.toIntegerBytes(bigInt2, true))));
+    }
+
+    @Test
+    public void testToIntegerBytes3() {
+        final Base64.Encoder encoder = Base64.getEncoder();
+
+        final String encodedInt3 = "FKIhdgaG5LGKiEtF1vHy4f3y700zaD6QwDS3IrNVGzNp2"
+                + "rY+1LFWTK6D44AyiC1n8uWz1itkYMZF0/aKDK0Yjg==";
+        final BigInteger bigInt3 = new BigInteger(
+                "10806548154093873461951748545" + "1196989136416448805819079363524309897749044958112417136240557"
+                        + "4495062430572478766856090958495998158114332651671116876320938126");
+
+        assertEquals(encodedInt3, new String(encoder.encode(Crypto.toIntegerBytes(bigInt3, true))));
+    }
+
+    @Test
+    public void testToIntegerBytes4() {
+        final Base64.Encoder encoder = Base64.getEncoder();
+
+        final String encodedInt4 = "ctA8YGxrtngg/zKVvqEOefnwmViFztcnPBYPlJsvh6yKI"
+                + "4iDm68fnp4Mi3RrJ6bZAygFrUIQLxLjV+OJtgJAEto0xAs+Mehuq1DkSFEpP3o"
+                + "DzCTOsrOiS1DwQe4oIb7zVk/9l7aPtJMHW0LVlMdwZNFNNJoqMcT2ZfCPrfvYv" + "Q0=";
+        final BigInteger bigInt4 = new BigInteger(
+                "80624726256040348115552042320" + "6968135001872753709424419772586693950232350200555646471175944"
+                        + "519297087885987040810778908507262272892702303774422853675597"
+                        + "748008534040890923814202286633163248086055216976551456088015"
+                        + "338880713818192088877057717530169381044092839402438015097654"
+                        + "53542091716518238707344493641683483917");
+
+        assertEquals(encodedInt4, new String(encoder.encode(Crypto.toIntegerBytes(bigInt4, true))));
+    }
+
+    @Test
+    public void testGetSignatureExpectedSize() {
+        assertEquals(Crypto.getSignatureExpectedSize("SHA256"), 32);
+        assertEquals(Crypto.getSignatureExpectedSize("SHA384"), 48);
+        assertEquals(Crypto.getSignatureExpectedSize("SHA512"), 66);
+        assertEquals(Crypto.getSignatureExpectedSize("SHA1"), 0);
+    }
+
+    @Test
+    public void testSafeCopyByteArray() {
+        byte[] src = "data".getBytes(StandardCharsets.UTF_8);
+        byte[] dest = new byte[6];
+        Crypto.safeCopyByteArray(src, dest, 0, 6);
+        assertEquals(dest[0], (byte) 0);
+        assertEquals(dest[1], (byte) 0);
+        assertEquals(dest[2], (byte) 'd');
+        assertEquals(dest[3], (byte) 'a');
+        assertEquals(dest[4], (byte) 't');
+        assertEquals(dest[5], (byte) 'a');
+
+        byte[] src1 = "part1".getBytes(StandardCharsets.UTF_8);
+        byte[] src2 = "part2".getBytes(StandardCharsets.UTF_8);
+        dest = new byte[10];
+        Crypto.safeCopyByteArray(src1, dest, 0, 5);
+        Crypto.safeCopyByteArray(src2, dest, 5, 5);
+        assertEquals(new String(dest), "part1part2");
+    }
+
+    @Test
+    public void testSignVerifyByteArrayECKeyP1363FormatConversions() {
+
+        PrivateKey privateKey = Crypto.loadPrivateKey(ecPrivateKey);
+        assertNotNull(privateKey);
+
+        for (int i = 0; i < 10000; i++) {
+            String serviceToken = Integer.toString(i);
+            byte[] derSignature = Crypto.sign(serviceToken.getBytes(StandardCharsets.UTF_8), privateKey, Crypto.SHA256);
+            assertNotNull(derSignature);
+            byte[] p1363Signature = Crypto.convertSignatureFromDERToP1363Format(derSignature, Crypto.SHA256);
+            assertNotNull(p1363Signature);
+
+            byte[] testDerSignature = Crypto.convertSignatureFromP1363ToDERFormat(p1363Signature, Crypto.SHA256);
+            assertEquals(derSignature, testDerSignature);
+        }
+    }
+
+    @Test
+    public void testExtractIssuerDn() throws IOException {
+        Path path = Paths.get("src/test/resources/x509_ca_certificate.pem");
+        String certStr = new String(Files.readAllBytes(path));
+        X509Certificate cert = Crypto.loadX509Certificate(certStr);
+
+        String issuerDN = "CN=athenz.syncer,OU=athenz.syncer,O=My Test Company,L=Sunnyvale,ST=CA,C=US";
+        assertEquals(Crypto.extractIssuerDn(cert), issuerDN);
+
+        String caBundlePath = "src/test/resources/x509_ca_certificate_chain.pem";
+        Set<String> issuerDNSet = new HashSet<>();
+        issuerDNSet.add("CN=athenz.syncer,OU=athenz.syncer,O=My Test Company,L=Sunnyvale,ST=CA,C=US");
+        issuerDNSet.add("CN=athenz.syncer,OU=athenz.syncer,O=My Test Company,L=New York,ST=NY,C=US");
+
+        assertEquals(Crypto.extractIssuerDn(caBundlePath), issuerDNSet);
+
+        caBundlePath = "";
+        issuerDNSet = new HashSet<>();
+        assertEquals(Crypto.extractIssuerDn(caBundlePath), issuerDNSet);
+
+        caBundlePath = null;
+        issuerDNSet = new HashSet<>();
+        assertEquals(Crypto.extractIssuerDn(caBundlePath), issuerDNSet);
+    }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,27 +14,49 @@
  * limitations under the License.
  */
 import React from 'react';
-import { render } from '@testing-library/react';
+import { waitFor } from '@testing-library/react';
 import UserRoleTable from '../../../components/role/UserRoleTable';
-import API from '../../../api';
+import {
+    buildRolesForState,
+    getStateWithRoles,
+    renderWithRedux,
+} from '../../../tests_utils/ComponentsTestUtils';
 
 describe('UserRoleTable', () => {
-    it('should render', () => {
-        let domains = [];
-        let roles = [];
-        domains.push({ name: 'athens' });
-        domains.push({ name: 'athens.ci' });
-        let role1 = {
-            name: 'a',
-        };
-        let role2 = {
-            name: 'b',
-        };
-        roles.push(role1);
-        roles.push(role2);
-        const { getByTestId } = render(
-            <UserRoleTable roles={roles} api={API()} domain={domains} />
+    it('should render', async () => {
+        let domain = 'athens';
+        const roles = buildRolesForState(
+            {
+                role1: {
+                    name: 'role1',
+                    roleMembers: {
+                        'user.test1': {
+                            memberName: 'user.test1',
+                            memberFullName: 'testing1',
+                        },
+                    },
+                },
+                role2: {
+                    name: 'role2',
+                    roleMembers: {
+                        'user.test2': {
+                            memberName: 'user.test2',
+                            memberFullName: 'testing2',
+                        },
+                    },
+                },
+            },
+            domain
         );
+
+        const { getByTestId, queryByText } = renderWithRedux(
+            <UserRoleTable domain={domain} searchText={'test'} />,
+            getStateWithRoles(roles)
+        );
+        await waitFor(() => {
+            expect(queryByText('test'));
+        });
+
         const userroletable = getByTestId('userroletable');
 
         expect(userroletable).toMatchSnapshot();

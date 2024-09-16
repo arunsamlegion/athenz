@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,7 @@ const Api = (req) => {
     let localDate = new DateUtils();
     const fetchr = new Fetchr({
         xhrPath: '/api/v1',
-        xhrTimeout: 10000,
+        xhrTimeout: 30000,
         req,
     });
     return {
@@ -48,6 +48,18 @@ const Api = (req) => {
                             resolve(data);
                         }
                     });
+            });
+        },
+
+        listAllDomains() {
+            return new Promise((resolve, reject) => {
+                fetchr.read('all-domain-list').end((err, data) => {
+                    if (err) {
+                        reject(err);
+                    } else {
+                        resolve(data);
+                    }
+                });
             });
         },
 
@@ -148,6 +160,44 @@ const Api = (req) => {
             });
         },
 
+        getServiceDependencies(domainName) {
+            return new Promise((resolve, reject) => {
+                fetchr
+                    .read('dependencies')
+                    .params({ domainName })
+                    .end((err, data) => {
+                        if (err) {
+                            reject(err);
+                        } else {
+                            if (data) {
+                                resolve(data && data.serviceAndResourceGroups);
+                            } else {
+                                resolve([]);
+                            }
+                        }
+                    });
+            });
+        },
+
+        getAuthHistory(domainName) {
+            return new Promise((resolve, reject) => {
+                fetchr
+                    .read('auth-history')
+                    .params({ domainName })
+                    .end((err, data) => {
+                        if (err) {
+                            reject(err);
+                        } else {
+                            if (data) {
+                                resolve(data);
+                            } else {
+                                resolve([]);
+                            }
+                        }
+                    });
+            });
+        },
+
         listRoles(domainName) {
             return new Promise((resolve, reject) => {
                 fetchr
@@ -163,11 +213,11 @@ const Api = (req) => {
             });
         },
 
-        getRoles(domainName) {
+        getRoles(domainName, members) {
             return new Promise((resolve, reject) => {
                 fetchr
                     .read('roles')
-                    .params({ domainName })
+                    .params({ domainName, members })
                     .end((err, data) => {
                         if (err) {
                             reject(err);
@@ -182,11 +232,11 @@ const Api = (req) => {
             });
         },
 
-        getGroups(domainName) {
+        getGroups(domainName, members) {
             return new Promise((resolve, reject) => {
                 fetchr
                     .read('groups')
-                    .params({ domainName })
+                    .params({ domainName, members })
                     .end((err, data) => {
                         if (err) {
                             reject(err);
@@ -351,6 +401,36 @@ const Api = (req) => {
             });
         },
 
+        getPendingDomainMembersListByDomain(domainName) {
+            return new Promise((resolve, reject) => {
+                fetchr
+                    .read('pending-approval-domain')
+                    .params({ domainName: domainName })
+                    .end((err, data) => {
+                        if (err) {
+                            reject(err);
+                        } else {
+                            resolve(data);
+                        }
+                    });
+            });
+        },
+
+        getPendingDomainMembersCountByDomain(domainName) {
+            return new Promise((resolve, reject) => {
+                fetchr
+                    .read('pending-approval-domain-count')
+                    .params({ domainName: domainName })
+                    .end((err, data) => {
+                        if (err) {
+                            reject(err);
+                        } else {
+                            resolve(data);
+                        }
+                    });
+            });
+        },
+
         processPending(
             domainName,
             roleName,
@@ -387,7 +467,7 @@ const Api = (req) => {
             });
         },
 
-        addRole(domainName, roleName, role, auditRef, _csrf) {
+        addRole(domainName, roleName, role, auditRef, _csrf, returnObj) {
             return new Promise((resolve, reject) => {
                 fetchr.updateOptions({
                     context: {
@@ -396,7 +476,7 @@ const Api = (req) => {
                 });
                 fetchr
                     .create('role')
-                    .params({ domainName, roleName, role, auditRef })
+                    .params({ domainName, roleName, role, auditRef, returnObj })
                     .end((err, data) => {
                         if (err) {
                             reject(err);
@@ -407,7 +487,7 @@ const Api = (req) => {
             });
         },
 
-        addGroup(domainName, groupName, group, auditRef, _csrf) {
+        addGroup(domainName, groupName, group, auditRef, _csrf, returnObj) {
             return new Promise((resolve, reject) => {
                 fetchr.updateOptions({
                     context: {
@@ -416,7 +496,13 @@ const Api = (req) => {
                 });
                 fetchr
                     .create('group')
-                    .params({ domainName, groupName, group, auditRef })
+                    .params({
+                        domainName,
+                        groupName,
+                        group,
+                        auditRef,
+                        returnObj,
+                    })
                     .end((err, data) => {
                         if (err) {
                             reject(err);
@@ -467,7 +553,7 @@ const Api = (req) => {
             });
         },
 
-        reviewRole(domainName, roleName, role, auditRef, _csrf) {
+        reviewRole(domainName, roleName, role, auditRef, _csrf, returnObj) {
             return new Promise((resolve, reject) => {
                 fetchr.updateOptions({
                     context: {
@@ -476,7 +562,7 @@ const Api = (req) => {
                 });
                 fetchr
                     .update('role')
-                    .params({ domainName, roleName, role, auditRef })
+                    .params({ domainName, roleName, role, auditRef, returnObj })
                     .end((err, data) => {
                         if (err) {
                             reject(err);
@@ -487,7 +573,13 @@ const Api = (req) => {
             });
         },
 
-        addServiceHost(domain, service, detail, auditRef, _csrf) {
+        addServiceHost(
+            domainName,
+            serviceName,
+            staticWorkload,
+            auditRef,
+            _csrf
+        ) {
             return new Promise((resolve, reject) => {
                 fetchr.updateOptions({
                     context: {
@@ -495,9 +587,9 @@ const Api = (req) => {
                     },
                 });
                 var params = {
-                    domain,
-                    service,
-                    detail,
+                    domainName,
+                    serviceName,
+                    staticWorkload,
                     auditRef,
                 };
 
@@ -518,7 +610,7 @@ const Api = (req) => {
             });
         },
 
-        reviewGroup(domainName, groupName, group, auditRef, _csrf) {
+        reviewGroup(domainName, groupName, group, auditRef, _csrf, returnObj) {
             return new Promise((resolve, reject) => {
                 fetchr.updateOptions({
                     context: {
@@ -527,7 +619,13 @@ const Api = (req) => {
                 });
                 fetchr
                     .update('group')
-                    .params({ domainName, groupName, group, auditRef })
+                    .params({
+                        domainName,
+                        groupName,
+                        group,
+                        auditRef,
+                        returnObj,
+                    })
                     .end((err, data) => {
                         if (err) {
                             reject(err);
@@ -565,7 +663,8 @@ const Api = (req) => {
             membership,
             auditRef,
             category,
-            _csrf
+            _csrf,
+            returnObj
         ) {
             return new Promise((resolve, reject) => {
                 fetchr.updateOptions({
@@ -582,6 +681,7 @@ const Api = (req) => {
                         auditRef,
                         membership,
                         category,
+                        returnObj,
                     })
                     .end((err, data) => {
                         if (err) {
@@ -599,7 +699,8 @@ const Api = (req) => {
             memberName,
             membership,
             auditRef,
-            _csrf
+            _csrf,
+            returnObj
         ) {
             return new Promise((resolve, reject) => {
                 fetchr.updateOptions({
@@ -615,6 +716,7 @@ const Api = (req) => {
                         memberName,
                         auditRef,
                         membership,
+                        returnObj,
                     })
                     .end((err, data) => {
                         if (err) {
@@ -693,6 +795,7 @@ const Api = (req) => {
             });
         },
 
+        // not used
         searchDomains(domainName) {
             return new Promise((resolve, reject) => {
                 fetchr
@@ -708,11 +811,11 @@ const Api = (req) => {
             });
         },
 
-        getServices(domainName) {
+        getServices(domainName, publickeys, hosts) {
             return new Promise((resolve, reject) => {
                 fetchr
                     .read('services')
-                    .params({ domainName })
+                    .params({ domainName, publickeys, hosts })
                     .end((err, data) => {
                         if (err) {
                             reject(err);
@@ -753,7 +856,8 @@ const Api = (req) => {
             providerEndpoint,
             keyId,
             keyValue,
-            _csrf
+            _csrf,
+            returnObj
         ) {
             return new Promise((resolve, reject) => {
                 fetchr.updateOptions({
@@ -769,6 +873,7 @@ const Api = (req) => {
                         description,
                         providerEndpoint,
                     },
+                    returnObj,
                 };
 
                 if (keyId && keyValue) {
@@ -919,6 +1024,21 @@ const Api = (req) => {
             });
         },
 
+        getAllUsers() {
+            return new Promise((resolve, reject) => {
+                fetchr
+                    .read('all-users')
+                    .params()
+                    .end((err, data) => {
+                        if (err) {
+                            reject(err);
+                        } else {
+                            resolve(data);
+                        }
+                    });
+            });
+        },
+
         getPolicy(domainName, policyName) {
             return new Promise((resolve, reject) => {
                 fetchr
@@ -933,35 +1053,6 @@ const Api = (req) => {
                             } else {
                                 resolve([]);
                             }
-                        }
-                    });
-            });
-        },
-
-        getAssertionId(
-            domainName,
-            policyName,
-            roleName,
-            resource,
-            action,
-            effect
-        ) {
-            return new Promise((resolve, reject) => {
-                fetchr
-                    .read('assertionId')
-                    .params({
-                        domainName,
-                        policyName,
-                        roleName,
-                        resource,
-                        action,
-                        effect,
-                    })
-                    .end((err, data) => {
-                        if (err) {
-                            reject(err);
-                        } else {
-                            resolve(data);
                         }
                     });
             });
@@ -997,11 +1088,34 @@ const Api = (req) => {
             });
         },
 
-        getPolicies(domainName, assertions) {
+        getPolicies(domainName, assertions, includeNonActive) {
             return new Promise((resolve, reject) => {
                 fetchr
                     .read('policies')
-                    .params({ domainName: domainName, assertions: assertions })
+                    .params({
+                        domainName: domainName,
+                        assertions: assertions,
+                        includeNonActive: includeNonActive,
+                    })
+                    .end((err, data) => {
+                        if (err) {
+                            reject(err);
+                        } else {
+                            if (data) {
+                                resolve(data);
+                            } else {
+                                resolve([]);
+                            }
+                        }
+                    });
+            });
+        },
+
+        getPoliciesVersions(domainName, policyName) {
+            return new Promise((resolve, reject) => {
+                fetchr
+                    .read('policies-versions')
+                    .params({ domainName: domainName, policyName: policyName })
                     .end((err, data) => {
                         if (err) {
                             reject(err);
@@ -1023,7 +1137,9 @@ const Api = (req) => {
             resource,
             action,
             effect,
-            _csrf
+            caseSensitive,
+            _csrf,
+            returnObj
         ) {
             return new Promise((resolve, reject) => {
                 fetchr.updateOptions({
@@ -1045,10 +1161,11 @@ const Api = (req) => {
                                 ),
                                 effect,
                                 action: action.trim(),
-                                caseSensitive: true,
+                                caseSensitive: caseSensitive,
                             },
                         ],
                     },
+                    returnObj,
                 };
                 fetchr
                     .create('policy')
@@ -1058,6 +1175,97 @@ const Api = (req) => {
                             reject(err);
                         } else {
                             resolve(data);
+                        }
+                    });
+            });
+        },
+
+        duplicatePolicyVersion(
+            domainName,
+            policyName,
+            sourceVersionName,
+            newVersionName,
+            _csrf,
+            returnObj
+        ) {
+            return new Promise((resolve, reject) => {
+                fetchr.updateOptions({
+                    context: {
+                        _csrf: _csrf,
+                    },
+                });
+                var params = {
+                    domainName,
+                    policyName,
+                    policyOptions: {
+                        fromVersion: sourceVersionName,
+                        version: newVersionName,
+                    },
+                    returnObj,
+                };
+                fetchr
+                    .create('policy-version')
+                    .params(params)
+                    .end((err, data) => {
+                        if (err) {
+                            reject(err);
+                        } else {
+                            resolve(data);
+                        }
+                    });
+            });
+        },
+
+        setActivePolicyVersion(domainName, policyName, version, _csrf) {
+            return new Promise((resolve, reject) => {
+                fetchr.updateOptions({
+                    context: {
+                        _csrf: _csrf,
+                    },
+                });
+                var params = {
+                    domainName,
+                    policyName,
+                    policyOptions: {
+                        version: version,
+                    },
+                };
+                fetchr
+                    .update('policy-version')
+                    .params(params)
+                    .end((err, data) => {
+                        if (err) {
+                            reject(err);
+                        } else {
+                            resolve(data);
+                        }
+                    });
+            });
+        },
+
+        getPolicyVersion(domainName, policyName, version) {
+            // escape zero version
+            let versionEscaped = version;
+            if (versionEscaped === '0') {
+                versionEscaped = '"0"';
+            }
+            return new Promise((resolve, reject) => {
+                fetchr
+                    .read('policy-version')
+                    .params({
+                        domainName: domainName,
+                        policyName: policyName,
+                        version: versionEscaped,
+                    })
+                    .end((err, data) => {
+                        if (err) {
+                            reject(err);
+                        } else {
+                            if (data) {
+                                resolve(data);
+                            } else {
+                                resolve([]);
+                            }
                         }
                     });
             });
@@ -1078,6 +1286,33 @@ const Api = (req) => {
 
                 fetchr
                     .delete('policy')
+                    .params(params)
+                    .end((err, data) => {
+                        if (err) {
+                            reject(err);
+                        } else {
+                            resolve(data);
+                        }
+                    });
+            });
+        },
+
+        deletePolicyVersion(domainName, policyName, version, _csrf) {
+            return new Promise((resolve, reject) => {
+                fetchr.updateOptions({
+                    context: {
+                        _csrf: _csrf,
+                    },
+                });
+
+                var params = {
+                    domainName,
+                    policyName,
+                    version,
+                };
+
+                fetchr
+                    .delete('policy-version')
                     .params(params)
                     .end((err, data) => {
                         if (err) {
@@ -1120,6 +1355,7 @@ const Api = (req) => {
             resource,
             action,
             effect,
+            caseSensitive,
             _csrf
         ) {
             return new Promise((resolve, reject) => {
@@ -1132,6 +1368,54 @@ const Api = (req) => {
                     domainName,
                     policyName,
                     assertion: {
+                        role: NameUtils.getRoleAssertionName(
+                            roleName,
+                            domainName
+                        ),
+                        resource: NameUtils.getResourceName(
+                            resource,
+                            domainName
+                        ),
+                        effect,
+                        action: action.trim(),
+                        caseSensitive: caseSensitive,
+                    },
+                };
+                fetchr
+                    .create('assertion')
+                    .params(params)
+                    .end((err, data) => {
+                        if (err) {
+                            reject(err);
+                        } else {
+                            resolve(data);
+                        }
+                    });
+            });
+        },
+
+        addAssertionPolicyVersion(
+            domainName,
+            policyName,
+            version,
+            roleName,
+            resource,
+            action,
+            effect,
+            caseSensitive,
+            _csrf
+        ) {
+            return new Promise((resolve, reject) => {
+                fetchr.updateOptions({
+                    context: {
+                        _csrf: _csrf,
+                    },
+                });
+                var params = {
+                    domainName,
+                    policyName,
+                    version,
+                    assertion: {
                         role: domainName + ':role.' + roleName,
                         resource: NameUtils.getResourceName(
                             resource,
@@ -1139,11 +1423,11 @@ const Api = (req) => {
                         ),
                         effect,
                         action: action.trim(),
-                        caseSensitive: true,
+                        caseSensitive: caseSensitive,
                     },
                 };
                 fetchr
-                    .create('assertion')
+                    .create('assertion-version')
                     .params(params)
                     .end((err, data) => {
                         if (err) {
@@ -1178,6 +1462,40 @@ const Api = (req) => {
                 };
                 fetchr
                     .create('assertionConditions')
+                    .params(params)
+                    .end((err, data) => {
+                        if (err) {
+                            reject(err);
+                        } else {
+                            resolve(data);
+                        }
+                    });
+            });
+        },
+
+        deleteAssertionConditions(
+            domainName,
+            policyName,
+            assertionId,
+            auditRef,
+            _csrf
+        ) {
+            return new Promise((resolve, reject) => {
+                fetchr.updateOptions({
+                    context: {
+                        _csrf: _csrf,
+                    },
+                });
+
+                let params = {
+                    domainName,
+                    policyName,
+                    assertionId,
+                    auditRef,
+                };
+
+                fetchr
+                    .delete('assertionConditions')
                     .params(params)
                     .end((err, data) => {
                         if (err) {
@@ -1242,6 +1560,42 @@ const Api = (req) => {
 
                 fetchr
                     .delete('assertion')
+                    .params(params)
+                    .end((err, data) => {
+                        if (err) {
+                            reject(err);
+                        } else {
+                            resolve(data);
+                        }
+                    });
+            });
+        },
+
+        deleteAssertionPolicyVersion(
+            domainName,
+            policyName,
+            version,
+            assertionId,
+            auditRef,
+            _csrf
+        ) {
+            return new Promise((resolve, reject) => {
+                fetchr.updateOptions({
+                    context: {
+                        _csrf: _csrf,
+                    },
+                });
+
+                let params = {
+                    domainName,
+                    policyName,
+                    version,
+                    assertionId,
+                    auditRef,
+                };
+
+                fetchr
+                    .delete('assertion-version')
                     .params(params)
                     .end((err, data) => {
                         if (err) {
@@ -1514,6 +1868,21 @@ const Api = (req) => {
             });
         },
 
+        getTimeZone() {
+            return new Promise((resolve, reject) => {
+                fetchr
+                    .read('time-zone')
+                    .params()
+                    .end((err, data) => {
+                        if (err) {
+                            reject(err);
+                        } else {
+                            resolve(data);
+                        }
+                    });
+            });
+        },
+
         getFeatureFlag() {
             return new Promise((resolve, reject) => {
                 fetchr
@@ -1529,12 +1898,27 @@ const Api = (req) => {
             });
         },
 
+        getPageFeatureFlag(pageName) {
+            return new Promise((resolve, reject) => {
+                fetchr
+                    .read('page-feature-flag')
+                    .params({ pageName })
+                    .end((err, data) => {
+                        if (err) {
+                            reject(err);
+                        } else {
+                            resolve(data);
+                        }
+                    });
+            });
+        },
+
         getInstances(domainName, serviceName, category) {
             return new Promise((resolve, reject) => {
                 fetchr
                     .read('instances')
                     .params({ domainName, serviceName, category })
-                    .end((err, data) => {
+                    .end((err, workloadList) => {
                         if (err) {
                             reject(err);
                         } else {
@@ -1548,38 +1932,30 @@ const Api = (req) => {
                                 totalHealthyDynamic: 0,
                             };
                             let totalHealthyDynamicCount = 0;
-                            if (data && data.workloadList != null) {
-                                workLoadMeta.totalRecords =
-                                    data.workloadList.length;
+                            if (
+                                workloadList != null &&
+                                Object.keys(workloadList).length > 0
+                            ) {
+                                workLoadMeta.totalRecords = workloadList.length;
                                 if (category === SERVICE_TYPE_STATIC) {
-                                    data.workloadList.forEach((workload) => {
-                                        if (
-                                            workload.provider ===
-                                            SERVICE_TYPE_STATIC_LABEL
-                                        ) {
-                                            result.workLoadData.push(workload);
-                                        }
+                                    workloadList.forEach((workload) => {
+                                        result.workLoadData.push(workload);
                                     });
                                     workLoadMeta.totalStatic =
                                         result.workLoadData.length;
                                     result.workLoadMeta = workLoadMeta;
                                     resolve(result);
                                 } else {
-                                    data.workloadList.forEach((workload) => {
+                                    workloadList.forEach((workload) => {
+                                        result.workLoadData.push(workload);
                                         if (
-                                            workload.provider !==
-                                            SERVICE_TYPE_STATIC_LABEL
+                                            workload.hostname !== 'NA' &&
+                                            localDate.isRefreshedinLastSevenDays(
+                                                workload.updateTime,
+                                                'UTC'
+                                            )
                                         ) {
-                                            result.workLoadData.push(workload);
-                                            if (
-                                                workload.hostname !== 'NA' &&
-                                                localDate.isRefreshedinLastSevenDays(
-                                                    workload.updateTime,
-                                                    'UTC'
-                                                )
-                                            ) {
-                                                totalHealthyDynamicCount++;
-                                            }
+                                            totalHealthyDynamicCount++;
                                         }
                                     });
                                     workLoadMeta.totalHealthyDynamic =
@@ -1589,7 +1965,49 @@ const Api = (req) => {
                                     result.workLoadMeta = workLoadMeta;
                                     resolve(result);
                                 }
+                            } else {
+                                workLoadMeta.totalRecords = 0;
+                                workLoadMeta.totalStatic = 0;
+                                workLoadMeta.totalRecords = 0;
+                                workLoadMeta.totalHealthyDynamic = 0;
+                                result.workLoadMeta = workLoadMeta;
+                                resolve(result);
                             }
+                        }
+                    });
+            });
+        },
+
+        deleteInstance(
+            provider,
+            domainName,
+            service,
+            instanceId,
+            category,
+            auditRef,
+            _csrf
+        ) {
+            return new Promise((resolve, reject) => {
+                fetchr.updateOptions({
+                    context: {
+                        _csrf: _csrf,
+                    },
+                });
+                fetchr
+                    .delete('instances')
+                    .params({
+                        provider,
+                        domainName,
+                        service,
+                        instanceId,
+                        category,
+                        auditRef,
+                    })
+                    .end((err, data) => {
+                        if (err) {
+                            reject(err);
+                        } else {
+                            resolve(data);
                         }
                     });
             });
@@ -1652,6 +2070,138 @@ const Api = (req) => {
                             resolve(data);
                         }
                     });
+            });
+        },
+
+        validateMicrosegmentationPolicy(
+            category,
+            roleMembers,
+            inboundDestinationService,
+            outboundSourceService,
+            sourcePort,
+            destinationPort,
+            protocol,
+            domainName,
+            assertionId,
+            _csrf
+        ) {
+            return new Promise((resolve, reject) => {
+                fetchr.updateOptions({
+                    context: {
+                        _csrf: _csrf,
+                    },
+                });
+                fetchr
+                    .update('validateMicrosegmentation')
+                    .params({
+                        category,
+                        roleMembers,
+                        inboundDestinationService,
+                        outboundSourceService,
+                        sourcePort,
+                        destinationPort,
+                        protocol,
+                        domainName,
+                        assertionId,
+                    })
+                    .end((err, data) => {
+                        if (err) {
+                            reject(err);
+                        } else {
+                            resolve(data);
+                        }
+                    });
+            });
+        },
+
+        updateGraphLayout(elements, style, _csrf) {
+            return new Promise((resolve, reject) => {
+                fetchr.updateOptions({
+                    context: {
+                        _csrf: _csrf,
+                    },
+                });
+                fetchr
+                    .update('graph-layout')
+                    .params({ elements, style })
+                    .end((err, data) => {
+                        if (err) {
+                            reject(err);
+                        } else {
+                            resolve(data);
+                        }
+                    });
+            });
+        },
+
+        deleteTransportRule(
+            domainName,
+            policyName,
+            assertionId,
+            roleName,
+            auditRef,
+            _csrf
+        ) {
+            return new Promise((resolve, reject) => {
+                fetchr.updateOptions({
+                    context: {
+                        _csrf: _csrf,
+                    },
+                });
+                fetchr
+                    .delete('transport-rule')
+                    .params({
+                        domainName,
+                        policyName,
+                        assertionId,
+                        roleName,
+                        auditRef,
+                    })
+                    .end((err, data) => {
+                        if (err) {
+                            reject(err);
+                        } else {
+                            resolve(data);
+                        }
+                    });
+            });
+        },
+        getResourceAccessList(action) {
+            return new Promise((resolve, reject) => {
+                fetchr
+                    .read('resource-access')
+                    .params(action)
+                    .end((err, data) => {
+                        if (err) {
+                            reject(err);
+                        } else {
+                            resolve(data);
+                        }
+                    });
+            });
+        },
+
+        getReviewRoles() {
+            return new Promise((resolve, reject) => {
+                fetchr.read('roles-review').end((err, data) => {
+                    if (err) {
+                        reject(err);
+                    } else {
+                        resolve(data);
+                    }
+                });
+            });
+        },
+
+        getReviewGroups() {
+            return new Promise((resolve, reject) => {
+                fetchr.read('groups-review').end((err, data) => {
+                    if (err) {
+                        reject(err);
+                    } else {
+                        resolve(data);
+                    }
+                });
             });
         },
     };

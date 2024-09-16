@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,6 @@ import com.yahoo.athenz.zms.ZMSTestUtils;
 import com.yahoo.rdl.Timestamp;
 import org.mockito.Mockito;
 import org.testng.annotations.Test;
-import org.testng.internal.junit.ArrayAsserts;
 
 import java.util.*;
 
@@ -53,13 +52,13 @@ public class PendingGroupMembershipApprovalNotificationTaskTest {
         ZMSTestUtils.sleep(1000);
 
         PendingGroupMembershipApprovalNotificationTask reminder =
-                new PendingGroupMembershipApprovalNotificationTask(dbsvc, 0, "", USER_DOMAIN_PREFIX);
+                new PendingGroupMembershipApprovalNotificationTask(dbsvc, 0, "", USER_DOMAIN_PREFIX, new NotificationToEmailConverterCommon(null));
         List<Notification> notifications = reminder.getNotifications();
 
         // Verify contents of notification is as expected
         assertEquals(notifications.size(), 1);
-        Notification expectedNotification = new Notification();
-        expectedNotification.setNotificationToEmailConverter(new PendingGroupMembershipApprovalNotificationTask.PendingGroupMembershipApprovalNotificationToEmailConverter());
+        Notification expectedNotification = new Notification(Notification.Type.PENDING_GROUP_APPROVAL);
+        expectedNotification.setNotificationToEmailConverter(new PendingGroupMembershipApprovalNotificationTask.PendingGroupMembershipApprovalNotificationToEmailConverter(new NotificationToEmailConverterCommon(null)));
         expectedNotification.setNotificationToMetricConverter(new PendingGroupMembershipApprovalNotificationTask.PendingGroupMembershipApprovalNotificationToMetricConverter());
         expectedNotification.addRecipient("user.joe");
         assertEquals(notifications.get(0), expectedNotification);
@@ -79,10 +78,10 @@ public class PendingGroupMembershipApprovalNotificationTaskTest {
         details.put("reason", "test reason");
         details.put("requester", "user.requester");
 
-        Notification notification = new Notification();
+        Notification notification = new Notification(Notification.Type.PENDING_GROUP_APPROVAL);
         notification.setDetails(details);
         PendingGroupMembershipApprovalNotificationTask.PendingGroupMembershipApprovalNotificationToEmailConverter converter
-                = new PendingGroupMembershipApprovalNotificationTask.PendingGroupMembershipApprovalNotificationToEmailConverter();
+                = new PendingGroupMembershipApprovalNotificationTask.PendingGroupMembershipApprovalNotificationToEmailConverter(new NotificationToEmailConverterCommon(null));
         NotificationEmail notificationAsEmail = converter.getNotificationAsEmail(notification);
 
         String body = notificationAsEmail.getBody();
@@ -101,9 +100,9 @@ public class PendingGroupMembershipApprovalNotificationTaskTest {
 
     @Test
     public void getEmailSubject() {
-        Notification notification = new Notification();
+        Notification notification = new Notification(Notification.Type.PENDING_GROUP_APPROVAL);
         PendingGroupMembershipApprovalNotificationTask.PendingGroupMembershipApprovalNotificationToEmailConverter converter =
-                new PendingGroupMembershipApprovalNotificationTask.PendingGroupMembershipApprovalNotificationToEmailConverter();
+                new PendingGroupMembershipApprovalNotificationTask.PendingGroupMembershipApprovalNotificationToEmailConverter(new NotificationToEmailConverterCommon(null));
         NotificationEmail notificationAsEmail = converter.getNotificationAsEmail(notification);
         String subject = notificationAsEmail.getSubject();
         assertEquals(subject, "Group Membership Approval Reminder Notification");
@@ -113,7 +112,7 @@ public class PendingGroupMembershipApprovalNotificationTaskTest {
     public void testGetNotificationAsMetric() {
         PendingGroupMembershipApprovalNotificationTask.PendingGroupMembershipApprovalNotificationToMetricConverter converter =
                 new PendingGroupMembershipApprovalNotificationTask.PendingGroupMembershipApprovalNotificationToMetricConverter();
-        Notification notification = new Notification();
+        Notification notification = new Notification(Notification.Type.PENDING_GROUP_APPROVAL);
         NotificationMetric notificationAsMetrics = converter.getNotificationAsMetrics(notification, Timestamp.fromMillis(System.currentTimeMillis()));
         String[] record = new String[] {
                 METRIC_NOTIFICATION_TYPE_KEY, "pending_group_membership_approval"

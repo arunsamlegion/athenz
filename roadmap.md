@@ -1,7 +1,94 @@
 The following is the list of features that the Athenz team is working or
-planning to work on. At Verizon Media, we review our list every quarter
+planning to work on. At Yahoo, we review our list every quarter
 and decide which features will be implemented during that quarter. Additionally,
 we implement several smaller features as they're requested by our customers.
+
+# Q3 2024
+
+- Upgrade jetty to 12.x release with the following changes:
+  - Server components requiring jdk 17.x (requirement from jetty 12.x)
+  - Client components requiring jdk 11.x
+- Move all components to use aws sdk 2.x since 1.x is EOL
+- Move jjwt to 0.12.x (breaking changes from 0.11.x release)
+
+# Q2 2024
+
+- Resource Ownership for all objects in ZMS
+- Capability to enable/disable prinicpals (domain and system admins)
+- Update SPIFFE URI support to include trust domains
+  
+# Q1 2024
+
+- Integration with Cert-Manager (cont. from Q4)
+- K8S operator for Athenz to manage Athenz resources using CRDs (cont. from Q4)
+- Implement a provider for Github Actions
+- Introduce environment classification for domains (production/staging/etc)
+
+# Q4 2023
+
+- Integration with Cert-Manager (cont. from Q3)
+- K8S operator for Athenz to manage Athenz resources using CRDs (cont. from Q3)
+- Introduce slack notification support for member expiry notifications in addition to emails currently supported. (cont. from Q3)
+- Consolidation of role member expiry and review reminder email notifications per user instead of per domain
+- Simplify/Improve role review process
+
+# Q3 2023
+
+- Integration with Cert-Manager (cont. from Q2)
+- K8S operator for Athenz to manage Athenz resources using CRDs (cont. from Q2)
+- Provide role membership lookup in ZMS including indirect membership (groups and delegated roles)
+- Introduce server options attribute in domains to enable/disable specific features using specific bit values
+- Investigate support for using OpenTelemetry Metrics API to reporting metrics
+- Introduce slack notification support for member expiry notifications in addition to emails currently supported.
+
+# Q2 2023
+
+- Athenz Integration with Google Cloud Platform (GCP)
+- Integration with Cert-Manager
+- K8S operator for Athenz to manage Athenz resources using CRDs
+
+# Q1 2023
+
+- Athenz Integration with Google Cloud Platform (GCP)
+- Provide delete protection for roles, policies and services
+- Require admin approval for member deletion in review-enabled roles
+
+# Q4 2022
+
+- Athenz UI - upgrade from Node.js 14.x to 18.x
+- Athenz Integration with Google Cloud Platform (GCP)
+
+# Q3 2022
+
+- Role Membership Cleanup: auto purge expired role/group members based on server/domain config
+- Implement redux support in Athenz UI
+- Publish athenz auth history syncer
+
+# Q2 2022
+
+- Micro Segmentation: Service Identity based ACLs
+- Move to Jetty 11.x and Jakarta Servlet API 5.x
+- Move to AWS SDK v2
+- Service Dependency visibility based on access check and token requests
+
+# Q1 2022
+
+- Micro Segmentation: Service Identity based ACLs
+- Support Athenz as OIDC Provider in AWS EKS
+- Design and implement an interface/API for service provider to register domains as in-use with their service
+- Role consistency check when deleting roles or adding assertions
+- Approve role memberships for non-admins through web ui
+- OAuth2 authorization well known metadata endpoint support
+
+# Q4 2021
+
+- Micro Segmentation: Service Identity based ACLs
+- Support publishing domain change events through an interface (Pulsar integration)
+- Introduce priority support for certificate signing requests
+- Tag support for groups and capability to disable member expire/review notifications
+- Support MDS v2 in Athenz AWS SIA Agent
+- Improve operability of Athenz with EKS Service Mesh by introducing Envoy SDS support 
+- Extend fine-grained authorization support in domain management by providing a separate action for modifying role metadata only
 
 # Q3 2021
 

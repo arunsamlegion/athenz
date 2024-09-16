@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,6 @@ import com.yahoo.athenz.zms.store.AthenzDomain;
 import com.yahoo.rdl.Timestamp;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
-import org.testng.Assert;
 import org.testng.annotations.Test;
 
 import java.util.*;
@@ -36,6 +35,7 @@ import static org.testng.Assert.*;
 import static org.testng.AssertJUnit.assertEquals;
 
 public class PutGroupMembershipNotificationTaskTest {
+    private final NotificationToEmailConverterCommon notificationToEmailConverterCommon = new NotificationToEmailConverterCommon(null);
     
     @Test
     public void testGenerateAndSendPostPutGroupMembershipNotification() {
@@ -85,16 +85,21 @@ public class PutGroupMembershipNotificationTaskTest {
         athenzDomain2.setRoles(roles2);
 
         Mockito.when(dbsvc.getRolesByDomain("sys.auth.audit.org")).thenReturn(athenzDomain1.getRoles());
+        Mockito.when(dbsvc.getRole("sys.auth.audit.org", "neworg", Boolean.FALSE, Boolean.TRUE, Boolean.FALSE))
+                .thenReturn(orgRole);
+
         Mockito.when(dbsvc.getRolesByDomain("sys.auth.audit.domain")).thenReturn(athenzDomain2.getRoles());
+        Mockito.when(dbsvc.getRole("sys.auth.audit.domain", "testdomain1", Boolean.FALSE, Boolean.TRUE, Boolean.FALSE))
+                .thenReturn(domainRole);
 
         ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
 
         Group notifyGroup = new Group().setAuditEnabled(true).setSelfServe(false);
         List<Notification> notifications = new PutGroupMembershipNotificationTask("testdomain1", "neworg",
-                notifyGroup, details, dbsvc, USER_DOMAIN_PREFIX).getNotifications();
+                notifyGroup, details, dbsvc, USER_DOMAIN_PREFIX, notificationToEmailConverterCommon).getNotifications();
         notificationManager.sendNotifications(notifications);
 
-        Notification notification = new Notification();
+        Notification notification = new Notification(Notification.Type.GROUP_MEMBER_APPROVAL);
         notification.addRecipient("user.domapprover1")
                 .addRecipient("user.domapprover2")
                 .addRecipient("user.orgapprover1")
@@ -102,7 +107,7 @@ public class PutGroupMembershipNotificationTaskTest {
         notification.addDetails("domain", "testdomain1").addDetails("group", "group1");
 
         PutGroupMembershipNotificationTask.PutGroupMembershipNotificationToEmailConverter converter =
-                new PutGroupMembershipNotificationTask.PutGroupMembershipNotificationToEmailConverter();
+                new PutGroupMembershipNotificationTask.PutGroupMembershipNotificationToEmailConverter(notificationToEmailConverterCommon);
         notification.setNotificationToEmailConverter(converter);
 
         PutGroupMembershipNotificationTask.PutGroupMembershipNotificationToMetricConverter metricConverter =
@@ -145,21 +150,23 @@ public class PutGroupMembershipNotificationTaskTest {
         athenzDomain.setRoles(roles);
 
         Mockito.when(dbsvc.getRolesByDomain("sys.auth.audit.org")).thenReturn(athenzDomain.getRoles());
+        Mockito.when(dbsvc.getRole("sys.auth.audit.org", "neworg", Boolean.FALSE, Boolean.TRUE, Boolean.FALSE))
+                .thenReturn(orgRole);
 
         ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
 
         Group notifyGroup = new Group().setAuditEnabled(true).setSelfServe(false);
         List<Notification> notifications = new PutGroupMembershipNotificationTask("testdomain1", "neworg",
-                notifyGroup, details, dbsvc, USER_DOMAIN_PREFIX).getNotifications();
+                notifyGroup, details, dbsvc, USER_DOMAIN_PREFIX, notificationToEmailConverterCommon).getNotifications();
         notificationManager.sendNotifications(notifications);
 
-        Notification notification = new Notification();
+        Notification notification = new Notification(Notification.Type.GROUP_MEMBER_APPROVAL);
         notification
                 .addRecipient("user.orgapprover1")
                 .addRecipient("user.orgapprover2");
         notification.addDetails("domain", "testdomain1").addDetails("group", "group1");
         PutGroupMembershipNotificationTask.PutGroupMembershipNotificationToEmailConverter converter =
-                new PutGroupMembershipNotificationTask.PutGroupMembershipNotificationToEmailConverter();
+                new PutGroupMembershipNotificationTask.PutGroupMembershipNotificationToEmailConverter(notificationToEmailConverterCommon);
         notification.setNotificationToEmailConverter(converter);
 
 
@@ -203,22 +210,24 @@ public class PutGroupMembershipNotificationTaskTest {
         athenzDomain.setRoles(roles);
 
         Mockito.when(dbsvc.getRolesByDomain("sys.auth.audit.domain")).thenReturn(athenzDomain.getRoles());
+        Mockito.when(dbsvc.getRole("sys.auth.audit.domain", "testdomain1", Boolean.FALSE, Boolean.TRUE, Boolean.FALSE))
+                .thenReturn(domainRole);
 
         ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
 
         Group notifyGroup = new Group().setAuditEnabled(true).setSelfServe(false);
         List<Notification> notifications = new PutGroupMembershipNotificationTask("testdomain1", "neworg",
-                notifyGroup, details, dbsvc, USER_DOMAIN_PREFIX).getNotifications();
+                notifyGroup, details, dbsvc, USER_DOMAIN_PREFIX, notificationToEmailConverterCommon).getNotifications();
         notificationManager.sendNotifications(notifications);
 
-        Notification notification = new Notification();
+        Notification notification = new Notification(Notification.Type.GROUP_MEMBER_APPROVAL);
         notification
                 .addRecipient("user.domapprover1")
                 .addRecipient("user.domapprover2");
         notification.addDetails("domain", "testdomain1").addDetails("group", "group1");
 
         PutGroupMembershipNotificationTask.PutGroupMembershipNotificationToEmailConverter converter =
-                new PutGroupMembershipNotificationTask.PutGroupMembershipNotificationToEmailConverter();
+                new PutGroupMembershipNotificationTask.PutGroupMembershipNotificationToEmailConverter(notificationToEmailConverterCommon);
         notification.setNotificationToEmailConverter(converter);
 
         PutGroupMembershipNotificationTask.PutGroupMembershipNotificationToMetricConverter metricConverter =
@@ -261,22 +270,24 @@ public class PutGroupMembershipNotificationTaskTest {
         athenzDomain.setRoles(roles);
 
         Mockito.when(dbsvc.getRolesByDomain("testdomain1")).thenReturn(athenzDomain.getRoles());
+        Mockito.when(dbsvc.getRole("testdomain1", "admin", Boolean.FALSE, Boolean.TRUE, Boolean.FALSE))
+                .thenReturn(adminRole);
 
         ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
 
         Group notifyGroup = new Group().setAuditEnabled(false).setSelfServe(true);
         List<Notification> notifications = new PutGroupMembershipNotificationTask("testdomain1", "neworg",
-                notifyGroup, details, dbsvc, USER_DOMAIN_PREFIX).getNotifications();
+                notifyGroup, details, dbsvc, USER_DOMAIN_PREFIX, notificationToEmailConverterCommon).getNotifications();
         notificationManager.sendNotifications(notifications);
 
-        Notification notification = new Notification();
+        Notification notification = new Notification(Notification.Type.GROUP_MEMBER_APPROVAL);
         notification
                 .addRecipient("user.domadmin1")
                 .addRecipient("user.domadmin2");
         notification.addDetails("domain", "testdomain1").addDetails("group", "group1");
 
         PutGroupMembershipNotificationTask.PutGroupMembershipNotificationToEmailConverter converter =
-                new PutGroupMembershipNotificationTask.PutGroupMembershipNotificationToEmailConverter();
+                new PutGroupMembershipNotificationTask.PutGroupMembershipNotificationToEmailConverter(notificationToEmailConverterCommon);
         notification.setNotificationToEmailConverter(converter);
 
         PutGroupMembershipNotificationTask.PutGroupMembershipNotificationToMetricConverter metricConverter =
@@ -337,17 +348,22 @@ public class PutGroupMembershipNotificationTaskTest {
         athenzDomain2.setRoles(roles2);
 
         Mockito.when(dbsvc.getRolesByDomain("testdomain1")).thenReturn(athenzDomain1.getRoles());
+        Mockito.when(dbsvc.getRole("testdomain1", "notify", Boolean.FALSE, Boolean.TRUE, Boolean.FALSE))
+                .thenReturn(localRole);
+
         Mockito.when(dbsvc.getRolesByDomain("athenz")).thenReturn(athenzDomain2.getRoles());
+        Mockito.when(dbsvc.getRole("athenz", "approvers", Boolean.FALSE, Boolean.TRUE, Boolean.FALSE))
+                .thenReturn(domainRole);
 
         ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
 
         Group notifyGroup = new Group().setAuditEnabled(false).setSelfServe(false).setReviewEnabled(true)
                 .setNotifyRoles("athenz:role.approvers,notify");
         List<Notification> notifications = new PutGroupMembershipNotificationTask("testdomain1", "neworg",
-                notifyGroup, details, dbsvc, USER_DOMAIN_PREFIX).getNotifications();
+                notifyGroup, details, dbsvc, USER_DOMAIN_PREFIX, notificationToEmailConverterCommon).getNotifications();
         notificationManager.sendNotifications(notifications);
 
-        Notification notification = new Notification();
+        Notification notification = new Notification(Notification.Type.GROUP_MEMBER_APPROVAL);
         notification.addRecipient("user.domapprover1")
                 .addRecipient("user.domapprover2")
                 .addRecipient("user.approver1")
@@ -355,7 +371,7 @@ public class PutGroupMembershipNotificationTaskTest {
         notification.addDetails("domain", "testdomain1").addDetails("group", "group1");
 
         PutGroupMembershipNotificationTask.PutGroupMembershipNotificationToEmailConverter converter =
-                new PutGroupMembershipNotificationTask.PutGroupMembershipNotificationToEmailConverter();
+                new PutGroupMembershipNotificationTask.PutGroupMembershipNotificationToEmailConverter(notificationToEmailConverterCommon);
         notification.setNotificationToEmailConverter(converter);
 
         PutGroupMembershipNotificationTask.PutGroupMembershipNotificationToMetricConverter metricConverter =
@@ -381,7 +397,7 @@ public class PutGroupMembershipNotificationTaskTest {
         notificationManager.shutdown();
         Group notifyGroup = new Group().setAuditEnabled(false).setSelfServe(false);
         List<Notification> notifications = new PutGroupMembershipNotificationTask("testdomain1", "neworg",
-                notifyGroup, null, dbsvc, USER_DOMAIN_PREFIX).getNotifications();
+                notifyGroup, null, dbsvc, USER_DOMAIN_PREFIX, notificationToEmailConverterCommon).getNotifications();
         notificationManager.sendNotifications(notifications);
         Mockito.verify(mockNotificationService, times(0)).notify(any());
     }
@@ -398,7 +414,7 @@ public class PutGroupMembershipNotificationTaskTest {
         notificationManager.shutdown();
         Group notifyGroup = new Group().setAuditEnabled(false).setSelfServe(false);
         List<Notification> notifications = new PutGroupMembershipNotificationTask("testdomain1", "neworg",
-                notifyGroup, null, dbsvc, USER_DOMAIN_PREFIX).getNotifications();
+                notifyGroup, null, dbsvc, USER_DOMAIN_PREFIX, notificationToEmailConverterCommon).getNotifications();
         notificationManager.sendNotifications(notifications);
         verify(mockNotificationService, never()).notify(any(Notification.class));
     }
@@ -408,7 +424,7 @@ public class PutGroupMembershipNotificationTaskTest {
         DBService dbsvc = Mockito.mock(DBService.class);
         PutGroupMembershipNotificationTask putGroupMembershipNotificationTask =
                 new PutGroupMembershipNotificationTask("testDomain", "testOrg", new Group(),
-                        new HashMap<>(), dbsvc, USER_DOMAIN_PREFIX);
+                        new HashMap<>(), dbsvc, USER_DOMAIN_PREFIX, notificationToEmailConverterCommon);
 
         String description = putGroupMembershipNotificationTask.getDescription();
         assertEquals("Group Membership Approval Notification", description);
@@ -419,6 +435,7 @@ public class PutGroupMembershipNotificationTaskTest {
         System.setProperty("athenz.notification_workflow_url", "https://athenz.example.com/workflow");
         System.setProperty("athenz.notification_support_text", "#Athenz slack channel");
         System.setProperty("athenz.notification_support_url", "https://link.to.athenz.channel.com");
+        System.setProperty("athenz.notification_athenz_ui_url", "https://athenz.example.com");
 
         Map<String, String> details = new HashMap<>();
         details.put("domain", "dom1");
@@ -427,10 +444,10 @@ public class PutGroupMembershipNotificationTaskTest {
         details.put("reason", "test reason");
         details.put("requester", "user.requester");
 
-        Notification notification = new Notification();
+        Notification notification = new Notification(Notification.Type.GROUP_MEMBER_APPROVAL);
         notification.setDetails(details);
         PutGroupMembershipNotificationTask.PutGroupMembershipNotificationToEmailConverter converter =
-                new PutGroupMembershipNotificationTask.PutGroupMembershipNotificationToEmailConverter();
+                new PutGroupMembershipNotificationTask.PutGroupMembershipNotificationToEmailConverter(new NotificationToEmailConverterCommon(null));
         NotificationEmail notificationAsEmail = converter.getNotificationAsEmail(notification);
 
         String body = notificationAsEmail.getBody();
@@ -440,7 +457,7 @@ public class PutGroupMembershipNotificationTaskTest {
         assertTrue(body.contains("user.member1"));
         assertTrue(body.contains("test reason"));
         assertTrue(body.contains("user.requester"));
-        assertTrue(body.contains("https://athenz.example.com/workflow"));
+        assertTrue(body.contains("https://athenz.example.com/workflow/domain?domain=dom1"));
 
         // Make sure support text and url do not appear
 
@@ -448,15 +465,16 @@ public class PutGroupMembershipNotificationTaskTest {
         assertFalse(body.contains("link.to.athenz.channel.com"));
 
         System.clearProperty("athenz.notification_workflow_url");
-        System.clearProperty("notification_support_text");
-        System.clearProperty("notification_support_url");
+        System.clearProperty("athenz.notification_support_text");
+        System.clearProperty("athenz.notification_support_url");
+        System.clearProperty("athenz.notification_athenz_ui_url");
     }
 
     @Test
     public void getEmailSubject() {
-        Notification notification = new Notification();
+        Notification notification = new Notification(Notification.Type.GROUP_MEMBER_APPROVAL);
         PutGroupMembershipNotificationTask.PutGroupMembershipNotificationToEmailConverter converter =
-                new PutGroupMembershipNotificationTask.PutGroupMembershipNotificationToEmailConverter();
+                new PutGroupMembershipNotificationTask.PutGroupMembershipNotificationToEmailConverter(notificationToEmailConverterCommon);
         NotificationEmail notificationAsEmail = converter.getNotificationAsEmail(notification);
         String subject = notificationAsEmail.getSubject();
         assertEquals(subject, "Group Membership Approval Notification");
@@ -471,7 +489,7 @@ public class PutGroupMembershipNotificationTaskTest {
         details.put("reason", "test reason");
         details.put("requester", "user.requester");
 
-        Notification notification = new Notification();
+        Notification notification = new Notification(Notification.Type.GROUP_MEMBER_APPROVAL);
         notification.setDetails(details);
 
         PutGroupMembershipNotificationTask.PutGroupMembershipNotificationToMetricConverter converter =

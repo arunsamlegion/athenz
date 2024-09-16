@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -86,6 +86,8 @@ class Error extends React.Component {
         if (this.props.err) {
             if (this.props.err.message) {
                 errorMsg = this.props.err.message;
+            } else if (typeof this.props.err === 'string') {
+                errorMsg = this.props.err;
             }
         }
         if (this.props.statusCode === 404) {
@@ -111,7 +113,7 @@ class Error extends React.Component {
                                         </span>
                                         <HomeDiv>
                                             <Link href={PageUtils.homePage()}>
-                                                <a>Athenz Home</a>
+                                                Athenz Home
                                             </Link>
                                         </HomeDiv>
                                     </DetailsDiv>

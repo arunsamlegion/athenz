@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,30 @@ function refreshCertClients(config, options) {
     CLIENTS.zms = rdlRest({
         apiHost: config.zms,
         rdl: require('../config/zms.json'),
+        requestOpts: {
+            strictSSL: config.strictSSL,
+        },
+    });
+
+    CLIENTS.zts = rdlRest({
+        apiHost: config.zts,
+        rdl: require('../config/zts.json'),
+        requestOpts: {
+            strictSSL: config.strictSSL,
+        },
+    });
+
+    CLIENTS.msd = rdlRest({
+        apiHost: config.msd,
+        rdl: require('../config/msd.json'),
+        requestOpts: {
+            strictSSL: config.strictSSL,
+        },
+    });
+
+    CLIENTS.ums = rdlRest({
+        apiHost: config.ums,
+        rdl: require('../config/ums.json'),
         requestOpts: {
             strictSSL: config.strictSSL,
         },
@@ -68,6 +92,9 @@ module.exports.middleware = function middleware() {
     return (req, res, next) => {
         req.clients = {
             zms: CLIENTS.zms(req, setCookieinClients(req)),
+            msd: CLIENTS.msd(req, setCookieinClients(req)),
+            zts: CLIENTS.zts(req, setCookieinClients(req)),
+            ums: CLIENTS.ums(req, setCookieinClients(req)),
         };
         next();
     };

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,9 +18,6 @@ package com.yahoo.athenz.zms;
 import static org.testng.Assert.*;
 
 import org.testng.annotations.Test;
-
-import com.yahoo.athenz.zms.ResourceException;
-
 
 public class ResourceExceptionTest {
 
@@ -73,6 +70,6 @@ public class ResourceExceptionTest {
     public void testGetDataCast() {
         
         ResourceException exc = new ResourceException(400, 5000);
-        assertEquals(exc.getData(Integer.class), new Integer(5000));
+        assertEquals(exc.getData(Integer.class), 5000);
     }
 }

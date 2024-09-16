@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 import com.yahoo.athenz.auth.AuthorityConsts;
 import com.yahoo.athenz.auth.util.AthenzUtils;
 import com.yahoo.athenz.auth.util.Crypto;
@@ -32,20 +32,20 @@ public class CertificateIdentityParser {
     /**
      * X509Certificate attribute name
      */
-    public static final String JAVAX_CERT_ATTR = "javax.servlet.request.X509Certificate";
-
-    /**
-     * Role prefix inside X509Certificate
-     */
+    public static final String JAVAX_CERT_ATTR = "jakarta.servlet.request.X509Certificate";
 
     public static final String EMPTY_CERT_ERR_MSG = "No certificate available in request";
+    public static final String ISSUER_DN_MISMATCH = "No Issuer DNs match with trust store";
 
-    private Set<String> excludedPrincipalSet = null;
-    private boolean excludeRoleCertificates;
+    private final Set<String> excludedPrincipalSet;
+    private final boolean excludeRoleCertificates;
+
+    private CertificateAuthorityValidator certificateAuthorityValidator;
 
     /**
-     * @param  excludedPrincipalSet    Reject parsing certificate with those principal
-     * @param  excludeRoleCertificates Reject parsing role certificates
+     * Parse the given certificate and verify it passes the configured restrictions
+     * @param excludedPrincipalSet Reject parsing certificate with these principals
+     * @param excludeRoleCertificates Reject accepting role certificates
      */
     public CertificateIdentityParser(Set<String> excludedPrincipalSet, boolean excludeRoleCertificates) {
         this.excludedPrincipalSet = excludedPrincipalSet;
@@ -53,9 +53,22 @@ public class CertificateIdentityParser {
     }
 
     /**
+     * Parse the given certificate and verify it passes the configured restrictions
+     * @param excludedPrincipalSet Reject parsing certificate with these principals
+     * @param excludeRoleCertificates Reject accepting role certificates
+     * @param certificateAuthorityValidator validate the CA issuer in certificates
+     */
+    public CertificateIdentityParser(Set<String> excludedPrincipalSet, boolean excludeRoleCertificates,
+                                     CertificateAuthorityValidator certificateAuthorityValidator) {
+        this.excludedPrincipalSet = excludedPrincipalSet;
+        this.excludeRoleCertificates = excludeRoleCertificates;
+        this.certificateAuthorityValidator = certificateAuthorityValidator;
+    }
+
+    /**
      * Parse from X509Certificate inside the request.
-     * @param  request                      HTTPS request
-     * @return                              CertificateIdentity
+     * @param request HTTPS request
+     * @return CertificateIdentity
      * @throws CertificateIdentityException parse error
      */
     public CertificateIdentity parse(HttpServletRequest request) throws CertificateIdentityException {
@@ -65,11 +78,12 @@ public class CertificateIdentityParser {
 
     /**
      * Parse from X509Certificate chain.
-     * @param  certs                        X509Certificate chain
-     * @return                              CertificateIdentity
+     * @param certs X509Certificate chain
+     * @return CertificateIdentity
      * @throws CertificateIdentityException parse error
      */
     public CertificateIdentity parse(X509Certificate[] certs) throws CertificateIdentityException {
+
         // make sure we have at least one valid certificate in our list
 
         if (certs == null || certs[0] == null) {
@@ -77,6 +91,11 @@ public class CertificateIdentityParser {
         }
 
         X509Certificate x509Cert = certs[0];
+
+        if (this.certificateAuthorityValidator != null && !this.certificateAuthorityValidator.validate(x509Cert)) {
+            throw new CertificateIdentityException(ISSUER_DN_MISMATCH, false);
+        }
+
         String principalName = Crypto.extractX509CertCommonName(x509Cert);
         if (principalName == null || principalName.isEmpty()) {
             throw new CertificateIdentityException("Certificate principal is empty");
@@ -88,11 +107,11 @@ public class CertificateIdentityParser {
             throw new CertificateIdentityException("Principal is excluded");
         }
 
-        // For role cert, the principal information is in the SAN email
+        // For role cert, the principal information is in the SAN uri and/or email
 
         List<String> roles = null;
-        int idx = principalName.indexOf(AuthorityConsts.ROLE_SEP);
-        if (idx != -1) {
+        String rolePrincipalName = null;
+        if (principalName.contains(AuthorityConsts.ROLE_SEP)) {
 
             // check to make sure role certs are allowed for principal
 
@@ -105,38 +124,24 @@ public class CertificateIdentityParser {
             roles = new ArrayList<>();
             roles.add(principalName);
 
-            // now extract the email field
+            // now let's extract our role principal
 
-            List<String> emails = Crypto.extractX509CertEmails(x509Cert);
-            if (emails.isEmpty()) {
-                throw new CertificateIdentityException("Invalid role cert, no email SAN entry");
+            rolePrincipalName = AthenzUtils.extractRolePrincipal(x509Cert);
+            if (rolePrincipalName == null) {
+                throw new CertificateIdentityException("Invalid role cert, no role principal");
             }
-            String email = emails.get(0);
-            idx = email.indexOf('@');
-            if (idx == -1) {
-                throw new CertificateIdentityException("Invalid role cert, invalid email SAN entry");
-            }
-            principalName = email.substring(0, idx);
-        }
-
-        if (this.excludeRoleCertificates && roles != null) {
-            throw new CertificateIdentityException("Role Certificates not allowed");
+            principalName = rolePrincipalName;
         }
 
         // extract domain and service names from the name. We must have
         // a valid service identity in the form domain.service
 
-        String[] ds = AthenzUtils.splitPrincipalName(principalName);
-        if (ds == null) {
+        int idx = principalName.lastIndexOf(AuthorityConsts.ATHENZ_PRINCIPAL_DELIMITER_CHAR);
+        if (idx == -1 || idx == 0 || idx == principalName.length() - 1) {
             throw new CertificateIdentityException("Principal is not a valid service identity");
         }
 
-        return new CertificateIdentity(
-            ds[0],
-            ds[1],
-            roles,
-            x509Cert
-        );
+        return new CertificateIdentity(principalName.substring(0, idx).toLowerCase(),
+                principalName.substring(idx + 1).toLowerCase(), roles, rolePrincipalName, x509Cert);
     }
-
 }

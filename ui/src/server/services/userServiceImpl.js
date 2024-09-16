@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,10 @@
  */
 'use strict';
 const debug = require('debug')('AthenzUI:server:userServiceImpl');
+
+// Babilon doesn't allow us to require('fs') - probably because it suspects that the code might be executed in the browser.
+// So this method returns the string 'fs' in a very confusing way. Babilon stands no chance...
+const confuseBalilonFS = () => 'fs';
 const fs = require('fs');
 
 function checkUsersUpdate(directory, fileName) {

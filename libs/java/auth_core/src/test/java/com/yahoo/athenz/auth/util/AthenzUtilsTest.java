@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Oath Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,12 +58,32 @@ public class AthenzUtilsTest {
     }
 
     @Test
+    public void testExtractRolePrincipalRoleCert() throws Exception {
+        try (InputStream inStream = new FileInputStream("src/test/resources/valid_email_x509.cert")) {
+            CertificateFactory cf = CertificateFactory.getInstance("X.509");
+            X509Certificate cert = (X509Certificate) cf.generateCertificate(inStream);
+
+            assertEquals("athens.zts", AthenzUtils.extractRolePrincipal(cert));
+        }
+    }
+
+    @Test
     public void testExtractServicePrincipalRoleCertUri() throws Exception {
         try (InputStream inStream = new FileInputStream("src/test/resources/role_cert_principal_uri_x509.cert")) {
             CertificateFactory cf = CertificateFactory.getInstance("X.509");
             X509Certificate cert = (X509Certificate) cf.generateCertificate(inStream);
 
             assertEquals("athenz.production", AthenzUtils.extractServicePrincipal(cert));
+        }
+    }
+
+    @Test
+    public void testExtractRolePrincipalRoleCertUri() throws Exception {
+        try (InputStream inStream = new FileInputStream("src/test/resources/role_cert_principal_uri_x509.cert")) {
+            CertificateFactory cf = CertificateFactory.getInstance("X.509");
+            X509Certificate cert = (X509Certificate) cf.generateCertificate(inStream);
+
+            assertEquals("athenz.production", AthenzUtils.extractRolePrincipal(cert));
         }
     }
 
@@ -145,6 +165,19 @@ public class AthenzUtilsTest {
         assertNull(AthenzUtils.extractRoleName("athenz:role."));
         assertNull(AthenzUtils.extractRoleName(":role.readers"));
         assertNull(AthenzUtils.extractRoleName("athenz.readers"));
+    }
+
+    @Test
+    public void testExtractPolicyName() {
+        assertEquals(AthenzUtils.extractPolicyName("athenz:policy.readers"), "readers");
+        assertEquals(AthenzUtils.extractPolicyName("athenz.api:policy.readers"), "readers");
+        assertEquals(AthenzUtils.extractPolicyName("athenz.api.test:policy.readers"), "readers");
+
+        assertNull(AthenzUtils.extractPolicyName("athenz:policys.readers"));
+        assertNull(AthenzUtils.extractPolicyName("athenz.policy.readers"));
+        assertNull(AthenzUtils.extractPolicyName("athenz:policy."));
+        assertNull(AthenzUtils.extractPolicyName(":policy.readers"));
+        assertNull(AthenzUtils.extractPolicyName("athenz.readers"));
     }
 
     @Test

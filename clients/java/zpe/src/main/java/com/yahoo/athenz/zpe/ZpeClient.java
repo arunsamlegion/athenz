@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,8 @@ public interface ZpeClient {
     // @param domain can be null
     void init(String domain);
 
+    void close();
+
     // return current cache of role tokens
     Map<String, RoleToken> getRoleTokenCacheMap();
 
@@ -49,5 +51,8 @@ public interface ZpeClient {
     // return the wildcard role assertion map for the specified domain with deny effect
     // key is role name, value is List of assertions for that role
     Map<String, List<com.yahoo.rdl.Struct>> getWildcardDenyAssertions(String domain);
+
+    // return the number of domains available in assertion maps
+    int getDomainCount();
 }
 

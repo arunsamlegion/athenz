@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 import React from 'react';
 import TabGroup from '../denali/TabGroup';
 import { withRouter } from 'next/router';
+import { connect } from 'react-redux';
+import { selectFeatureFlag } from '../../redux/selectors/domains';
 
 class Tabs extends React.Component {
     constructor(props) {
@@ -52,6 +54,10 @@ class Tabs extends React.Component {
             name: 'domain-settings',
         },
         {
+            label: 'Visibility',
+            name: 'visibility',
+        },
+        {
             label: 'History',
             name: 'history',
         },
@@ -63,64 +69,61 @@ class Tabs extends React.Component {
             case 'roles':
                 this.props.router.push(
                     `/domain/${domain}/role`,
-                    `/domain/${domain}/role`,
-                    { getInitialProps: true }
+                    `/domain/${domain}/role`
                 );
                 break;
             case 'services':
                 this.props.router.push(
                     `/domain/${domain}/service`,
-                    `/domain/${domain}/service`,
-                    { getInitialProps: true }
+                    `/domain/${domain}/service`
                 );
                 break;
             case 'groups':
                 this.props.router.push(
                     `/domain/${domain}/group`,
-                    `/domain/${domain}/group`,
-                    { getInitialProps: true }
+                    `/domain/${domain}/group`
                 );
                 break;
             case 'policies':
                 this.props.router.push(
                     `/domain/${domain}/policy`,
-                    `/domain/${domain}/policy`,
-                    { getInitialProps: true }
+                    `/domain/${domain}/policy`
                 );
                 break;
             case 'history':
                 this.props.router.push(
                     `/domain/${domain}/history`,
-                    `/domain/${domain}/history`,
-                    { getInitialProps: true }
+                    `/domain/${domain}/history`
                 );
                 break;
             case 'templates':
                 this.props.router.push(
                     `/domain/${domain}/template`,
-                    `/domain/${domain}/template`,
-                    { getInitialProps: true }
+                    `/domain/${domain}/template`
                 );
                 break;
             case 'tags':
                 this.props.router.push(
                     `/domain/${domain}/tags`,
-                    `/domain/${domain}/tags`,
-                    { getInitialProps: true }
+                    `/domain/${domain}/tags`
                 );
                 break;
             case 'microsegmentation':
                 this.props.router.push(
                     `/domain/${domain}/microsegmentation`,
-                    `/domain/${domain}/microsegmentation`,
-                    { getInitialProps: true }
+                    `/domain/${domain}/microsegmentation`
                 );
                 break;
             case 'domain-settings':
                 this.props.router.push(
                     `/domain/${domain}/domain-settings`,
-                    `/domain/${domain}/domain-settings`,
-                    { getInitialProps: true }
+                    `/domain/${domain}/domain-settings`
+                );
+                break;
+            case 'visibility':
+                this.props.router.push(
+                    `/domain/${domain}/visibility`,
+                    `/domain/${domain}/visibility`
                 );
                 break;
         }
@@ -128,7 +131,7 @@ class Tabs extends React.Component {
 
     render() {
         let microSeg = {
-            label: 'Micro Segmentation',
+            label: 'Microsegmentation',
             name: 'microsegmentation',
         };
 
@@ -145,4 +148,12 @@ class Tabs extends React.Component {
         );
     }
 }
-export default withRouter(Tabs);
+
+const mapStateToProps = (state, props) => {
+    return {
+        ...props,
+        featureFlag: selectFeatureFlag(state),
+    };
+};
+
+export default connect(mapStateToProps)(withRouter(Tabs));

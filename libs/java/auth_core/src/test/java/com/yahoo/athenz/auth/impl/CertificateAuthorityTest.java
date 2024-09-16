@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,6 @@ import java.io.FileInputStream;
 import java.io.InputStream;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
-import java.util.List;
 
 import org.testng.annotations.Test;
 
@@ -218,7 +217,7 @@ public class CertificateAuthorityTest {
             StringBuilder errMsg = new StringBuilder();
             Principal principal = authority.authenticate(certs, errMsg);
             assertNull(principal);
-            assertTrue(errMsg.toString().contains("invalid email SAN entry"));
+            assertTrue(errMsg.toString().contains("Invalid role cert, no role principal"));
         }
     }
 
@@ -238,7 +237,7 @@ public class CertificateAuthorityTest {
             StringBuilder errMsg = new StringBuilder();
             Principal principal = authority.authenticate(certs, errMsg);
             assertNull(principal);
-            assertTrue(errMsg.toString().contains("no email SAN entry"));
+            assertTrue(errMsg.toString().contains("Invalid role cert, no role principal"));
         }
     }
 
@@ -279,6 +278,52 @@ public class CertificateAuthorityTest {
             Principal principal = authority.authenticate(certs, errMsg);
             assertNull(principal);
             assertTrue(errMsg.toString().contains("Principal is not a valid service identity"));
+        }
+    }
+
+    @Test
+    public void testAuthenticateInvalidCertificatetoAuthority() {
+        System.setProperty("athenz.authority.truststore.path", "src/test/resources/x509_ca_certificate_chain.pem");
+        CertificateAuthority authority = new CertificateAuthority();
+        authority.initialize();
+
+        try (InputStream inStream = new FileInputStream("src/test/resources/valid_cn_x509.cert")) {
+            CertificateFactory cf = CertificateFactory.getInstance("X.509");
+            X509Certificate cert = (X509Certificate) cf.generateCertificate(inStream);
+
+            X509Certificate[] certs = new X509Certificate[1];
+            certs[0] = cert;
+            Principal principal = authority.authenticate(certs, null);
+            assertNull(principal);
+        } catch (Exception e) {
+            fail();
+        } finally {
+            System.clearProperty("athenz.authority.truststore.path");
+        }
+    }
+
+    @Test
+    public void testAuthenticateValidCertificatetoAuthority() {
+        System.setProperty("athenz.authority.truststore.path", "src/test/resources/x509_ca_certificate_chain.pem");
+        CertificateAuthority authority = new CertificateAuthority();
+        authority.initialize();
+
+        try (InputStream inStream = new FileInputStream("src/test/resources/x509_client_certificate_with_ca.pem")) {
+            CertificateFactory cf = CertificateFactory.getInstance("X.509");
+            X509Certificate cert = (X509Certificate) cf.generateCertificate(inStream);
+
+            X509Certificate[] certs = new X509Certificate[1];
+            certs[0] = cert;
+            Principal principal = authority.authenticate(certs, null);
+            assertNotNull(principal);
+            assertEquals("athenz", principal.getDomain());
+            assertEquals("syncer", principal.getName());
+            assertNull(principal.getRoles());
+            assertFalse(principal.getMtlsRestricted());
+        } catch (Exception e) {
+            fail();
+        } finally {
+            System.clearProperty("athenz.authority.truststore.path");
         }
     }
 }

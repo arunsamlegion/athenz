@@ -21,24 +21,43 @@ import Member from '../member/Member';
 import styled from '@emotion/styled';
 import { colors } from '../denali/styles';
 import AddModal from '../modal/AddModal';
-import DateUtils from '../utils/DateUtils';
 import RequestUtils from '../utils/RequestUtils';
 import InputDropdown from '../denali/InputDropdown';
 import Icon from '../denali/icons/Icon';
 import {
+    MICROSEGMENTATION_SERVICE_NAME_REGEX,
     MODAL_TIME_OUT,
     SEGMENTATION_CATEGORIES,
     SEGMENTATION_PROTOCOL,
+    SERVICE_NAME_REGEX,
 } from '../constants/constants';
 import NameUtils from '../utils/NameUtils';
 import RadioButtonGroup from '../denali/RadioButtonGroup';
-import Modal from '../denali/Modal';
+import CheckBox from '../denali/CheckBox';
+import MicrosegmentationValidationModal from '../modal/MicrosegmentationValidationModal';
+import RegexUtils from '../utils/RegexUtils';
+import { selectServices } from '../../redux/selectors/services';
+import { addRole, deleteRole, getRole } from '../../redux/thunks/roles';
+import {
+    addAssertion,
+    addAssertionConditions,
+    addPolicy,
+    getAssertionId,
+    getPolicy,
+} from '../../redux/thunks/policies';
+import { connect } from 'react-redux';
+import { editMicrosegmentation } from '../../redux/thunks/microsegmentation';
+import AppUtils from '../utils/AppUtils';
 
 const SectionDiv = styled.div`
     align-items: flex-start;
     display: flex;
     flex-flow: row nowrap;
     padding: 10px 10px;
+`;
+
+const CheckBoxSectionDiv = styled.div`
+    padding-top: 15px;
 `;
 
 const StyledInputLabel = styled(InputLabel)`
@@ -64,25 +83,45 @@ const StyledButtonGroup = styled(ButtonGroup)`
 
 const StyledInput = styled(Input)`
     width: 750px;
+    padding-top: 12px;
 `;
 
 const StyledInputHost = styled(Input)`
     width: 415px;
+    padding-top: 12px;
 `;
 
 const AddCircleDiv = styled.div`
     margin-top: 5px;
     margin-left: 10px;
+    padding-top: 12px;
 `;
 
 const RemoveCircleDiv = styled.div`
     margin-top: 5px;
     margin-left: 10px;
+    padding-top: 12px;
 `;
 
 const ContentDiv = styled.div`
     flex: 1 1;
     margin-right: 1px;
+`;
+
+const ValidationErrorDiv = styled.div`
+    flex: 1 1;
+    margin-right: 1px;
+    padding-top: 8px;
+`;
+
+const ValidationErrorStatusDiv = styled.div`
+    flex: 1 1;
+    margin-right: 1px;
+    padding-top: 20px;
+`;
+
+const ValidationErrorSpan = styled.span`
+    font: 300 16px HelveticaNeue-Reg, Helvetica, Arial, sans-serif;
 `;
 
 const AddMemberDiv = styled.div`
@@ -104,7 +143,13 @@ const StyledRadioButtonGroup = styled(RadioButtonGroup)`
     width: 26%;
 `;
 
-export default class AddSegmentation extends React.Component {
+const StyledInputDropdown = styled(InputDropdown)`
+    padding-top: 12px;
+`;
+
+const StyledCheckBox = styled(CheckBox)``;
+
+class AddSegmentation extends React.Component {
     constructor(props) {
         super(props);
         this.api = props.api;
@@ -115,12 +160,53 @@ export default class AddSegmentation extends React.Component {
         this.loadServices = this.loadServices.bind(this);
         this.changeService = this.changeService.bind(this);
         this.protocolChanged = this.protocolChanged.bind(this);
-        this.handlePolicy = this.handlePolicy.bind(this);
+        this.createPolicy = this.createPolicy.bind(this);
         this.validatePort = this.validatePort.bind(this);
         this.inputChanged = this.inputChanged.bind(this);
         this.handleInputChange = this.handleInputChange.bind(this);
         this.handleAddClick = this.handleAddClick.bind(this);
         this.handleRemoveClick = this.handleRemoveClick.bind(this);
+        this.editValidationPolicy = this.editValidationPolicy.bind(this);
+        this.validateMicrosegmentationPolicy =
+            this.validateMicrosegmentationPolicy.bind(this);
+        this.validateFields = this.validateFields.bind(this);
+        this.validateServiceNames = this.validateServiceNames.bind(this);
+        this.isScopeOnPrem = this.isScopeOnPrem.bind(this);
+        this.scopeIsSet = this.scopeIsSet.bind(this);
+        this.noSharedHostsBetweenModes =
+            this.noSharedHostsBetweenModes.bind(this);
+        this.getPolicyName = this.getPolicyName.bind(this);
+
+        let pesList = [
+            {
+                enforcementstate: 'report',
+                instances: '',
+                scopeonprem: 'true',
+                scopeaws: 'false',
+                scopegcp: 'false',
+                scopeall: 'false',
+                id: 1,
+            },
+        ];
+        if (this.props.editMode && this.props.data['conditionsList']) {
+            pesList = JSON.parse(
+                JSON.stringify(this.props.data['conditionsList'])
+            );
+            for (var i = 0; i < pesList.length; i++) {
+                // for backward compatatbility, policies without scope are assumed to be onprem
+                if (
+                    pesList[i].scopeonprem !== 'true' &&
+                    pesList[i].scopeaws !== 'true' &&
+                    pesList[i].scopegcp !== 'true' &&
+                    pesList[i].scopeall !== 'true'
+                ) {
+                    pesList[i].scopeonprem = 'true';
+                }
+                // policyName is not needed and its structure is invalid for an assertionCondition value. So we'll remove it.
+                delete pesList[i].policyName;
+            }
+        }
+
         this.state = {
             category: this.props.editMode
                 ? this.props.data['category']
@@ -168,10 +254,24 @@ export default class AddSegmentation extends React.Component {
                 ? this.props.data['identifier']
                 : '',
             justification: '',
-            PESList: this.props.editMode
-                ? JSON.parse(JSON.stringify(this.props.data['conditionsList']))
-                : [{ enforcementstate: 'report', instances: '', id: 1 }],
+            PESList: pesList,
             data: props.data,
+            validationCheckbox: false,
+            saving: 'todo',
+            validationError: 'none',
+            validationStatus: 'valid',
+            radioButtonInputs: [
+                {
+                    label: 'Report (on prem only)',
+                    value: 'report',
+                    disabled: false,
+                },
+                {
+                    label: 'Enforce',
+                    value: 'enforce',
+                    disabled: false,
+                },
+            ],
         };
     }
 
@@ -185,6 +285,7 @@ export default class AddSegmentation extends React.Component {
                 category: button.name,
                 isCategory: !this.state.isCategory, //Setting isCategory true for inbound and false for outbound through out the code
                 errorMessage: '',
+                saving: 'todo',
             });
         }
     }
@@ -204,7 +305,10 @@ export default class AddSegmentation extends React.Component {
 
     inputChanged(evt, key) {
         let value = '';
-        if (evt.target) {
+
+        if (key === 'validationCheckbox') {
+            value = evt.target.checked;
+        } else if (evt.target) {
             value = evt.target.value;
         } else {
             value = evt ? evt : '';
@@ -212,6 +316,55 @@ export default class AddSegmentation extends React.Component {
         this.setState({
             [key]: value,
         });
+    }
+
+    editValidationPolicy() {
+        this.setState({
+            validationStatus: '',
+            validationError: 'none',
+        });
+    }
+
+    noSharedHostsBetweenModes(pesList) {
+        if (pesList.length <= 1) {
+            return true;
+        }
+
+        const firstConditionInstances = pesList[0].instances.split(',');
+        const secondConditionInstances = pesList[1].instances.split(',');
+        if (
+            firstConditionInstances.length <= 0 ||
+            secondConditionInstances.length <= 0
+        ) {
+            // If one condition doesn't have any hosts - no risk of common hosts
+            return true;
+        }
+        if (
+            firstConditionInstances.includes('*') ||
+            secondConditionInstances.includes('*')
+        ) {
+            // If one condition has the wild card, any host listed on the second condition will be shared with it.
+            return false;
+        }
+
+        const sharedInstances = firstConditionInstances.filter((value) =>
+            secondConditionInstances.includes(value)
+        );
+        return sharedInstances.length == 0;
+    }
+
+    scopeIsSet(pesList) {
+        for (var i = 0; i < pesList.length; i++) {
+            if (
+                pesList[i].scopeonprem != 'true' &&
+                pesList[i].scopeaws != 'true' &&
+                pesList[i].scopegcp !== 'true' &&
+                pesList[i].scopeall != 'true'
+            ) {
+                return false;
+            }
+        }
+        return true;
     }
 
     addMember() {
@@ -225,11 +378,9 @@ export default class AddSegmentation extends React.Component {
         }
         let names = NameUtils.splitNames(sourceServiceName);
         for (let i = 0; i < names.length; i++) {
-            if (!names[i].includes('*')) {
-                members.push({
-                    memberName: names[i],
-                });
-            }
+            members.push({
+                memberName: names[i],
+            });
         }
 
         if (this.state.isCategory) {
@@ -257,151 +408,137 @@ export default class AddSegmentation extends React.Component {
         this.setState({ members });
     }
 
-    handlePolicy(policyName, roleName, resource, action, roleCreated) {
+    createPolicy(policyName, roleName, resource, action) {
         //Validating ACL policy and adding/updating assertion. if get policy threw a 404 then create a new policy
         var foundAssertionMatch = false;
-        this.api
-            .getPolicy(this.props.domain, policyName)
-            .then((data) => {
-                data.assertions.forEach((element) => {
-                    if (element.action.localeCompare(action) === 0) {
-                        foundAssertionMatch = true;
-                    }
-                });
-                if (foundAssertionMatch && roleCreated) {
-                    this.api
-                        .deleteRole(
-                            this.props.domain,
-                            roleName,
-                            'deleted using Microsegmentation UI because of same assertion',
-                            this.props._csrf
-                        )
-                        .then(() => {
-                            this.setState({
-                                errorMessage:
-                                    'Same policy already exists with a different identifier',
+        return new Promise((resolve, reject) => {
+            this.props
+                .getPolicy(this.props.domain, policyName)
+                .then((data) => {
+                    data.assertions.forEach((element) => {
+                        if (element.action.localeCompare(action) === 0) {
+                            foundAssertionMatch = true;
+                        }
+                    });
+                    if (foundAssertionMatch) {
+                        this.props
+                            .deleteRole(
+                                roleName,
+                                'deleted using Microsegmentation UI because of same assertion',
+                                this.props._csrf
+                            )
+                            .then(() => {
+                                reject(
+                                    'Same policy already exists with a different identifier'
+                                );
+                            })
+                            .catch((err) => {
+                                reject(RequestUtils.xhrErrorCheckHelper(err));
                             });
-                        })
-                        .catch((err) => {
-                            this.setState({
-                                errorMessage:
-                                    RequestUtils.xhrErrorCheckHelper(err),
-                            });
-                        });
-                } else if (foundAssertionMatch) {
-                    if (!this.state.errorMessage) {
-                        this.props.onSubmit();
-                    }
-                } else {
-                    this.api
-                        .addAssertion(
-                            this.props.domain,
-                            policyName,
-                            roleName,
-                            resource,
-                            action,
-                            'ALLOW',
-                            this.props._csrf
-                        )
-                        .then((data) => {
-                            this.api
-                                .addAssertionConditions(
-                                    this.props.domain,
-                                    policyName,
-                                    data.id,
-                                    this.state.PESList,
-                                    this.state.justification
-                                        ? this.state.justification
-                                        : 'Micro-segmentaion Assertion Condition using Athenz UI',
-                                    this.props._csrf
-                                )
-                                .then((conditionData) => {
-                                    this.props.onSubmit();
-                                })
-                                .catch((err) => {
-                                    this.setState({
-                                        errorMessage:
+                    } else {
+                        this.props
+                            .addAssertionProp(
+                                this.props.domain,
+                                policyName,
+                                roleName,
+                                resource,
+                                action,
+                                'ALLOW',
+                                true,
+                                this.props._csrf
+                            )
+                            .then((data) => {
+                                this.props
+                                    .addAssertionConditions(
+                                        this.props.domain,
+                                        policyName,
+                                        data.id,
+                                        this.state.PESList,
+                                        this.state.justification
+                                            ? this.state.justification
+                                            : 'Microsegmentaion Assertion Condition using Athenz UI',
+                                        this.props._csrf
+                                    )
+                                    .then((conditionData) => {
+                                        this.props.onSubmit();
+                                    })
+                                    .catch((err) => {
+                                        reject(
                                             RequestUtils.xhrErrorCheckHelper(
                                                 err
-                                            ),
+                                            )
+                                        );
                                     });
-                                });
-                        })
-                        .catch((err) => {
-                            this.setState({
-                                errorMessage:
-                                    RequestUtils.xhrErrorCheckHelper(err),
+                            })
+                            .catch((err) => {
+                                reject(RequestUtils.xhrErrorCheckHelper(err));
                             });
-                        });
-                }
-            })
-            .catch((err) => {
-                if (err && err.statusCode === 404) {
-                    this.api
-                        .addPolicy(
-                            this.props.domain,
-                            policyName,
-                            roleName,
-                            resource,
-                            action,
-                            'ALLOW',
-                            this.props._csrf
-                        )
-                        .then(() => {
-                            this.api
-                                .getAssertionId(
-                                    this.props.domain,
-                                    policyName,
-                                    roleName,
-                                    resource,
-                                    action,
-                                    'ALLOW'
-                                )
-                                .then((assertionId) => {
-                                    this.api
-                                        .addAssertionConditions(
-                                            this.props.domain,
-                                            policyName,
-                                            assertionId,
-                                            this.state.PESList,
-                                            this.state.justification
-                                                ? this.state.justification
-                                                : 'Micro-segmentaion Assertion Condition using Athenz UI',
-                                            this.props._csrf
-                                        )
-                                        .then((conditionData) => {
-                                            this.props.onSubmit();
-                                        })
-                                        .catch((err) => {
-                                            this.setState({
-                                                errorMessage:
+                    }
+                })
+                .catch((err) => {
+                    if (err && err.statusCode === 404) {
+                        this.props
+                            .addPolicy(
+                                this.props.domain,
+                                policyName,
+                                roleName,
+                                resource,
+                                action,
+                                'ALLOW',
+                                true,
+                                this.props._csrf
+                            )
+                            .then(() => {
+                                this.props
+                                    .getAssertionId(
+                                        this.props.domain,
+                                        policyName,
+                                        roleName,
+                                        resource,
+                                        action,
+                                        'ALLOW'
+                                    )
+                                    .then((assertionId) => {
+                                        this.props
+                                            .addAssertionConditions(
+                                                this.props.domain,
+                                                policyName,
+                                                assertionId,
+                                                this.state.PESList,
+                                                this.state.justification
+                                                    ? this.state.justification
+                                                    : 'Microsegmentaion Assertion Condition using Athenz UI',
+                                                this.props._csrf
+                                            )
+                                            .then(() => {
+                                                this.props.onSubmit();
+                                            })
+                                            .catch((err) => {
+                                                reject(
                                                     RequestUtils.xhrErrorCheckHelper(
                                                         err
-                                                    ),
+                                                    )
+                                                );
                                             });
-                                        });
-                                })
-                                .catch((err) => {
-                                    this.setState({
-                                        errorMessage:
+                                    })
+                                    .catch((err) => {
+                                        reject(
                                             RequestUtils.fetcherErrorCheckHelper(
                                                 err
-                                            ),
+                                            )
+                                        );
                                     });
-                                });
-                        })
-                        .catch((err) => {
-                            this.setState({
-                                errorMessage:
-                                    RequestUtils.fetcherErrorCheckHelper(err),
+                            })
+                            .catch((err) => {
+                                reject(
+                                    RequestUtils.fetcherErrorCheckHelper(err)
+                                );
                             });
-                        });
-                } else {
-                    this.setState({
-                        errorMessage: RequestUtils.xhrErrorCheckHelper(err),
-                    });
-                }
-            });
+                    } else {
+                        reject(RequestUtils.xhrErrorCheckHelper(err));
+                    }
+                });
+        });
     }
 
     validatePort(port) {
@@ -414,6 +551,7 @@ export default class AddSegmentation extends React.Component {
         if (!regex.test(port)) {
             this.setState({
                 errorMessage: "Port can only contain numbers, '-' and ','",
+                saving: 'todo',
             });
             result.error = 1;
             return result;
@@ -427,6 +565,8 @@ export default class AddSegmentation extends React.Component {
                 let end = parseInt(range[1]);
                 if (
                     range.length != 2 ||
+                    isNaN(start) ||
+                    isNaN(end) ||
                     start < 1 ||
                     end < 1 ||
                     start > end ||
@@ -438,26 +578,56 @@ export default class AddSegmentation extends React.Component {
                             'Invalid port: ' +
                             ports[i] +
                             '. Valid range of port numbers: 1-65535',
+                        saving: 'todo',
                     });
                     result.error = 1;
                     return result;
                 }
-            } else if (ports[i] > 0 && ports[i] <= 65535) {
-                ports[i] = ports[i] + '-' + ports[i];
-            } else {
+            } else if (ports[i] < 0 && ports[i] > 65535) {
                 this.setState({
                     errorMessage:
                         'Invalid port: ' +
                         ports[i] +
                         'Valid range of port numbers: 1-65535',
+                    saving: 'todo',
                 });
                 result.error = 1;
                 return result;
+            } else {
+                ports[i] = ports[i] + '-' + ports[i];
             }
         }
 
         result.port = ports.join(',');
         return result;
+    }
+
+    validateServiceNames(serviceMembers) {
+        let error = true;
+        serviceMembers.forEach((serviceMember) => {
+            let memberName = serviceMember.memberName
+                ? serviceMember.memberName
+                : serviceMember;
+            if (
+                !RegexUtils.validate(
+                    memberName,
+                    MICROSEGMENTATION_SERVICE_NAME_REGEX
+                )
+            ) {
+                error = false;
+            }
+        });
+        return error;
+    }
+
+    // isScopeOnPrem returns true if onprem is a selected option
+    isScopeOnPrem() {
+        for (let i = 0; i < this.state.PESList.length; i++) {
+            if (this.state.PESList[i].scopeonprem == 'false') {
+                return false;
+            }
+        }
+        return true;
     }
 
     validateFields() {
@@ -468,6 +638,7 @@ export default class AddSegmentation extends React.Component {
             ) {
                 this.setState({
                     errorMessage: 'Destination service is required.',
+                    saving: 'todo',
                 });
                 return 1;
             }
@@ -478,34 +649,20 @@ export default class AddSegmentation extends React.Component {
             ) {
                 this.setState({
                     errorMessage: 'Destination Port is required.',
+                    saving: 'todo',
                 });
                 return 1;
             }
 
             if (
-                this.state.sourceServiceMembers.length <= 0 &&
-                this.state.members.length == 0
+                !this.validateServiceNames(
+                    NameUtils.splitNames(this.state.sourceServiceMembers)
+                ) ||
+                !this.validateServiceNames(this.state.members)
             ) {
                 this.setState({
-                    errorMessage: 'At least one source service is required.',
-                });
-                return 1;
-            }
-
-            for (let member of this.state.members) {
-                if (member.memberName.includes('*')) {
-                    this.setState({
-                        errorMessage:
-                            'Service name cannot contain wildcard (*) characters',
-                    });
-                    return 1;
-                }
-            }
-
-            if (this.state.sourceServiceMembers.includes('*')) {
-                this.setState({
-                    errorMessage:
-                        'Service name cannot contain wildcard (*) characters',
+                    errorMessage: 'Invalid source service',
+                    saving: 'todo',
                 });
                 return 1;
             }
@@ -513,6 +670,7 @@ export default class AddSegmentation extends React.Component {
             if (!this.state.sourcePort || this.state.sourcePort === '') {
                 this.setState({
                     errorMessage: 'Source port is required.',
+                    saving: 'todo',
                 });
                 return 1;
             }
@@ -520,6 +678,7 @@ export default class AddSegmentation extends React.Component {
             if (!this.state.protocol || this.state.protocol === '') {
                 this.setState({
                     errorMessage: 'Protocol is required.',
+                    saving: 'todo',
                 });
                 return 1;
             }
@@ -530,6 +689,7 @@ export default class AddSegmentation extends React.Component {
             ) {
                 this.setState({
                     errorMessage: 'Source service is required.',
+                    saving: 'todo',
                 });
                 return 1;
             }
@@ -537,35 +697,20 @@ export default class AddSegmentation extends React.Component {
             if (!this.state.sourcePort || this.state.sourcePort === '') {
                 this.setState({
                     errorMessage: 'Source port is required.',
+                    saving: 'todo',
                 });
                 return 1;
             }
 
             if (
-                this.state.destinationServiceMembers.length <= 0 &&
-                this.state.members.length == 0
+                !this.validateServiceNames(
+                    NameUtils.splitNames(this.state.destinationServiceMembers)
+                ) ||
+                !this.validateServiceNames(this.state.members)
             ) {
                 this.setState({
-                    errorMessage:
-                        'At least one destination service is required.',
-                });
-                return 1;
-            }
-
-            for (let member of this.state.members) {
-                if (member.memberName.includes('*')) {
-                    this.setState({
-                        errorMessage:
-                            'Service name cannot contain wildcard (*) characters',
-                    });
-                    return 1;
-                }
-            }
-
-            if (this.state.destinationServiceMembers.includes('*')) {
-                this.setState({
-                    errorMessage:
-                        'Service name cannot contain wildcard (*) characters',
+                    errorMessage: 'Invalid destination service.',
+                    saving: 'todo',
                 });
                 return 1;
             }
@@ -576,6 +721,7 @@ export default class AddSegmentation extends React.Component {
             ) {
                 this.setState({
                     errorMessage: 'Destination Port is required.',
+                    saving: 'todo',
                 });
                 return 1;
             }
@@ -583,6 +729,7 @@ export default class AddSegmentation extends React.Component {
             if (!this.state.protocol || this.state.protocol === '') {
                 this.setState({
                     errorMessage: 'Protocol is required.',
+                    saving: 'todo',
                 });
                 return 1;
             }
@@ -595,6 +742,24 @@ export default class AddSegmentation extends React.Component {
         ) {
             this.setState({
                 errorMessage: 'Justification is required to add a member.',
+                saving: 'todo',
+            });
+            return 1;
+        }
+
+        if (!this.scopeIsSet(this.state.PESList)) {
+            this.setState({
+                errorMessage: 'Please select at least one scope.',
+                saving: 'todo',
+            });
+            return 1;
+        }
+
+        if (!this.noSharedHostsBetweenModes(this.state.PESList)) {
+            this.setState({
+                errorMessage:
+                    'The same host can not exist in both "Report" and "Enforce" modes.',
+                saving: 'todo',
             });
             return 1;
         }
@@ -602,15 +767,115 @@ export default class AddSegmentation extends React.Component {
         return 0;
     }
 
-    onSubmit() {
+    validateMicrosegmentationPolicy(
+        category,
+        roleMembers,
+        inboundDestinationService,
+        outboundSourceService,
+        sourcePort,
+        destinationPort,
+        protocol,
+        assertionId,
+        skipValidation
+    ) {
+        return new Promise((resolve, reject) => {
+            if (this.state.validationCheckbox === true && !skipValidation) {
+                this.api
+                    .validateMicrosegmentationPolicy(
+                        category,
+                        roleMembers,
+                        inboundDestinationService,
+                        outboundSourceService,
+                        sourcePort,
+                        destinationPort,
+                        protocol,
+                        this.props.domain,
+                        assertionId,
+                        this.props._csrf
+                    )
+                    .then((data) => {
+                        if (data.status !== 'VALID') {
+                            this.setState({
+                                validationError: data.errors.join('\r\n'),
+                                validationStatus: data.status,
+                                saving: 'todo',
+                            });
+                            reject();
+                        } else {
+                            resolve();
+                        }
+                    })
+                    .catch((err) => {
+                        reject(RequestUtils.fetcherErrorCheckHelper(err));
+                    });
+            } else {
+                resolve();
+            }
+        });
+    }
+
+    createRole(role) {
+        return new Promise((resolve, reject) => {
+            this.props
+                .getRole(this.props.domain, role.name)
+                .then(() => {
+                    reject(
+                        'The identifier is already being used for this service. Please use a new identifier.'
+                    );
+                })
+                .catch((err) => {
+                    if (err && err.statusCode === 404) {
+                        this.props
+                            .addRole(
+                                role.name,
+                                role,
+                                this.state.justification
+                                    ? this.state.justification
+                                    : 'Microsegmentaion Role creation',
+                                this.props._csrf
+                            )
+                            .then(() => {
+                                resolve();
+                            })
+                            .catch((err) => {
+                                reject(RequestUtils.xhrErrorCheckHelper(err));
+                            });
+                    } else {
+                        reject(RequestUtils.fetcherErrorCheckHelper(err));
+                    }
+                });
+        });
+    }
+
+    getPolicyName() {
+        if (this.state.isCategory) {
+            return (
+                'acl.' +
+                this.state.inboundDestinationService +
+                '.' +
+                SEGMENTATION_CATEGORIES[0].name
+            );
+        } else {
+            return (
+                'acl.' +
+                this.state.outboundSourceService +
+                '.' +
+                SEGMENTATION_CATEGORIES[1].name
+            );
+        }
+    }
+
+    onSubmit(evt, skipValidation = false) {
         this.setState({
-            errorMessage: '',
+            saving: 'saving',
         });
 
+        // validate fields
         if (this.validateFields()) {
             return;
         }
 
+        // add all members to one list
         this.addMember();
 
         let source = this.validatePort(this.state.sourcePort);
@@ -624,8 +889,8 @@ export default class AddSegmentation extends React.Component {
         const destinationPort = destination.port;
 
         //set the policy and assertion values based on ACL category
-        var roleName, action, policyName, resource;
-
+        var roleName, action, resource;
+        var policyName = this.getPolicyName();
         if (this.state.isCategory) {
             roleName =
                 'acl.' +
@@ -642,11 +907,6 @@ export default class AddSegmentation extends React.Component {
                 sourcePort +
                 ':' +
                 destinationPort;
-            policyName =
-                'acl.' +
-                this.state.inboundDestinationService +
-                '.' +
-                SEGMENTATION_CATEGORIES[0].name;
             resource = this.state.inboundDestinationService;
         } else {
             roleName =
@@ -664,11 +924,6 @@ export default class AddSegmentation extends React.Component {
                 sourcePort +
                 ':' +
                 destinationPort;
-            policyName =
-                'acl.' +
-                this.state.outboundSourceService +
-                '.' +
-                SEGMENTATION_CATEGORIES[1].name;
             resource = this.state.outboundSourceService;
         }
 
@@ -681,52 +936,53 @@ export default class AddSegmentation extends React.Component {
                 );
             }) || [];
 
-        //Check for the role and if it is missing add it otherwise contniue with policy aseertion update
-        this.api
-            .getRole(this.props.domain, role.name)
-            .then((existingRole) => {
-                this.setState({
-                    errorMessage:
-                        'The identifier is already being used for this service. Please use a new identifier.',
-                });
+        // check if validation of policy has been enabled
+        // if enabled then validate microsegmentation policy against network policy
+
+        let assertionId = -1;
+
+        this.validateMicrosegmentationPolicy(
+            this.state.category,
+            role.roleMembers,
+            this.state.inboundDestinationService,
+            this.state.outboundSourceService,
+            sourcePort,
+            destinationPort,
+            this.state.protocol,
+            assertionId,
+            skipValidation
+        )
+            .then(() => {
+                return this.createRole(role);
+            })
+            .then(() => {
+                return this.createPolicy(
+                    policyName,
+                    roleName,
+                    resource,
+                    action
+                );
             })
             .catch((err) => {
-                if (err && err.statusCode === 404) {
-                    let roleCreated = true;
-                    this.api
-                        .addRole(
-                            this.props.domain,
-                            role.name,
-                            role,
-                            this.state.justification
-                                ? this.state.justification
-                                : 'Micro-segmentaion Role creation',
-                            this.props._csrf
-                        )
-                        .then((data) => {
-                            this.handlePolicy(
-                                policyName,
-                                role.name,
-                                resource,
-                                action,
-                                roleCreated
-                            );
-                        })
-                        .catch((err) => {
-                            this.setState({
-                                errorMessage:
-                                    RequestUtils.xhrErrorCheckHelper(err),
-                            });
-                        });
+                if (skipValidation) {
+                    this.setState({
+                        errorMessage: err,
+                        saving: 'todo',
+                        validationError: 'none',
+                    });
                 } else {
                     this.setState({
-                        errorMessage: RequestUtils.fetcherErrorCheckHelper(err),
+                        errorMessage: err,
+                        saving: 'todo',
                     });
                 }
             });
     }
 
-    onEditSubmit() {
+    onEditSubmit(evt, skipValidation = false) {
+        this.setState({
+            saving: 'saving',
+        });
         if (this.validateFields()) {
             return;
         }
@@ -807,71 +1063,139 @@ export default class AddSegmentation extends React.Component {
                     (other) =>
                         other.instances == current.instances &&
                         other.enforcementstate == current.enforcementstate &&
+                        other.scopeall == current.scopeall &&
+                        other.scopeonprem == current.scopeonprem &&
+                        other.scopeaws == current.scopeaws &&
+                        other.scopegcp == current.scopegcp &&
                         other.id == current.id
                 ).length == 0;
 
-            let x = this.props.data['conditionsList'].filter(
-                comparer(this.state.PESList)
-            );
-            let y = this.state.PESList.filter(
-                comparer(this.props.data['conditionsList'])
-            );
+            if (this.props.data['conditionsList']) {
+                let x = this.props.data['conditionsList'].filter(
+                    comparer(this.state.PESList)
+                );
+                let y = this.state.PESList.filter(
+                    comparer(this.props.data['conditionsList'])
+                );
 
-            if (x.length != 0 || y.length != 0) {
+                if (x.length != 0 || y.length != 0) {
+                    assertionConditionChanged = true;
+                    updatedData['conditionsList'] = this.state.PESList;
+                }
+            } else {
                 assertionConditionChanged = true;
                 updatedData['conditionsList'] = this.state.PESList;
             }
         }
 
-        if (roleChanged || assertionChanged || assertionConditionChanged) {
-            this.api
-                .editMicrosegmentation(
-                    this.props.domain,
-                    roleChanged,
-                    assertionChanged,
-                    assertionConditionChanged,
-                    updatedData,
-                    this.props._csrf
-                )
-                .then(() => {
-                    this.props.onSubmit();
-                })
-                .catch((err) => {
+        let assertionId = this.state.data.assertionIdx;
+
+        this.validateMicrosegmentationPolicy(
+            this.state.category,
+            this.state.members,
+            this.state.inboundDestinationService,
+            this.state.outboundSourceService,
+            source.port,
+            destination.port,
+            this.state.protocol,
+            assertionId,
+            skipValidation
+        )
+            .then(() => {
+                if (
+                    roleChanged ||
+                    assertionChanged ||
+                    (assertionConditionChanged &&
+                        this.props.data['conditionsList'])
+                ) {
+                    this.props
+                        .editMicrosegmentation(
+                            this.props.domain,
+                            roleChanged,
+                            assertionChanged,
+                            assertionConditionChanged,
+                            updatedData,
+                            this.props._csrf
+                        )
+                        .then(() => {
+                            this.props.onSubmit();
+                        })
+                        .catch((err) => {
+                            this.setState({
+                                errorMessage:
+                                    RequestUtils.fetcherErrorCheckHelper(err),
+                                saving: 'todo',
+                                validationError: 'none',
+                            });
+                        });
+                } else if (assertionConditionChanged) {
+                    this.props
+                        .addAssertionConditions(
+                            this.props.domain,
+                            this.getPolicyName(),
+                            this.props.data['assertionIdx'],
+                            this.state.PESList,
+                            this.state.justification
+                                ? this.state.justification
+                                : 'Microsegmentaion Assertion Condition using Athenz UI',
+                            this.props._csrf
+                        )
+                        .then(() => {
+                            this.props.onSubmit();
+                        })
+                        .catch((err) => {
+                            this.setState({
+                                errorMessage:
+                                    RequestUtils.fetcherErrorCheckHelper(err),
+                                saving: 'todo',
+                                validationError: 'none',
+                            });
+                        });
+                } else {
+                    this.props.onCancel();
+                }
+            })
+            .catch((err) => {
+                if (skipValidation) {
                     this.setState({
-                        errorMessage: RequestUtils.fetcherErrorCheckHelper(err),
+                        errorMessage: err,
+                        saving: 'todo',
+                        validationError: 'none',
                     });
-                });
-        } else {
-            this.props.onCancel();
-        }
+                } else {
+                    this.setState({
+                        errorMessage: err,
+                        saving: 'todo',
+                    });
+                }
+            });
     }
 
     loadServices() {
-        this.api
-            .getServices(this.props.domain)
-            .then((data) => {
-                for (var i = 0; i < data.length; i++) {
-                    let name = NameUtils.getShortName('.', data[i]['name']);
-                    data[i]['name'] = name;
-                    data[i]['value'] = name;
-                    delete data[i]['modified'];
-                }
+        const services = AppUtils.deepClone(this.props.services);
+        for (let i = 0; i < services.length; i++) {
+            let name = NameUtils.getShortName('.', services[i]['name']);
+            services[i]['name'] = name;
+            services[i]['value'] = name;
+            delete services[i]['modified'];
+        }
+        this.setState({
+            destinationServiceList: services,
+        });
+        setTimeout(
+            () =>
                 this.setState({
-                    destinationServiceList: data,
-                });
-                setTimeout(
-                    () =>
-                        this.setState({
-                            showSuccess: false,
-                        }),
-                    MODAL_TIME_OUT
-                );
-            })
-            .catch((err) => {
-                this.setState({
-                    errorMessage: RequestUtils.fetcherErrorCheckHelper(err),
-                });
-            });
+                    showSuccess: false,
+                }),
+            MODAL_TIME_OUT
+        );
+        // })
+        // .catch((err) => {
+        //     this.setState({
+        //         errorMessage: RequestUtils.fetcherErrorCheckHelper(err),
+        //         saving: 'todo',
+        //     });
+        // });
     }
 
     changeService(chosen, key) {
@@ -883,10 +1207,20 @@ export default class AddSegmentation extends React.Component {
         }
     }
 
-    handleInputChange(e, index) {
-        const { name, value } = e.target;
-        const list = [...this.state.PESList];
+    toggleDisableRadioButton(checked, list, index, inputs) {
+        if (checked) {
+            list[index]['enforcementstate'] = 'enforce';
+            inputs[0].disabled = true; // disable report mode when scope aws
+        } else {
+            inputs[0].disabled = false;
+        }
+    }
 
+    handleInputChange(e, index) {
+        const { name, value, checked } = e.target;
+        const list = [...this.state.PESList];
+        const checkedStr = checked ? 'true' : 'false';
+        let inputs = [...this.state.radioButtonInputs];
         if (name.includes('enforcementStateRadioButton')) {
             list[index]['enforcementstate'] = value;
             if (list.length == 2) {
@@ -896,11 +1230,26 @@ export default class AddSegmentation extends React.Component {
                     list[1]['enforcementstate'] = 'report';
                 }
             }
-        } else {
+        } else if (name.includes('instances')) {
             list[index]['instances'] = value;
+        } else if (name.includes('scopeall')) {
+            list[index]['scopeall'] = checkedStr;
+            list[index]['scopeaws'] = 'false';
+            list[index]['scopegcp'] = 'false';
+            list[index]['scopeonprem'] = 'false';
+            this.toggleDisableRadioButton(checked, list, index, inputs);
+        } else if (name.includes('scopeonprem')) {
+            list[index]['scopeonprem'] = checkedStr;
+        } else if (name.includes('scopeaws')) {
+            list[index]['scopeaws'] = checkedStr;
+            this.toggleDisableRadioButton(checked, list, index, inputs);
+        } else if (name.includes('scopegcp')) {
+            list[index]['scopegcp'] = checkedStr;
+            this.toggleDisableRadioButton(checked, list, index, inputs);
         }
         this.setState({
             PESList: list,
+            radioButtonInputs: inputs,
         });
     }
 
@@ -912,7 +1261,15 @@ export default class AddSegmentation extends React.Component {
         this.setState({
             PESList: [
                 ...this.state.PESList,
-                { enforcementstate: enforcementstate, instances: '', id: 2 },
+                {
+                    enforcementstate: enforcementstate,
+                    instances: '',
+                    id: 2,
+                    scopeonprem: 'true',
+                    scopeaws: 'false',
+                    scopeall: 'false',
+                    scopegcp: 'false',
+                },
             ],
         });
     }
@@ -927,26 +1284,16 @@ export default class AddSegmentation extends React.Component {
     }
 
     render() {
-        const inputs = [
-            {
-                label: 'Report',
-                value: 'report',
-            },
-            {
-                label: 'Enforce',
-                value: 'enforce',
-            },
-        ];
-
         let members = this.state.members
             ? this.state.members.map((item, idx) => {
                   // dummy place holder so that it can be be used in the form
-                  item.approved = true;
+                  const newItem = { ...item };
+                  newItem.approved = true;
                   let remove = this.deleteMember.bind(this, idx);
                   return (
                       <Member
                           key={idx}
-                          item={item}
+                          item={newItem}
                           onClickRemove={remove}
                           noanim
                       />
@@ -988,7 +1335,7 @@ export default class AddSegmentation extends React.Component {
                             ? 'Destination Service'
                             : 'Source Service'}
                     </StyledInputLabel>
-                    <InputDropdown
+                    <StyledInputDropdown
                         name='destinationService'
                         options={this.state.destinationServiceList}
                         value={
@@ -1008,68 +1355,122 @@ export default class AddSegmentation extends React.Component {
                         }
                         placeholder={
                             this.state.isCategory
-                                ? 'Enter Destination Service'
-                                : 'Enter Source Service'
+                                ? 'Select Destination Service'
+                                : 'Select Source Service'
                         }
                         noanim
                         filterable
                         disabled={this.props.editMode}
                     />
                 </SectionDiv>
-
                 {this.state.PESList.map((x, i) => {
                     return (
-                        <SectionDiv>
-                            <StyledInputLabel>
-                                Policy Enforcement State
-                            </StyledInputLabel>
-                            <StyledRadioButtonGroup
-                                name={'enforcementStateRadioButton' + i}
-                                inputs={inputs}
-                                selectedValue={x.enforcementstate}
-                                onChange={(e) => this.handleInputChange(e, i)}
-                                disabled={i == 1}
-                            />
-
-                            <StyledInputLabelHost>Hosts</StyledInputLabelHost>
-                            <StyledInputHost
-                                placeholder='Comma separated list, Leave blank to apply to all hosts'
-                                value={x.instances}
-                                name={'instances' + i}
-                                onChange={(e) => this.handleInputChange(e, i)}
-                                noanim
-                                error={x.instances.length > 2048}
-                                message={
-                                    x.instances.length > 2048
-                                        ? 'Limit is 2048 characters. Contact #athenz channel on slack'
-                                        : ''
-                                }
-                                fluid
-                            />
-                            {this.state.PESList.length < 2 ? (
-                                <AddCircleDiv>
-                                    <Icon
-                                        icon={'add-circle'}
-                                        isLink
-                                        color={colors.icons}
-                                        size='1.75em'
-                                        onClick={this.handleAddClick}
-                                    />
-                                </AddCircleDiv>
-                            ) : (
-                                <RemoveCircleDiv>
-                                    <Icon
-                                        icon={'minus'}
-                                        isLink
-                                        color={colors.icons}
-                                        size='1.75em'
-                                        onClick={() =>
-                                            this.handleRemoveClick(i)
+                        <div>
+                            <SectionDiv>
+                                <StyledInputLabel>Scope</StyledInputLabel>
+                                <CheckBoxSectionDiv>
+                                    <StyledCheckBox
+                                        checked={x.scopeall === 'true'}
+                                        name={'scopeallCheckBox' + i}
+                                        id={'scopeallCheckBox' + i}
+                                        key={'scopeallCheckBox' + i}
+                                        label='All'
+                                        onChange={(e) =>
+                                            this.handleInputChange(e, i)
                                         }
                                     />
-                                </RemoveCircleDiv>
-                            )}
-                        </SectionDiv>
+                                    <StyledCheckBox
+                                        checked={x.scopeonprem === 'true'}
+                                        disabled={x.scopeall === 'true'}
+                                        name={'scopeonpremCheckBox' + i}
+                                        id={'scopeonpremCheckBox' + i}
+                                        key={'scopeonpremCheckBox' + i}
+                                        label='On-Prem'
+                                        onChange={(e) =>
+                                            this.handleInputChange(e, i)
+                                        }
+                                    />
+                                    <StyledCheckBox
+                                        checked={x.scopeaws === 'true'}
+                                        disabled={x.scopeall === 'true'}
+                                        name={'scopeawsCheckBox' + i}
+                                        id={'scopeawsCheckBox' + i}
+                                        key={'scopeawsCheckBox' + i}
+                                        label='AWS'
+                                        onChange={(e) =>
+                                            this.handleInputChange(e, i)
+                                        }
+                                    />
+                                    <StyledCheckBox
+                                        checked={x.scopegcp === 'true'}
+                                        disabled={x.scopeall === 'true'}
+                                        name={'scopegcpCheckBox' + i}
+                                        id={'scopegcpCheckBox' + i}
+                                        key={'scopegcpCheckBox' + i}
+                                        label='GCP'
+                                        onChange={(e) =>
+                                            this.handleInputChange(e, i)
+                                        }
+                                    />
+                                </CheckBoxSectionDiv>
+                            </SectionDiv>
+                            <SectionDiv>
+                                <StyledInputLabel>
+                                    Policy Enforcement State
+                                </StyledInputLabel>
+                                <StyledRadioButtonGroup
+                                    name={'enforcementStateRadioButton' + i}
+                                    inputs={this.state.radioButtonInputs}
+                                    selectedValue={x.enforcementstate}
+                                    onChange={(e) =>
+                                        this.handleInputChange(e, i)
+                                    }
+                                    disabled={i == 1 ? true : undefined}
+                                />
+                                <StyledInputLabelHost>
+                                    Hosts
+                                </StyledInputLabelHost>
+                                <StyledInputHost
+                                    placeholder='Comma separated list, Leave blank to apply to all hosts'
+                                    value={x.instances}
+                                    name={'instances' + i}
+                                    onChange={(e) =>
+                                        this.handleInputChange(e, i)
+                                    }
+                                    noanim
+                                    error={x.instances.length > 2048}
+                                    message={
+                                        x.instances.length > 2048
+                                            ? 'Limit is 2048 characters. Contact #athenz channel on slack'
+                                            : ''
+                                    }
+                                    fluid
+                                />
+                                {this.state.PESList.length < 2 ? (
+                                    <AddCircleDiv>
+                                        <Icon
+                                            icon={'add-circle'}
+                                            isLink
+                                            color={colors.icons}
+                                            size='1.75em'
+                                            onClick={this.handleAddClick}
+                                        />
+                                    </AddCircleDiv>
+                                ) : (
+                                    <RemoveCircleDiv>
+                                        <Icon
+                                            icon={'minus'}
+                                            isLink
+                                            color={colors.icons}
+                                            size='1.75em'
+                                            onClick={() =>
+                                                this.handleRemoveClick(i)
+                                            }
+                                        />
+                                    </RemoveCircleDiv>
+                                )}
+                            </SectionDiv>
+                        </div>
                     );
                 })}
 
@@ -1107,7 +1508,7 @@ export default class AddSegmentation extends React.Component {
                             : 'Destination Service'}
                     </StyledInputLabel>
                     <StyledInput
-                        placeholder='eg: yamas.api, sys.auth.zms (click + button to add)'
+                        placeholder='eg: yamas.api, sys.auth.zms'
                         value={
                             this.state.isCategory
                                 ? this.state.sourceServiceMembers
@@ -1124,16 +1525,6 @@ export default class AddSegmentation extends React.Component {
                         noanim
                         fluid
                     />
-
-                    <AddCircleDiv>
-                        <Icon
-                            icon={'add-circle'}
-                            isLink
-                            color={colors.icons}
-                            size='1.75em'
-                            onClick={this.addMember}
-                        />
-                    </AddCircleDiv>
                 </SectionDiv>
                 <SectionDiv>
                     <StyledInputLabel />
@@ -1172,7 +1563,7 @@ export default class AddSegmentation extends React.Component {
                 </SectionDiv>
                 <SectionDiv>
                     <StyledInputLabel>Protocol</StyledInputLabel>
-                    <InputDropdown
+                    <StyledInputDropdown
                         name='protocol'
                         defaultSelectedValue={this.state.protocol}
                         options={SEGMENTATION_PROTOCOL}
@@ -1182,6 +1573,36 @@ export default class AddSegmentation extends React.Component {
                         filterable
                     />
                 </SectionDiv>
+                {this.props.pageFeatureFlag['policyValidation'] && (
+                    <SectionDiv>
+                        <StyledInputLabel>Validation</StyledInputLabel>
+                        <CheckBoxSectionDiv>
+                            <StyledCheckBox
+                                disabled={!this.isScopeOnPrem()}
+                                checked={this.state.validationCheckbox}
+                                name={
+                                    'checkbox-validate-policy' +
+                                    this.state.isCategory
+                                }
+                                id={
+                                    'checkbox-validate-policy' +
+                                    this.state.isCategory
+                                }
+                                key={
+                                    'checkbox-validate-policy' +
+                                    this.state.isCategory
+                                }
+                                label='Validate Microsegmentation policy against PES network policy (only for onprem hosts)'
+                                onChange={(event) =>
+                                    this.inputChanged(
+                                        event,
+                                        'validationCheckbox'
+                                    )
+                                }
+                            />
+                        </CheckBoxSectionDiv>
+                    </SectionDiv>
+                )}
                 {this.props.justificationRequired && (
                     <SectionDiv>
                         <StyledInputLabel>Justification</StyledInputLabel>
@@ -1198,26 +1619,183 @@ export default class AddSegmentation extends React.Component {
                 )}
             </SectionsDiv>
         );
+
+        let validationResponseSections = (
+            <SectionsDiv>
+                <SectionDiv>
+                    <StyledInputLabel>Status</StyledInputLabel>
+                    <ValidationErrorStatusDiv>
+                        {this.state.validationStatus}
+                    </ValidationErrorStatusDiv>
+                </SectionDiv>
+                <SectionDiv>
+                    <StyledInputLabel>Errors</StyledInputLabel>
+                    <ValidationErrorDiv>
+                        <pre>
+                            <ValidationErrorSpan>
+                                {this.state.validationError}
+                            </ValidationErrorSpan>
+                        </pre>
+                    </ValidationErrorDiv>
+                </SectionDiv>
+            </SectionsDiv>
+        );
+
         return (
             <div data-testid='add-segment'>
-                <AddModal
-                    isOpen={this.props.showAddSegment}
-                    cancel={this.props.onCancel}
-                    submit={
-                        this.props.editMode ? this.onEditSubmit : this.onSubmit
-                    }
-                    title={
-                        this.props.editMode
-                            ? `Edit Micro Segmentation ACL Policy`
-                            : `Add Micro Segmentation ACL Policy`
-                    }
-                    errorMessage={this.state.errorMessage}
-                    sections={sections}
-                    width={'1050px'}
-                    bodyMaxHeight={'90%'}
-                    modalHeight={'85vh'}
-                />
+                {this.state.validationError === 'none' && (
+                    <AddModal
+                        isOpen={this.props.showAddSegment}
+                        cancel={this.props.onCancel}
+                        submit={
+                            this.props.editMode
+                                ? this.onEditSubmit
+                                : this.onSubmit
+                        }
+                        title={
+                            this.props.editMode
+                                ? `Edit Microsegmentation ACL Policy`
+                                : `Add Microsegmentation ACL Policy`
+                        }
+                        errorMessage={this.state.errorMessage}
+                        saving={this.state.saving}
+                        sections={sections}
+                        width={'1050px'}
+                        bodyMaxHeight={'90%'}
+                        modalHeight={'85vh'}
+                    />
+                )}
+                {this.state.validationError !== 'none' && (
+                    <MicrosegmentationValidationModal
+                        isOpen={this.props.showAddSegment}
+                        editPolicy={this.editValidationPolicy}
+                        submit={
+                            this.props.editMode
+                                ? this.onEditSubmit
+                                : this.onSubmit
+                        }
+                        title={`Validation Errors`}
+                        editMode={this.props.editMode}
+                        saving={this.state.saving}
+                        sections={validationResponseSections}
+                        width={'1050px'}
+                        bodyHeight={'90%'}
+                        modalHeight={'85vh'}
+                    />
+                )}
             </div>
         );
     }
 }
+
+const mapStateToProps = (state, props) => {
+    return {
+        ...props,
+        services: selectServices(state),
+    };
+};
+
+const mapDispatchToProps = (dispatch) => ({
+    addRole: (roleName, role, auditRef, _csrf) =>
+        dispatch(addRole(roleName, auditRef, role, _csrf)),
+    getRole: (domainName, roleName) =>
+        dispatch(getRole(domainName, roleName, false)),
+    deleteRole: (roleName, auditRef, _csrf) =>
+        dispatch(deleteRole(roleName, auditRef, _csrf)),
+    getPolicy: (domainName, policyName) =>
+        dispatch(getPolicy(domainName, policyName)),
+    addPolicy: (
+        domain,
+        policyName,
+        roleName,
+        resource,
+        action,
+        effect,
+        caseSensitive,
+        _csrf
+    ) =>
+        dispatch(
+            addPolicy(
+                domain,
+                policyName,
+                roleName,
+                resource,
+                action,
+                effect,
+                caseSensitive,
+                _csrf
+            )
+        ),
+    addAssertionProp: (
+        domain,
+        policyName,
+        roleName,
+        resource,
+        action,
+        effect,
+        caseSensitive,
+        _csrf
+    ) =>
+        dispatch(
+            addAssertion(
+                domain,
+                policyName,
+                roleName,
+                resource,
+                action,
+                effect,
+                caseSensitive,
+                _csrf
+            )
+        ),
+    addAssertionConditions: (
+        domain,
+        policyName,
+        assertionId,
+        assertionConditions,
+        auditRef,
+        _csrf
+    ) =>
+        dispatch(
+            addAssertionConditions(
+                domain,
+                policyName,
+                assertionId,
+                assertionConditions,
+                auditRef,
+                _csrf
+            )
+        ),
+    editMicrosegmentation: (
+        domain,
+        roleChanged,
+        assertionChanged,
+        assertionConditionChanged,
+        updatedData,
+        _csrf
+    ) =>
+        dispatch(
+            editMicrosegmentation(
+                domain,
+                roleChanged,
+                assertionChanged,
+                assertionConditionChanged,
+                updatedData,
+                _csrf,
+                false
+            )
+        ),
+    getAssertionId: (domain, policyName, roleName, resource, action, effect) =>
+        dispatch(
+            getAssertionId(
+                domain,
+                policyName,
+                roleName,
+                resource,
+                action,
+                effect
+            )
+        ),
+});
+
+export default connect(mapStateToProps, mapDispatchToProps)(AddSegmentation);

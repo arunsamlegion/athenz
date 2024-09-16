@@ -1,5 +1,5 @@
 /*
- *  Copyright 2020 Verizon Media
+ *  Copyright The Athenz Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -21,10 +21,8 @@ import com.yahoo.athenz.auth.Principal;
 import com.yahoo.athenz.auth.impl.SimplePrincipal;
 import com.yahoo.athenz.auth.token.PrincipalToken;
 import com.yahoo.athenz.common.server.store.ChangeLogStore;
-import com.yahoo.athenz.zms.SignedDomain;
-import com.yahoo.athenz.zms.SignedDomains;
-import com.yahoo.athenz.zms.ZMSClient;
-import com.yahoo.athenz.zms.ZMSClientException;
+import com.yahoo.athenz.zms.*;
+import org.eclipse.jetty.util.StringUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -57,7 +55,8 @@ public class ZMSFileChangeLogStore implements ChangeLogStore {
 
         // check to see if we need to override the ZMS url from the config file
 
-        zmsUrl = System.getProperty(ZTS_PROP_ZMS_URL_OVERRIDE);
+        final String overrideUrl = System.getProperty(ZTS_PROP_ZMS_URL_OVERRIDE);
+        zmsUrl = (StringUtil.isEmpty(overrideUrl)) ? null : overrideUrl;
 
         // create our common logic object
 
@@ -75,10 +74,26 @@ public class ZMSFileChangeLogStore implements ChangeLogStore {
     }
 
     @Override
+    public JWSDomain getLocalJWSDomain(String domainName) {
+        return changeLogStoreCommon.getLocalJWSDomain(domainName);
+    }
+
+    @Override
     public SignedDomain getServerSignedDomain(String domainName) {
 
         try (ZMSClient zmsClient = getZMSClient()) {
             return changeLogStoreCommon.getServerSignedDomain(zmsClient, domainName);
+        } catch (ZMSClientException ex) {
+            LOGGER.error("Error when fetching {} data from ZMS: {}", domainName, ex.getMessage());
+            return null;
+        }
+    }
+
+    @Override
+    public JWSDomain getServerJWSDomain(String domainName) {
+
+        try (ZMSClient zmsClient = getZMSClient()) {
+            return changeLogStoreCommon.getServerJWSDomain(zmsClient, domainName);
         } catch (ZMSClientException ex) {
             LOGGER.error("Error when fetching {} data from ZMS: {}", domainName, ex.getMessage());
             return null;
@@ -96,8 +111,18 @@ public class ZMSFileChangeLogStore implements ChangeLogStore {
     }
 
     @Override
+    public void saveLocalDomain(String domainName, JWSDomain jwsDomain) {
+        changeLogStoreCommon.saveLocalDomain(domainName, jwsDomain);
+    }
+
+    @Override
     public List<String> getLocalDomainList() {
         return changeLogStoreCommon.getLocalDomainList();
+    }
+
+    @Override
+    public Map<String, DomainAttributes> getLocalDomainAttributeList() {
+        return changeLogStoreCommon.getLocalDomainAttributeList();
     }
 
     public ZMSClient getZMSClient() {
@@ -160,6 +185,17 @@ public class ZMSFileChangeLogStore implements ChangeLogStore {
 
         try (ZMSClient zmsClient = getZMSClient()) {
             return changeLogStoreCommon.getUpdatedSignedDomains(zmsClient, lastModTimeBuffer);
+        } catch (ZMSClientException ex) {
+            LOGGER.error("Error when refreshing data from ZMS: {}", ex.getMessage());
+            return null;
+        }
+    }
+
+    @Override
+    public List<JWSDomain> getUpdatedJWSDomains(StringBuilder lastModTimeBuffer) {
+
+        try (ZMSClient zmsClient = getZMSClient()) {
+            return changeLogStoreCommon.getUpdatedJWSDomains(zmsClient, lastModTimeBuffer);
         } catch (ZMSClientException ex) {
             LOGGER.error("Error when refreshing data from ZMS: {}", ex.getMessage());
             return null;

@@ -1,4 +1,4 @@
-// Copyright 2016 Yahoo Inc.
+// Copyright The Athenz Authors
 // Licensed under the terms of the Apache version 2.0 license. See LICENSE file for terms.
 
 package zmscli
@@ -156,4 +156,37 @@ func (cli Zms) RemoveAll(fullList []string, removeList []string) []string {
 		}
 	}
 	return newList
+}
+
+func (cli Zms) GetTagsAfterDeletion(resourceTags *zms.TagValueList, valuesToDelete []string) []zms.TagCompoundValue {
+	tagValueArr := make([]zms.TagCompoundValue, 0)
+	if resourceTags == nil || len(valuesToDelete) == 0 {
+		return tagValueArr
+	}
+	// extract all the values that not in the valuesToDelete List
+	for _, curTagValue := range resourceTags.List {
+		if !cli.contains(valuesToDelete, string(curTagValue)) {
+			tagValueArr = append(tagValueArr, curTagValue)
+		}
+	}
+
+	return tagValueArr
+}
+
+func LocalName(fullResourceName string, prefix string) string {
+	idx := strings.Index(fullResourceName, prefix)
+	s := fullResourceName
+	if idx != -1 {
+		s = fullResourceName[idx+len(prefix):]
+	}
+	return s
+}
+
+func ServiceName(fullServiceName string) string {
+	idx := strings.LastIndex(fullServiceName, ".")
+	s := fullServiceName
+	if idx != -1 {
+		s = fullServiceName[idx+1:]
+	}
+	return s
 }

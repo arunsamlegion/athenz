@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.function.BiFunction;
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import org.testng.annotations.Test;
@@ -33,7 +33,7 @@ import org.testng.annotations.Test;
 public class CertificateIdentityParserTest {
 
     private final ClassLoader classLoader = this.getClass().getClassLoader();
-    private final X509Certificate readCert(String resourceName) throws Exception {
+    private X509Certificate readCert(String resourceName) throws Exception {
         try (FileInputStream certIs = new FileInputStream(this.classLoader.getResource(resourceName).getFile())) {
             CertificateFactory cf = CertificateFactory.getInstance("X.509");
             return (X509Certificate) cf.generateCertificate(certIs);
@@ -57,7 +57,7 @@ public class CertificateIdentityParserTest {
         for (Field f : parser.getClass().getDeclaredFields()) {
             switch (f.getName()) {
             case "excludedPrincipalSet":
-                assertEquals(getFieldValue.apply(f, parser), null);
+                assertNull(getFieldValue.apply(f, parser));
                 break;
             case "excludeRoleCertificates":
                 assertEquals(getFieldValue.apply(f, parser), false);
@@ -182,7 +182,7 @@ public class CertificateIdentityParserTest {
         try {
             certId = parser.parse(certs);
         } catch (CertificateIdentityException e) {
-            assertEquals(e.getMessage(), "Invalid role cert, invalid email SAN entry");
+            assertEquals(e.getMessage(), "Invalid role cert, no role principal");
         } finally {
             assertNull(certId);
         }
@@ -197,7 +197,7 @@ public class CertificateIdentityParserTest {
         try {
             certId = parser.parse(certs);
         } catch (CertificateIdentityException e) {
-            assertEquals(e.getMessage(), "Invalid role cert, no email SAN entry");
+            assertEquals(e.getMessage(), "Invalid role cert, no role principal");
         } finally {
             assertNull(certId);
         }

@@ -1,78 +1,98 @@
 # Development Environment
--------------------------
 
 * [Development Tools](#development-tools)
-    * [Java Platform JDK 8](#java-platform-jdk-8)
-    * [Maven](#maven)
-    * [Git Client](#git-client)
-    * [Go](#go)
-    * [Node JS](#node-js)
+  * [Build Within Docker Container](#build-within-docker-container)
+  * [Manual Installation of Development Tools](#manual-installation-of-development-tools)
+      * [Java Platform JDK 11](#java-platform-jdk-11)
+      * [Maven](#maven)
+      * [Git Client](#git-client)
+      * [Go](#go)
+      * [Node JS](#node-js)
 * [Build Steps](#build-steps)
 
 ## Development Tools
---------------------
 
 If you would like to build your own copy of Athenz rather than
 using the pre-built binary packages, then here is the list of
 development tools you need to have installed on your system.
 
-### Java Platform JDK 8
------------------------
+### Build Within Docker Container
 
-To build Athenz components, you must have Java Platform JDK 8 installed
+You can replicate the container environment that Athenz users within
+Screwdriver to build and deploy Athenz packages. You can start a new
+container using the `openjdk:11` image. Once you check out the Athenz
+source tree, you can execute the `install_deps.sh` script
+to install the required development tools:
+
+```shell
+$ git clone https://github.com/AthenZ/athenz.git
+$ cd athenz
+$ sh screwdriver/scripts/install_deps.sh
+```
+
+### Manual Installation of Development Tools
+
+#### Java Platform JDK 11
+
+To build Athenz components, you must have Java Platform JDK 11 installed
 on your machine. The main authorization services - ZMS and ZTS, are
 written in Java and using embedded Jetty.
 
-[Oracle Java Platform JDK 8](http://www.oracle.com/technetwork/java/javase/downloads/jdk8-downloads-2133151.html)
-
-Athenz has been developed and tested with Oracle Java Platform JDK 8.
-However, it should compile and run without any issues with OpenJDK 8 as well.
-
 Make sure you have set the $JAVA_HOME environment variable.
 
-### Maven
----------
+```shell
+$ java -XshowSettings:properties -version 2>&1 > /dev/null | grep 'java.home'
+$ export JAVA_HOME=<java-home-directory>
+````
+
+#### Maven
 
 Download and install [Apache Maven](http://maven.apache.org/download.cgi).
 
-### Git Client
---------------
+#### Git Client
 
 If you don't have git client installed on your host, you can download
 one from [Git website](https://git-scm.com/downloads). 2.x version of
 the git client is required.
 
-### Go
-------
+#### Go
 
-Install go by following the directions at
+Install go 1.22.3 or newer version by following the directions at
 [Getting Started - The Go Programming Language](https://golang.org/doc/install).
 
-Make sure you have set the [$GOPATH environment variable](https://pkg.go.dev/cmd/go#hdr-GOPATH_environment_variable) and that you have `$GOPATH/bin` in your `$PATH`.
+Make sure you have set the [$GOPATH environment variable](https://pkg.go.dev/cmd/go#hdr-GOPATH_environment_variable)
+and that you have `$GOPATH/bin` in your `$PATH`.
 
-### Node JS
------------
+```shell
+$ export GOPATH=<gopath-directory>
+$ mkdir -p $GOPATH/bin
+$ export PATH=$PATH:/usr/local/go/bin:$GOPATH/bin
+````
 
-Install node by following the directions at
+#### Node JS
+
+Install node 18.x by following the directions at
 [Node.js JavaScript Runtime](https://nodejs.org/en/)
 
-Verify that you have the required minimum version of `node` and
-`nodemon` binaries installed on your system and are included
+Verify that you have the required minimum version of `node`,
+`npm` and `nodemon` binaries installed on your system and are included
 in your runtime path:
 
 ```shell
 $ node --version
-v6.9.4
+v18.19.0
+$ npm -v
+10.3.0
 $ npm install -g nodemon
 $ nodemon --version
-1.11.0
+3.0.3
 ```
 
 ## Build Steps
---------------
 
 To build Athenz components, change to the top level directory where
-Athenz code has been checked out and execute:
+you want to build the Athenz code and execute (skip the first command
+if you have already checked out the code using git):
 
 ```shell
 $ git clone https://github.com/AthenZ/athenz.git

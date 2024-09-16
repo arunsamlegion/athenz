@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+import RegexUtils from './RegexUtils';
+import { USER_DOMAIN } from '../constants/constants';
+
 export default class MemberUtils {
     static getUserNames(name, regex) {
         let names = (name || '')
@@ -24,7 +27,7 @@ export default class MemberUtils {
         let invalidUsers = [];
         let validUsers = [];
         names.forEach((name) => {
-            if (MemberUtils.matchRegexName(name, regex)) {
+            if (RegexUtils.validate(name, regex)) {
                 validUsers.push(name);
             } else {
                 invalidUsers.push(name);
@@ -37,8 +40,56 @@ export default class MemberUtils {
         };
     }
 
-    static matchRegexName(name, regex) {
-        let match = name.match(regex);
-        return match && name === match[0];
+    static userSearch(part, userList) {
+        const userDomainOmitPart = part.startsWith(USER_DOMAIN)
+            ? part.substring(USER_DOMAIN.length + 1)
+            : part;
+        return MemberUtils.getUsers(userDomainOmitPart, userList).then((r) => {
+            let usersArr = [];
+            r.forEach((u) =>
+                usersArr.push({
+                    name: u.name + ' [' + USER_DOMAIN + '.' + u.login + ']',
+                    value: USER_DOMAIN + '.' + u.login,
+                })
+            );
+            if (usersArr.length === 0) {
+                usersArr.push({
+                    name: part,
+                    value: part,
+                });
+            }
+            return usersArr;
+        });
+    }
+
+    static getUsers(prefix, userList) {
+        const escapedPrefix = prefix.replace(/[.*+\-?^${}()|[\]\\]/g, '\\$&');
+        return Promise.resolve(
+            userList
+                .map((userData) => {
+                    // filter like 'startWith' (top score = 1)
+                    if (
+                        new RegExp(
+                            `[(\\s]${escapedPrefix}|^${escapedPrefix}`,
+                            'i'
+                        ).test(userData.name) ||
+                        new RegExp(`^${escapedPrefix}`, 'i').test(
+                            userData.login
+                        )
+                    ) {
+                        return { ...userData, score: 1 };
+                    }
+                    // filter like 'contains' (low score = 0)
+                    if (
+                        new RegExp(escapedPrefix, 'i').test(userData.name) ||
+                        new RegExp(escapedPrefix, 'i').test(userData.login)
+                    ) {
+                        return { ...userData, score: 0 };
+                    }
+                })
+                .filter((scoredUserData) => scoredUserData)
+                .sort((a, b) => b.score - a.score)
+                .slice(0, 10)
+        );
     }
 }

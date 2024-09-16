@@ -14,79 +14,137 @@
  * limitations under the License.
  */
 import React from 'react';
-import { render, fireEvent, screen } from '@testing-library/react';
-import InstanceList from "../../../components/service/InstanceList";
-import API from "../../../api";
+import { fireEvent, screen } from '@testing-library/react';
+import InstanceList from '../../../components/service/InstanceList';
+import {
+    buildServicesForState,
+    getStateWithServices,
+    renderWithRedux,
+} from '../../../tests_utils/ComponentsTestUtils';
+import { serviceDelimiter } from '../../../redux/config';
 
 describe('InstanceList', () => {
     it('should render for static', () => {
-        let api = API();
         let domain = 'athenz';
         let _csrf = '_csrfToken';
-        let instanceDetails = [];
+        let instanceDetails = [
+            {
+                domainName: 'test',
+                serviceName: 'testService',
+                type: 'SERVICE_SUBNET',
+                name: '10.0.0.0/8',
+                updateTime: '2023-09-27T22:16:55.326Z',
+            },
+            {
+                domainName: 'test',
+                serviceName: 'testService',
+                type: 'SERVICE_SUBNET',
+                name: '10.255.255.0/31',
+                updateTime: '2023-09-27T23:29:59.326Z',
+            },
+            {
+                domainName: 'test',
+                serviceName: 'testService',
+                type: 'SERVICE_SUBNET',
+                name: '10.255.255.0/8',
+                updateTime: '2023-09-27T23:29:42.864Z',
+            },
+            {
+                domainName: 'test',
+                serviceName: 'testService',
+                type: 'EXTERNAL_APPLIANCE',
+                name: '12.12.12.12/12',
+                updateTime: '2023-09-27T22:18:23.458Z',
+            },
+            {
+                domainName: 'test',
+                serviceName: 'testService',
+                type: 'EXTERNAL_APPLIANCE',
+                name: '255.255.0.0',
+                updateTime: '2023-09-27T22:18:02.661Z',
+            },
+            {
+                domainName: 'test',
+                serviceName: 'testService',
+                type: 'ENTERPRISE_APPLIANCE',
+                name: 'pesmacro::randomstringbulabula1010',
+                updateTime: '2023-09-27T22:19:00.714Z',
+            },
+        ];
         let service = 'testService';
 
-        const { getByTestId } = render(
+        let serviceFullName = `${domain}${serviceDelimiter}${service.toLowerCase()}`;
+        const servicesForState = buildServicesForState({
+            [serviceFullName]: {
+                name: serviceFullName,
+                staticInstances: { workLoadData: instanceDetails },
+            },
+        });
+        const { getByTestId } = renderWithRedux(
             <InstanceList
                 category={'static'}
-                api={api}
                 domain={domain}
                 _csrf={_csrf}
                 instances={instanceDetails}
                 service={service}
-            />);
+            />,
+            getStateWithServices(servicesForState)
+        );
         const instanceList = getByTestId('instancelist');
+
+        expect(screen.getByPlaceholderText('Search')).toBeInTheDocument();
+        fireEvent.change(screen.getByPlaceholderText('Search'), {
+            target: { value: '10' },
+        });
 
         expect(instanceList).toMatchSnapshot();
     });
 
     it('should render for dynamic', () => {
-        let api = API();
         let domain = 'athenz';
+        let service = 'testService';
         let _csrf = '_csrfToken';
         let instanceDetails = [
             {
-                "domainName": null,
-                "serviceName": null,
-                "uuid": "zms3",
-                "ipAddresses": ['74.6.35.54'],
-                "hostname": "NA",
-                "provider": "sys.openstack.openstack-classic",
-                "updateTime": "2021-04-09T19:32:17.000Z",
-                "certExpiryTime": "1970-01-01T00:00:00.000z"
-            }
+                domainName: null,
+                serviceName: null,
+                uuid: 'zms3',
+                ipAddresses: ['74.6.35.54'],
+                hostname: 'NA',
+                provider: 'sys.openstack.openstack-classic',
+                updateTime: '2021-04-09T19:32:17.000Z',
+                certExpiryTime: '1970-01-01T00:00:00.000z',
+            },
         ];
-        let service = 'testService';
 
-        const { getByTestId } = render(
+        let serviceFullName = `${domain}${serviceDelimiter}${service.toLowerCase()}`;
+        const servicesForState = buildServicesForState({
+            [serviceFullName]: {
+                name: serviceFullName,
+                dynamicInstances: { workLoadData: instanceDetails },
+            },
+        });
+        const { getByTestId } = renderWithRedux(
             <InstanceList
                 category={'dynamic'}
-                api={api}
                 domain={domain}
                 _csrf={_csrf}
                 instances={instanceDetails}
                 service={service}
-            />);
+            />,
+            getStateWithServices(servicesForState)
+        );
         const instanceList = getByTestId('instancelist');
 
-        expect(
-            screen.getByPlaceholderText('Search')
-        ).toBeInTheDocument();
-        fireEvent.change(
-            screen.getByPlaceholderText("Select an option"),
-            {
-                target: { value: "Instance"},
-            }
-        );
+        expect(screen.getByPlaceholderText('Search')).toBeInTheDocument();
+        fireEvent.change(screen.getByPlaceholderText('Select an option'), {
+            target: { value: 'Instance' },
+        });
 
-        fireEvent.change(
-            screen.getByPlaceholderText('Search'),
-            {
-                target: { value: '74.6.35.54' },
-            }
-        );
+        fireEvent.change(screen.getByPlaceholderText('Search'), {
+            target: { value: '74.6.35.54' },
+        });
 
         expect(instanceList).toMatchSnapshot();
     });
-
 });

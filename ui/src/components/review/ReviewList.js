@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,15 +19,22 @@ import GroupReviewTable from '../group/GroupReviewTable';
 import ReviewTable from './ReviewTable';
 import Alert from '../denali/Alert';
 import { MODAL_TIME_OUT } from '../constants/constants';
+import { selectIsLoading } from '../../redux/selectors/loading';
+import { selectTimeZone } from '../../redux/selectors/domains';
+import { connect } from 'react-redux';
+import { ReduxPageLoader } from '../denali/ReduxPageLoader';
+import { withRouter } from 'next/router';
 
 const RolesSectionDiv = styled.div`
     margin: 20px;
+    margin-bottom: 0px;
 `;
 
-export default class ReviewList extends React.Component {
+// dont need to make it as redux because it get props from groups and role and in order to not need to figure out
+// which data to get from the store it easier to get the data from the father component which is seperated between roles and groups
+class ReviewList extends React.Component {
     constructor(props) {
         super(props);
-        this.api = props.api;
         this.state = {
             showuser: false,
             members: props.members || [],
@@ -55,13 +62,21 @@ export default class ReviewList extends React.Component {
             successMessage,
             errorMessage: null,
         });
-        setTimeout(
-            () =>
-                this.setState({
-                    showSuccess: false,
-                }),
-            MODAL_TIME_OUT
-        );
+        this.props.onSuccessReview &&
+            this.props.onSuccessReview(
+                successMessage + ` Removed ${this.props.category} from view.`
+            );
+        setTimeout(() => {
+            this.setState({
+                showSuccess: false,
+            });
+            if (!this.props.isCardView) {
+                this.props.router.push(
+                    `/domain/${this.props.domain}/${this.props.category}/${this.props.collection}/members`,
+                    `/domain/${this.props.domain}/${this.props.category}/${this.props.collection}/members`
+                );
+            }
+        }, MODAL_TIME_OUT);
     }
 
     closeModal() {
@@ -70,20 +85,18 @@ export default class ReviewList extends React.Component {
 
     render() {
         const { domain, collection, collectionDetails } = this.props;
-
-        return (
+        return this.props.isLoading.length !== 0 ? (
+            <ReduxPageLoader message={'Loading data'} />
+        ) : (
             <RolesSectionDiv data-testid='review-list'>
                 {this.props.category === 'group' && (
                     <GroupReviewTable
                         domain={domain}
-                        group={collection}
-                        groupDetails={collectionDetails}
-                        members={this.state.members}
-                        api={this.api}
+                        groupName={collection}
+                        timeZone={this.props.timeZone}
                         _csrf={this.props._csrf}
                         onUpdateSuccess={this.submitSuccess}
-                        justificationRequired={this.props.isDomainAuditEnabled}
-                        userProfileLink={this.props.userProfileLink}
+                        justification={this.props.justification}
                     />
                 )}
                 {this.props.category === 'role' && (
@@ -91,12 +104,11 @@ export default class ReviewList extends React.Component {
                         domain={domain}
                         role={collection}
                         roleDetails={collectionDetails}
-                        members={this.state.members}
-                        api={this.api}
+                        members={this.props.members}
+                        timeZone={this.props.timeZone}
                         _csrf={this.props._csrf}
                         onUpdateSuccess={this.submitSuccess}
-                        justificationRequired={this.props.isDomainAuditEnabled}
-                        userProfileLink={this.props.userProfileLink}
+                        justification={this.props.justification}
                     />
                 )}
                 {this.state.showSuccess ? (
@@ -111,3 +123,13 @@ export default class ReviewList extends React.Component {
         );
     }
 }
+
+const mapStateToProps = (state, props) => {
+    return {
+        ...props,
+        isLoading: selectIsLoading(state),
+        timeZone: selectTimeZone(state),
+    };
+};
+
+export default connect(mapStateToProps)(withRouter(ReviewList));

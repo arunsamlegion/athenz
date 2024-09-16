@@ -1,5 +1,5 @@
 /*
- *  Copyright 2020 Verizon Media
+ *  Copyright The Athenz Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
 
 package com.yahoo.athenz.zts.notification;
 
-import com.yahoo.athenz.zms.DomainData;
 import com.yahoo.athenz.zms.Role;
 import com.yahoo.athenz.zms.RoleMember;
 import com.yahoo.athenz.zts.store.DataStore;
@@ -38,5 +37,7 @@ public class NotificationTestsCommon {
         roleMember2.setMemberName("user.domain" + i + "rolemember2");
         adminRole.setRoleMembers(Arrays.asList(roleMember1, roleMember2));
         Mockito.when(dataStore.getRolesByDomain(eq(domainName))).thenReturn(Collections.singletonList(adminRole));
+        Mockito.when(dataStore.getRole(domainName, "admin", Boolean.FALSE, Boolean.TRUE, Boolean.FALSE))
+                .thenThrow(new UnsupportedOperationException());
     }
 }

@@ -1,5 +1,5 @@
 //
-// Copyright 2020 Verizon Media
+// Copyright The Athenz Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -72,6 +72,6 @@ func StartMetaServer(EndPoint string) {
 	log.Println("Starting Meta Mock listening on: " + EndPoint)
 	err := http.ListenAndServe(EndPoint, nil)
 	if err != nil {
-		log.Fatal("ListenAndServe: ", err)
+		log.Fatalf("ListenAndServe: %v\n", err)
 	}
 }

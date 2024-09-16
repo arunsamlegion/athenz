@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ const MOCK_FILE_INFO = {
     keyPath: 'keyPath content',
     certPath: 'certPath content',
     cookieSession: 'cookieSession content',
+    msdAuthHeader: 'msdAuthHeader content',
 };
 describe('secrets test', () => {
     beforeAll(() => {
@@ -31,6 +32,7 @@ describe('secrets test', () => {
             uiKeyPath: 'keyPath',
             uiCertPath: 'certPath',
             cookieSession: 'cookieSession',
+            msdAuthHeaderPath: 'msdAuthHeader',
         };
         secrets.load(config).catch((err) => {
             expect(err).toBeNull();

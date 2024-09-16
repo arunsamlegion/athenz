@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,17 +14,41 @@
  * limitations under the License.
  */
 import React from 'react';
-import { render } from '@testing-library/react';
 import DomainDetails from '../../../components/header/DomainDetails';
+import {
+    getStateWithDomainData,
+    buildDomainDataForState,
+    renderWithRedux,
+} from '../../../tests_utils/ComponentsTestUtils';
+import { getExpiryTime } from '../../../redux/utils';
+import MockApi from '../../../mock/MockApi';
+
+const mockApi = {
+    getMeta: jest.fn().mockReturnValue(
+        new Promise((resolve, reject) => {
+            resolve([]);
+        })
+    ),
+};
+
+beforeEach(() => {
+    MockApi.setMockApi(mockApi);
+});
+
+afterEach(() => {
+    MockApi.cleanMockApi();
+});
 
 describe('DomainDetails', () => {
     it('should render', () => {
         const domainMetadata = {
             modified: '2020-02-12T21:44:37.792Z',
+            auditEnabled: false,
         };
-
-        const { getByTestId } = render(
-            <DomainDetails domainDetails={domainMetadata} />
+        const domainData = buildDomainDataForState(domainMetadata);
+        const { getByTestId } = renderWithRedux(
+            <DomainDetails />,
+            getStateWithDomainData(domainData)
         );
         const domainDetails = getByTestId('domain-details');
         expect(domainDetails).toMatchSnapshot();
@@ -36,10 +60,12 @@ describe('DomainDetails', () => {
             org: 'test',
             auditEnabled: true,
             account: 'test',
+            environment: 'qa',
         };
-
-        const { getByTestId } = render(
-            <DomainDetails domainDetails={domainMetadata} />
+        const domainData = buildDomainDataForState(domainMetadata);
+        const { getByTestId } = renderWithRedux(
+            <DomainDetails />,
+            getStateWithDomainData(domainData)
         );
         const domainDetails = getByTestId('domain-details');
         expect(domainDetails).toMatchSnapshot();

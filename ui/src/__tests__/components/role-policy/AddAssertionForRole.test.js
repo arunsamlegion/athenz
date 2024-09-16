@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,39 +16,26 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react';
 import AddAssertionForRole from '../../../components/role-policy/AddAssertionForRole';
+import { renderWithRedux } from '../../../tests_utils/ComponentsTestUtils';
 
 describe('AddAssertionForRole', () => {
     it('should render', () => {
-        const cancel = function() {};
+        const cancel = function () {};
         const domain = 'domain';
         const role = 'roleName';
-        const api = {
-            listRoles(domain) {
-                return new Promise((resolve, reject) => {
-                    resolve(['a, b']);
-                });
-            },
-        };
-        const { getByTestId } = render(
-            <AddAssertionForRole cancel={cancel} domain={domain} role={role} api={api} />
+        const { getByTestId } = renderWithRedux(
+            <AddAssertionForRole cancel={cancel} domain={domain} role={role} />
         );
         const addPolicy = getByTestId('add-assertion-for-role');
         expect(addPolicy).toMatchSnapshot();
     });
 
     it('should render failed to submit action is required', () => {
-        const cancel = function() {};
+        const cancel = function () {};
         const domain = 'domain';
         const role = 'roleName';
-        const api = {
-            listRoles(domain) {
-                return new Promise((resolve, reject) => {
-                    resolve(['a, b']);
-                });
-            },
-        };
-        const { getByTestId, getByText } = render(
-            <AddAssertionForRole cancel={cancel} domain={domain} role={role} api={api} />
+        const { getByTestId, getByText } = renderWithRedux(
+            <AddAssertionForRole cancel={cancel} domain={domain} role={role} />
         );
         const addPolicy = getByTestId('add-assertion-for-role');
         expect(addPolicy).toMatchSnapshot();

@@ -1,4 +1,4 @@
-// Copyright 2021 Athenz Authors
+// Copyright The Athenz Authors
 // Licensed under the terms of the Apache version 2.0 license. See LICENSE file for terms.
 
 package main
@@ -19,7 +19,7 @@ func main() {
 
 	pOutdir := flag.String("o", ".", "Output directory")
 	pSchemaFile := flag.String("s", "", "RDL source file")
-	pClassName := flag.String("c", "", "RDL Gemnerated Class Name")
+	pClassName := flag.String("c", "", "RDL Generated Class Name")
 
 	flag.Parse()
 
@@ -34,9 +34,9 @@ func main() {
 
 func generateJavaClient(banner string, schema *rdl.Schema, outdir, className string) error {
 	return GenerateAthenzJavaClient(schema, &GeneratorParams{
-		Outdir:     outdir,
-		Banner:     banner,
-		Namespace:  "",
-		ClassName:  className,
-        })
+		Outdir:    outdir,
+		Banner:    banner,
+		Namespace: "",
+		ClassName: className,
+	})
 }

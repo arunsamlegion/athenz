@@ -1,5 +1,5 @@
 /*
- *  Copyright 2020 Verizon Media
+ *  Copyright The Athenz Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -33,10 +33,6 @@ public class NotificationToMetricConverterCommonTest {
         Timestamp tomorrowTimeStamp = Timestamp.fromMillis(1602001164000L);
         Timestamp yesterdayTimeStamp = Timestamp.fromMillis(1601828361000L);
         Timestamp monthFromNowTimeStamp = Timestamp.fromMillis(1604594993000L);
-
-        System.out.println("current: " + currentTimeStamp.toString());
-        System.out.println("tomorrow: " + tomorrowTimeStamp.toString());
-        System.out.println("yesterday: " + yesterdayTimeStamp.toString());
 
         assertEquals("0", notificationToMetricConverterCommon.getNumberOfDaysBetweenTimestamps(currentTimeStamp.toString(), currentTimeStamp.toString()));
         assertEquals("1", notificationToMetricConverterCommon.getNumberOfDaysBetweenTimestamps(currentTimeStamp.toString(), tomorrowTimeStamp.toString()));

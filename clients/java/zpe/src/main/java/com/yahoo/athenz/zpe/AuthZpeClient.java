@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,29 +15,30 @@
  */
 package com.yahoo.athenz.zpe;
 
-import java.security.PublicKey;
-import java.security.cert.X509Certificate;
-import java.util.*;
+import com.yahoo.athenz.auth.AuthorityConsts;
+import com.yahoo.athenz.auth.impl.RoleAuthority;
+import com.yahoo.athenz.auth.token.AccessToken;
+import com.yahoo.athenz.auth.token.RoleToken;
+import com.yahoo.athenz.auth.token.jwts.JwtsSigningKeyResolver;
+import com.yahoo.athenz.auth.util.Crypto;
+import com.yahoo.athenz.auth.util.CryptoException;
+import com.yahoo.athenz.zpe.match.ZpeMatch;
+import com.yahoo.athenz.zpe.pkey.PublicKeyStore;
+import com.yahoo.athenz.zpe.pkey.PublicKeyStoreFactory;
+import com.yahoo.rdl.Struct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.naming.InvalidNameException;
 import javax.naming.ldap.LdapName;
 import javax.naming.ldap.Rdn;
 import javax.net.ssl.SSLContext;
 import javax.security.auth.x500.X500Principal;
+import java.security.PublicKey;
+import java.security.cert.X509Certificate;
+import java.util.*;
 
-import com.yahoo.athenz.auth.token.AccessToken;
-import com.yahoo.athenz.auth.token.jwts.JwtsSigningKeyResolver;
-import com.yahoo.athenz.auth.util.CryptoException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import com.yahoo.athenz.auth.AuthorityConsts;
-import com.yahoo.athenz.auth.impl.RoleAuthority;
-import com.yahoo.athenz.auth.token.RoleToken;
-import com.yahoo.athenz.auth.util.Crypto;
-import com.yahoo.athenz.zpe.match.ZpeMatch;
-import com.yahoo.athenz.zpe.pkey.PublicKeyStore;
-import com.yahoo.athenz.zpe.pkey.PublicKeyStoreFactory;
-import com.yahoo.rdl.Struct;
+import static com.yahoo.athenz.zpe.ZpeConsts.ZPE_PROP_MILLIS_BETWEEN_ZTS_CALLS;
 
 public class AuthZpeClient {
 
@@ -62,7 +63,6 @@ public class AuthZpeClient {
     public static final String UNKNOWN_DOMAIN = "unknown";
     public static final String BEARER_TOKEN = "Bearer ";
 
-    private static String zpeClientImplName;
     private static int allowedOffset = 300;
     private static JwtsSigningKeyResolver accessSignKeyResolver = null;
 
@@ -71,7 +71,9 @@ public class AuthZpeClient {
 
     private static final Set<String> X509_ISSUERS_NAMES = new HashSet<>();
     private static final List<List<Rdn>> X509_ISSUERS_RDNS = new ArrayList<>();
-    
+
+    private static int maxTokenCacheSize = 10240;
+
     public enum AccessCheckStatus {
         ALLOW {
             public String toString() {
@@ -164,6 +166,10 @@ public class AuthZpeClient {
         
         setTokenAllowedOffset(Integer.parseInt(System.getProperty(ZpeConsts.ZPE_PROP_TOKEN_OFFSET, "300")));
 
+        // set the max role token and access token cache values
+
+        setTokenCacheMaxValue(Integer.parseInt(System.getProperty(ZpeConsts.ZPE_PROP_MAX_TOKEN_CACHE, "10240")));
+
         // load the x509 issuers
         
         setX509CAIssuers(System.getProperty(ZpeConsts.ZPE_PROP_X509_CA_ISSUERS));
@@ -171,31 +177,60 @@ public class AuthZpeClient {
         // initialize the access token signing key resolver
 
         setAccessTokenSignKeyResolver(null, null);
+        
+        // save the last zts api call time, and the allowed interval between api calls
+        setMillisBetweenZtsCalls(Long.parseLong(System.getProperty(ZPE_PROP_MILLIS_BETWEEN_ZTS_CALLS, Long.toString(30 * 1000 * 60))));
     }
-    
+
     public static void init() {
         if (LOG.isDebugEnabled()) {
             LOG.debug("Init: load the ZPE");
         }
     }
 
+    public static void close() {
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("close: finishing the ZPE");
+        }
+        zpeClt.close();
+    }
+
     /**
      * Set the role token allowed offset. this might be necessary
-     * if the client and server are not ntp synchronized and we
+     * if the client and server are not ntp synchronized, and we
      * don't want the server to reject valid role tokens
      * @param offset value in seconds
      */
     public static void setTokenAllowedOffset(int offset) {
-        
-        allowedOffset = offset;
-        
-        // case of invalid value, we'll default back to 5 minutes
-
-        if (allowedOffset < 0) {
-            allowedOffset = 300;
+        // skip any invalid values
+        if (offset > 0) {
+            allowedOffset = offset;
         }
     }
-    
+
+    /**
+     * Set the limit of role and access tokens that are cached to
+     * improve the performance of validating signatures since the
+     * tokens must be re-used by clients until they're about to be
+     * expired. However, incorrectly configured client might generate
+     * a new token for every request and eventually cause the server
+     * to run out of memory. Once the limit is reached, the library
+     * will no longer cache any tokens until the expiry thread cleans
+     * up the expired tokens and the size of the cache is smaller than
+     * the configured number. The value of 0 indicates no limit. The
+     * default value of cached tokens is 10K. The value can also be
+     * configured by using the athenz.zpe.max_token_cache_entries
+     * system property.
+     * @param maxCacheSize maximum number of tokens cached
+     */
+    public static void setTokenCacheMaxValue(int maxCacheSize) {
+        // skip any invalid values. value 0 indicates no limit
+        // while any other positive integer enforces the limit
+        if (maxCacheSize > -1) {
+            maxTokenCacheSize = maxCacheSize;
+        }
+    }
+
     /**
      * Set the list of Athenz CA issuers with their full DNs that
      * ZPE should honor.
@@ -252,7 +287,22 @@ public class AuthZpeClient {
      * @param sslContext ssl context to be used when establishing connection
      */
     public static void setAccessTokenSignKeyResolver(final String serverUrl, SSLContext sslContext) {
-        accessSignKeyResolver = new JwtsSigningKeyResolver(serverUrl, sslContext);
+        AuthZpeClient.setAccessTokenSignKeyResolver(serverUrl, sslContext, null);
+    }
+
+     /**
+     * Set the server connection details for the sign key resolver for access
+     * tokens. By default, the resolver is looking for the "athenz.athenz_conf"
+     * system property, parses the athenz.conf file and loads any public keys
+     * defined. The caller can also specify the server URL, the sslcontext and the proxy URL
+     * (if required) for the resolver to call and fetch the public keys that
+     * will be required to verify the token signatures
+     * @param serverUrl server url to fetch json web keys
+     * @param sslContext ssl context to be used when establishing connection
+     * @param proxyUrl if a proxy is required, specify the proxy URL
+     */
+    public static void setAccessTokenSignKeyResolver(final String serverUrl, SSLContext sslContext, final String proxyUrl) {
+        accessSignKeyResolver = new JwtsSigningKeyResolver(serverUrl, sslContext, proxyUrl);
     }
 
     /**
@@ -271,20 +321,27 @@ public class AuthZpeClient {
      * @param className ZPE Client implementation class name
      */
     public static void setZPEClientClass(final String className) {
-        
-        zpeClientImplName = className;
         try {
-            zpeClt = (ZpeClient) Class.forName(zpeClientImplName).newInstance();
+            zpeClt = (ZpeClient) Class.forName(className).newInstance();
         } catch (InstantiationException | IllegalAccessException | ClassNotFoundException ex) {
             LOG.error("Unable to instantiate zpe class: {}, error: {}",
-                    zpeClientImplName, ex.getMessage());
+                    className, ex.getMessage());
             throw new RuntimeException(ex);
         }
         zpeClt.init(null);
     }
     
     public static PublicKey getZtsPublicKey(String keyId) {
-        return publicKeyStore.getZtsKey(keyId);
+        PublicKey publicKey = publicKeyStore.getZtsKey(keyId);
+        if (publicKey == null) {
+            //  fetch all zts jwk keys and update config and try again
+            publicKey = accessSignKeyResolver.getPublicKey(keyId); 
+        }
+        return publicKey;
+    }
+
+    protected static void setMillisBetweenZtsCalls(long millis) {
+        accessSignKeyResolver.setMillisBetweenZtsCalls(millis);
     }
     
     public static PublicKey getZmsPublicKey(String keyId) {
@@ -522,7 +579,8 @@ public class AuthZpeClient {
                         rToken.getUnsignedToken());
                 return AccessCheckStatus.DENY_ROLETOKEN_INVALID;
             }
-            tokenCache.put(roleToken, rToken);
+
+            addTokenToCache(tokenCache, roleToken, rToken);
         }
 
         return allowAccess(rToken, resource, action, matchRoleName);
@@ -541,7 +599,7 @@ public class AuthZpeClient {
         Map<String, AccessToken> tokenCache = zpeClt.getAccessTokenCacheMap();
         AccessToken acsToken = tokenCache.get(accessToken);
 
-        // if we have a x.509 certificate provided then we need to
+        // if we have an x.509 certificate provided then we need to
         // validate our mtls client certificate confirmation value
         // before accepting the token from the cache
 
@@ -572,12 +630,12 @@ public class AuthZpeClient {
                 return AccessCheckStatus.DENY_ROLETOKEN_INVALID;
             }
 
-            tokenCache.put(accessToken, acsToken);
-
+            addTokenToCache(tokenCache, accessToken, acsToken);
         }
 
         return allowAccess(acsToken, resource, action, matchRoleName);
     }
+
     /**
      * Determine if access(action) is allowed against the specified resource by
      * a user represented by the RoleToken.
@@ -695,7 +753,7 @@ public class AuthZpeClient {
         }
 
         if (roleName != null) {
-            matchRoleName.append(roleName.toString());
+            matchRoleName.append(roleName);
         }
 
         return retStatus;
@@ -751,7 +809,7 @@ public class AuthZpeClient {
         Map<String, AccessToken> tokenCache = zpeClt.getAccessTokenCacheMap();
         AccessToken acsToken = tokenCache.get(accessToken);
 
-        // if we have a x.509 certificate provided then we need to
+        // if we have an x.509 certificate provided then we need to
         // validate our mtls client certificate confirmation value
         // before accepting the token from the cache
 
@@ -774,7 +832,7 @@ public class AuthZpeClient {
                 return null;
             }
 
-            tokenCache.put(accessToken, acsToken);
+            addTokenToCache(tokenCache, accessToken, acsToken);
         }
 
         return acsToken;
@@ -812,7 +870,7 @@ public class AuthZpeClient {
             if (!rToken.validate(getZtsPublicKey(rToken.getKeyId()), allowedOffset, false, null)) {
                 return null;
             }
-            tokenCache.put(roleToken, rToken);
+            addTokenToCache(tokenCache, roleToken, rToken);
         }
         
         return rToken;
@@ -834,44 +892,6 @@ public class AuthZpeClient {
         }
 
         return assertString.substring(index + 1);
-    }
-    
-    static boolean isRegexMetaCharacter(char regexChar) {
-        switch (regexChar) {
-            case '^':
-            case '$':
-            case '.':
-            case '|':
-            case '[':
-            case '+':
-            case '\\':
-            case '(':
-            case ')':
-            case '{':
-                return true;
-            default:
-                return false;
-        }
-    }
-    
-    public static String patternFromGlob(String glob) {
-        StringBuilder sb = new StringBuilder("^");
-        int len = glob.length();
-        for (int i = 0; i < len; i++) {
-            char c = glob.charAt(i);
-            if (c == '*') {
-                sb.append(".*");
-            } else if (c == '?') {
-                sb.append('.');
-            } else {
-                if (isRegexMetaCharacter(c)) {
-                    sb.append('\\');
-                }
-                sb.append(c);
-            }
-        }
-        sb.append("$");
-        return sb.toString();
     }
 
     // check action access in the domain to the resource with the given roles
@@ -930,11 +950,17 @@ public class AuthZpeClient {
             return AccessCheckStatus.DENY_INVALID_PARAMETERS;
         }
         resource = resource.toLowerCase();
-        resource = stripDomainPrefix(resource, tokenDomain, null);
 
         // Note: if domain in token doesn't match domain in resource then there
         // will be no match of any resource in the assertions - so deny immediately
+        // special case - when we have a single domain being processed by ZPE
+        // the application will never have generated multiple domain values thus
+        // if the resource contains : for something else, we'll ignore it and don't
+        // assume it's part of the domain separator and thus reject the request.
+        // for multiple domains, if the resource might contain :, it's the responsibility
+        // of the caller to include the "domain-name:" prefix as part of the resource
 
+        resource = stripDomainPrefix(resource, tokenDomain, zpeClt.getDomainCount() == 1 ? resource : null);
         if (resource == null) {
             LOG.error("{} ERROR: Domain mismatch in token({}) and resource so access denied",
                     msgPrefix, tokenDomain);
@@ -1220,19 +1246,27 @@ public class AuthZpeClient {
         return false;
     }
 
+    static <T> void addTokenToCache(Map<String, T> tokenCache, final String tokenKey, T tokenValue) {
+        if (maxTokenCacheSize == 0 || tokenCache.size() < maxTokenCacheSize) {
+            tokenCache.put(tokenKey, tokenValue);
+        }
+    }
+
     public static void main(String[] args) {
 
         if (args.length != 3) {
-            System.out.println("usage: AuthZpeClient <role-token> <action> <resource>");
+            System.out.println("usage: AuthZpeClient <authz-token> <action> <resource>");
             System.exit(1);
         }
 
-        final String roleToken = args[0];
+        final String authzToken = args[0];
         final String action = args[1];
         final String resource = args[2];
 
+        StringBuilder matchRoleName = new StringBuilder();
         AuthZpeClient.init();
-        System.out.println("Authorization Response: "
-                + AuthZpeClient.allowAccess(roleToken, action, resource).toString());
+        AccessCheckStatus status = AuthZpeClient.allowAccess(authzToken, resource, action, matchRoleName);
+        System.out.println(status.toString() + ":" + matchRoleName);
+        System.exit(0);
     }
 }

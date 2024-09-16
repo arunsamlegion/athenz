@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,37 +16,24 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react';
 import AddAssertion from '../../../components/policy/AddAssertion';
+import { renderWithRedux } from '../../../tests_utils/ComponentsTestUtils';
 
 describe('AddAssertion', () => {
     it('should render', () => {
-        const cancel = function() {};
+        const cancel = function () {};
         const domain = 'domain';
-        const api = {
-            listRoles(domain) {
-                return new Promise((resolve, reject) => {
-                    resolve(['a, b']);
-                });
-            },
-        };
-        const { getByTestId } = render(
-            <AddAssertion cancel={cancel} domain={domain} api={api} />
+        const { getByTestId } = renderWithRedux(
+            <AddAssertion cancel={cancel} domain={domain} />
         );
         const addPolicy = getByTestId('add-assertion');
         expect(addPolicy).toMatchSnapshot();
     });
 
     it('should render failed to submit action is required', () => {
-        const cancel = function() {};
+        const cancel = function () {};
         const domain = 'domain';
-        const api = {
-            listRoles(domain) {
-                return new Promise((resolve, reject) => {
-                    resolve(['a, b']);
-                });
-            },
-        };
-        const { getByTestId, getByText } = render(
-            <AddAssertion cancel={cancel} domain={domain} api={api} />
+        const { getByTestId, getByText } = renderWithRedux(
+            <AddAssertion cancel={cancel} domain={domain} />
         );
         const addPolicy = getByTestId('add-assertion');
         expect(addPolicy).toMatchSnapshot();
@@ -57,22 +44,14 @@ describe('AddAssertion', () => {
     });
 
     it('should render failed to submit role name is required', () => {
-        const cancel = function() {};
+        const cancel = function () {};
         const domain = 'domain';
-        const api = {
-            listRoles(domain) {
-                return new Promise((resolve, reject) => {
-                    resolve(['a, b']);
-                });
-            },
-        };
-        const { getByTestId, getByText, getByPlaceholderText } = render(
-            <AddAssertion cancel={cancel} domain={domain} api={api} />
-        );
+        const { getByTestId, getByText, getByPlaceholderText } =
+            renderWithRedux(<AddAssertion cancel={cancel} domain={domain} />);
         const addPolicy = getByTestId('add-assertion');
         expect(addPolicy).toMatchSnapshot();
 
-        fireEvent.change(getByPlaceholderText('Rule Action (Case Sensitive)'), {
+        fireEvent.change(getByPlaceholderText('Rule Action'), {
             target: { value: 'ruleaction' },
         });
         fireEvent.click(getByText('Submit'));

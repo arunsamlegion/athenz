@@ -12,8 +12,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/AthenZ/athenz/libs/go/athenzutils"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -23,6 +21,8 @@ import (
 	"time"
 
 	"github.com/AthenZ/athenz/clients/go/zts"
+	"github.com/AthenZ/athenz/libs/go/athenzutils"
+	"github.com/AthenZ/athenz/libs/go/tls/config"
 	"github.com/AthenZ/athenz/libs/go/zmssvctoken"
 )
 
@@ -85,7 +85,7 @@ func main() {
 	var ztsURL, serviceKey, serviceCert, domain, service, keyID string
 	var caCertFile, certFile, signerCertFile, dnsDomain, hdr, ip string
 	var subjC, subjO, subjOU, uri, provider, instance, instanceId string
-	var svcKeyFile, svcCertFile, ntokenFile, attestationDataFile string
+	var svcKeyFile, svcCertFile, ntokenFile, attestationDataFile, spiffeTrustDomain string
 	var csr, spiffe, showVersion, getInstanceRegisterToken, useInstanceRegisterToken bool
 	var expiryTime int
 	flag.BoolVar(&csr, "csr", false, "request csr only")
@@ -115,6 +115,7 @@ func main() {
 	flag.StringVar(&svcKeyFile, "svc-key-file", "", "service identity private key file")
 	flag.StringVar(&svcCertFile, "svc-cert-file", "", "service identity certificate file")
 	flag.BoolVar(&showVersion, "version", false, "Show version")
+	flag.StringVar(&spiffeTrustDomain, "spiffe-trust-domain", "", "Trust Domain value to be included in spiffe uri")
 	flag.Parse()
 
 	if showVersion {
@@ -129,6 +130,13 @@ func main() {
 	var err error
 
 	if getInstanceRegisterToken || useInstanceRegisterToken {
+
+		defaultConfig, _ := athenzutils.ReadDefaultConfig()
+		// check to see if we need to use zts url from our default config file
+		if ztsURL == "" && defaultConfig != nil {
+			ztsURL = defaultConfig.Zts
+		}
+
 		if ztsURL == "" || domain == "" || service == "" || provider == "" || instance == "" || svcKeyFile == "" || svcCertFile == "" {
 			log.Println("Error: missing required attributes. Run with -help for command line arguments")
 			usage()
@@ -139,7 +147,7 @@ func main() {
 		}
 		if getInstanceRegisterToken {
 			if attestationDataFile != "" {
-				err := ioutil.WriteFile(attestationDataFile, []byte(attestationData), 0444)
+				err := os.WriteFile(attestationDataFile, []byte(attestationData), 0444)
 				if err != nil {
 					log.Fatalln(err)
 				}
@@ -156,7 +164,7 @@ func main() {
 	}
 
 	// load private key
-	keyBytes, err := ioutil.ReadFile(serviceKey)
+	keyBytes, err := os.ReadFile(serviceKey)
 	if err != nil {
 		if useInstanceRegisterToken {
 			keyBytes, err = generatePrivateKey(serviceKey)
@@ -186,8 +194,12 @@ func main() {
 		}
 		instanceId = fmt.Sprintf("athenz://instanceid/%s/%s", uriProvider, instance)
 	}
-	if spiffe {
-		uri = fmt.Sprintf("spiffe://%s/sa/%s", domain, service)
+	if spiffe || spiffeTrustDomain != "" {
+		if spiffeTrustDomain != "" {
+			uri = fmt.Sprintf("spiffe://%s/ns/default/sa/%s", spiffeTrustDomain, commonName)
+		} else {
+			uri = fmt.Sprintf("spiffe://%s/sa/%s", domain, service)
+		}
 	}
 
 	subj := pkix.Name{
@@ -221,10 +233,11 @@ func main() {
 	// data contains the authentication details
 
 	var client *zts.ZTSClient
+	var ntoken string
 	if provider != "" {
 		client, err = certClient(ztsURL, nil, "", caCertFile)
 	} else if serviceCert == "" {
-		ntoken, err := getNToken(domain, service, keyID, keyBytes)
+		ntoken, err = getNToken(domain, service, keyID, keyBytes)
 		if err != nil {
 			log.Fatalln(err)
 		}
@@ -249,7 +262,7 @@ func main() {
 		}
 		if attestationData == "" {
 			if attestationDataFile != "" {
-				attestationDataBytes, err := ioutil.ReadFile(attestationDataFile)
+				attestationDataBytes, err := os.ReadFile(attestationDataFile)
 				if err != nil {
 					log.Fatalln(err)
 				}
@@ -298,7 +311,7 @@ func main() {
 	}
 
 	if certFile != "" {
-		err = ioutil.WriteFile(certFile, []byte(certificate), 0444)
+		err = os.WriteFile(certFile, []byte(certificate), 0444)
 		if err != nil {
 			log.Fatalln(err)
 		}
@@ -307,7 +320,7 @@ func main() {
 	}
 
 	if signerCertFile != "" {
-		err = ioutil.WriteFile(signerCertFile, []byte(caCertificates), 0444)
+		err = os.WriteFile(signerCertFile, []byte(caCertificates), 0444)
 		if err != nil {
 			log.Fatalln(err)
 		}
@@ -320,7 +333,7 @@ func generatePrivateKey(serviceKey string) ([]byte, error) {
 		return nil, err
 	}
 	keyBytes := getPEMBlock(rsaKey)
-	err = ioutil.WriteFile(serviceKey, keyBytes, 0400)
+	err = os.WriteFile(serviceKey, keyBytes, 0400)
 	if err != nil {
 		return nil, err
 	}
@@ -339,11 +352,12 @@ func fetchInstanceRegisterToken(ztsURL, svcKeyFile, svcCertFile, caCertFile, nto
 
 	var client *zts.ZTSClient
 	var err error
+	var ntokenBytes []byte
 	if svcKeyFile != "" {
 		client, err = athenzutils.ZtsClient(ztsURL, svcKeyFile, svcCertFile, caCertFile, true)
 	} else {
 		// we need to load our ntoken from the given file
-		ntokenBytes, err := ioutil.ReadFile(ntokenFile)
+		ntokenBytes, err = os.ReadFile(ntokenFile)
 		if err != nil {
 			return "", err
 		}
@@ -361,27 +375,11 @@ func fetchInstanceRegisterToken(ztsURL, svcKeyFile, svcCertFile, caCertFile, nto
 }
 
 func newSigner(privateKeyPEM []byte) (*signer, error) {
-	block, _ := pem.Decode(privateKeyPEM)
-	if block == nil {
-		return nil, fmt.Errorf("unable to load private key")
+	key, algorithm, err := athenzutils.ExtractSignerInfo(privateKeyPEM)
+	if err != nil {
+		return nil, err
 	}
-
-	switch block.Type {
-	case "EC PRIVATE KEY":
-		key, err := x509.ParseECPrivateKey(block.Bytes)
-		if err != nil {
-			return nil, err
-		}
-		return &signer{key: key, algorithm: x509.ECDSAWithSHA256}, nil
-	case "RSA PRIVATE KEY":
-		key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
-		if err != nil {
-			return nil, err
-		}
-		return &signer{key: key, algorithm: x509.SHA256WithRSA}, nil
-	default:
-		return nil, fmt.Errorf("unsupported private key type: %s", block.Type)
-	}
+	return &signer{key: key, algorithm: algorithm}, nil
 }
 
 func generateCSR(keySigner *signer, subj pkix.Name, host, instanceId, ip, uri string) (string, error) {
@@ -460,7 +458,7 @@ func ntokenClient(ztsURL, ntoken, caCertFile, hdr string) (*zts.ZTSClient, error
 	if caCertFile != "" {
 		config := &tls.Config{}
 		certPool := x509.NewCertPool()
-		caCert, err := ioutil.ReadFile(caCertFile)
+		caCert, err := os.ReadFile(caCertFile)
 		if err != nil {
 			return nil, err
 		}
@@ -478,19 +476,19 @@ func certClient(ztsURL string, keyBytes []byte, certfile, caCertFile string) (*z
 	var certpem []byte
 	var err error
 	if certfile != "" {
-		certpem, err = ioutil.ReadFile(certfile)
+		certpem, err = os.ReadFile(certfile)
 		if err != nil {
 			return nil, err
 		}
 	}
 	var cacertpem []byte
 	if caCertFile != "" {
-		cacertpem, err = ioutil.ReadFile(caCertFile)
+		cacertpem, err = os.ReadFile(caCertFile)
 		if err != nil {
 			return nil, err
 		}
 	}
-	config, err := tlsConfiguration(keyBytes, certpem, cacertpem)
+	config, err := config.ClientTLSConfigFromPEM(keyBytes, certpem, cacertpem)
 	if err != nil {
 		return nil, err
 	}
@@ -500,22 +498,4 @@ func certClient(ztsURL string, keyBytes []byte, certfile, caCertFile string) (*z
 	}
 	client := zts.NewClient(ztsURL, transport)
 	return &client, nil
-}
-
-func tlsConfiguration(keypem, certpem, cacertpem []byte) (*tls.Config, error) {
-	config := &tls.Config{}
-	if certpem != nil && keypem != nil {
-		mycert, err := tls.X509KeyPair(certpem, keypem)
-		if err != nil {
-			return nil, err
-		}
-		config.Certificates = make([]tls.Certificate, 1)
-		config.Certificates[0] = mycert
-	}
-	if cacertpem != nil {
-		certPool := x509.NewCertPool()
-		certPool.AppendCertsFromPEM(cacertpem)
-		config.RootCAs = certPool
-	}
-	return config, nil
 }

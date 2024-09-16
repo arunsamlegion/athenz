@@ -22,6 +22,7 @@ import { colors } from '../denali/styles';
 import Menu from '../denali/Menu/Menu';
 import DeleteModal from '../modal/DeleteModal';
 import RequestUtils from '../utils/RequestUtils';
+import StringUtils from '../utils/StringUtils';
 
 const StyleTable = styled.table`
     width: 100%;
@@ -31,21 +32,11 @@ const StyleTable = styled.table`
     border-collapse: separate;
     border-color: black;
     box-sizing: border-box;
-    margin-top: 5px;
     box-shadow: 0 1px 4px #d9d9d9;
-    border: 5px solid #fff;
-    -webkit-border-image: none;
-    border-image: none;
-    -webkit-border-image: initial;
-    border-image: initial;
-    max-height: 600px;
 `;
 
 const StyledDiv = styled.div`
     display: inline-block;
-    overflow-y: scroll;
-    max-height: 600px;
-    max-width: 600px;
 `;
 
 const StyledTr = styled.tr`
@@ -75,8 +66,8 @@ const MenuDiv = styled.div`
 class EnforcementStateList extends React.Component {
     constructor(props) {
         super(props);
-        this.api = props.api;
         this.localDate = new DateUtils();
+        this.stringUtils = new StringUtils();
     }
 
     onClickDelete(assertionId, conditionId, policyName) {
@@ -98,12 +89,14 @@ class EnforcementStateList extends React.Component {
                     item['id'],
                     policyName[1]
                 );
+                let scopeString = this.stringUtils.getScopeString(item);
                 return (
                     <StyledTr key={item + i + new Date().getTime()}>
                         <StyledTd>{item['enforcementstate']}</StyledTd>
                         <StyledTd>
                             {item['instances'].replace(/,/g, '\n')}
                         </StyledTd>
+                        <StyledTd>{scopeString}</StyledTd>
                         <StyledTd>
                             <Menu
                                 placement='bottom-start'
@@ -131,18 +124,31 @@ class EnforcementStateList extends React.Component {
                 );
             });
 
+        if (rows === '' || rows === undefined || rows === null) {
+            rows = [
+                <StyledTr key={'EMPTY' + new Date().getTime()}>
+                    <StyledTd>{'report'}</StyledTd>
+                    <StyledTd>{'*'}</StyledTd>
+                    <StyledTd>{'OnPrem'}</StyledTd>
+                    <StyledTd>{'Default Condition'}</StyledTd>
+                </StyledTr>,
+            ];
+        }
         return (
             <StyledDiv
                 key={'enforcement-state-list'}
                 data-testid={'microsegmentation-enforcement-list'}
             >
                 <StyleTable>
-                    <StyledTr>
-                        <StyledTh> Enforcement State </StyledTh>
-                        <StyledTh> Hosts </StyledTh>
-                        <StyledTh> Action </StyledTh>
-                    </StyledTr>
-                    {rows}
+                    <thead>
+                        <StyledTr>
+                            <StyledTh> Enforcement State </StyledTh>
+                            <StyledTh> Hosts </StyledTh>
+                            <StyledTh> Scope </StyledTh>
+                            <StyledTh> Action </StyledTh>
+                        </StyledTr>
+                    </thead>
+                    <tbody>{rows}</tbody>
                 </StyleTable>
             </StyledDiv>
         );

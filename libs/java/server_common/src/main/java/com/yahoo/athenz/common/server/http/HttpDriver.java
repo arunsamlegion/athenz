@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,7 +40,6 @@ import org.slf4j.LoggerFactory;
 import javax.net.ssl.SSLContext;
 import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
@@ -72,7 +71,6 @@ public class HttpDriver implements Closeable {
     private final PoolingHttpClientConnectionManager connManager;
 
     public static class Builder {
-        // Required Parameters
         private final String baseUrl;
         private String truststorePath = null;
         private char[] truststorePassword = null;
@@ -146,7 +144,7 @@ public class HttpDriver implements Closeable {
         clientReadTimeoutMs = builder.clientReadTimeoutMs;
 
         SSLContext sslContext = builder.sslContext;
-        if (sslContext == null) {
+        if (sslContext == null && builder.keyPath != null && builder.certPath != null) {
             try {
                 sslContext = createSSLContext(builder.truststorePath, builder.truststorePassword, builder.certPath, builder.keyPath);
             } catch (IOException | InterruptedException | KeyRefresherException e) {
@@ -159,7 +157,7 @@ public class HttpDriver implements Closeable {
         connManager = createConnectionPooling(sslContext);
         client = createHttpClient(clientConnectTimeoutMs, clientReadTimeoutMs, sslContext, connManager);
 
-        LOGGER.info("initialized Names HttpDriver with base url: {} connectionTimeoutMs: {} readTimeoutMs: {}",
+        LOGGER.info("initialized HttpDriver with base url: {} connectionTimeoutMs: {} readTimeoutMs: {}",
                 baseUrl, clientConnectTimeoutMs, clientReadTimeoutMs);
     }
 
@@ -167,12 +165,13 @@ public class HttpDriver implements Closeable {
         client = httpClient;
     }
 
-    public static SSLContext createSSLContext(String trustorePath, char[] trustorePassword, String certPath,
-                                          String keyPath) throws FileNotFoundException, IOException, InterruptedException, KeyRefresherException {
-        if (trustorePath == null) {
+    public static SSLContext createSSLContext(String trustStorePath, char[] trustStorePassword, String certPath, String keyPath)
+            throws IOException, InterruptedException, KeyRefresherException {
+
+        if (trustStorePath == null) {
             return null;
         }
-        KeyRefresher keyRefresher = Utils.generateKeyRefresher(trustorePath, trustorePassword,
+        KeyRefresher keyRefresher = Utils.generateKeyRefresher(trustStorePath, trustStorePassword,
                 certPath, keyPath);
         keyRefresher.startup();
         return Utils.buildSSLContext(keyRefresher.getKeyManagerProxy(),
@@ -196,7 +195,8 @@ public class HttpDriver implements Closeable {
     }
 
     protected CloseableHttpClient createHttpClient(int connTimeoutMs, int readTimeoutMs, SSLContext sslContext,
-                                         PoolingHttpClientConnectionManager poolingHttpClientConnectionManager) {
+            PoolingHttpClientConnectionManager poolingHttpClientConnectionManager) {
+
         //apache http client expects in milliseconds
         RequestConfig config = RequestConfig.custom()
                 .setConnectTimeout(connTimeoutMs)
@@ -280,13 +280,7 @@ public class HttpDriver implements Closeable {
         throw new IOException("Failed to get response from server: " + url);
     }
 
-    /**
-     * doPost performs post operation and returns a string
-     * @param httpPost post request to process
-     * @return response string
-     * @throws IOException in case of any errors
-     */
-    public String doPost(HttpPost httpPost) throws IOException {
+    public HttpDriverResponse doPostHttpResponse(HttpPost httpPost) throws IOException {
         String url = httpPost.getURI().toString();
         if (LOGGER.isDebugEnabled()) {
             LOGGER.debug("Requesting from {} with query {}", url, getPostQuery(httpPost));
@@ -296,19 +290,9 @@ public class HttpDriver implements Closeable {
             try (CloseableHttpResponse response = this.client.execute(httpPost)) {
                 if (response != null) {
                     int statusCode = response.getStatusLine().getStatusCode();
-                    switch (statusCode) {
-                        case 200:
-                        case 201:
-                            String out = EntityUtils.toString(response.getEntity());
-                            LOGGER.debug("Data received: {}", out);
-                            return out;
-                        default:
-                            //received bad statuscode, don't bother resending request.
-                            LOGGER.error("Received bad status code: {} from: {} reason: {}", statusCode, url, response.getStatusLine());
-                            //before breaking out. We must close inputstream to prevent from leaking.
-                            response.getEntity().getContent().close();
-                            return "";
-                    }
+                    String out = EntityUtils.toString(response.getEntity());
+                    LOGGER.debug("StatusCode: {} Data received: {}", statusCode, out);
+                    return new HttpDriverResponse(statusCode, out, response.getStatusLine());
                 }
             } catch (IOException ex) {
                 LOGGER.error("Failed to get response from {} for query: {} retry: {}/{}, exception: ", url, getPostQuery(httpPost), i, clientMaxRetries, ex);
@@ -319,6 +303,28 @@ public class HttpDriver implements Closeable {
             }
         }
         throw new IOException("Failed to get response from server: " + url);
+    }
+
+    /**
+     * doPost performs post operation and returns a string
+     * @param httpPost post request to process
+     * @return response string
+     * @throws IOException in case of any errors
+     */
+    public String doPost(HttpPost httpPost) throws IOException {
+        HttpDriverResponse httpDriverResponse = doPostHttpResponse(httpPost);
+        switch (httpDriverResponse.getStatusCode()) {
+            case 200:
+            case 201:
+                String out = httpDriverResponse.getMessage();
+                LOGGER.debug("Data received: {}", out);
+                return out;
+            default:
+                //received bad statuscode, don't bother resending request.
+                String url = httpPost.getURI().toString();
+                LOGGER.error("Received bad status code: {} from: {} reason: {}", httpDriverResponse.getStatusCode(), url, httpDriverResponse.getStatusLine());
+                return "";
+        }
     }
 
     /**

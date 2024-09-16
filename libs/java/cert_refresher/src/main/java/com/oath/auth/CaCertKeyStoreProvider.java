@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Yahoo Holdings, Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,10 @@
 package com.oath.auth;
 
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.KeyStore;
+import java.util.function.Supplier;
 
 /**
  * creates a key store and adds a certificate authority certificate
@@ -27,16 +27,27 @@ import java.security.KeyStore;
 class CaCertKeyStoreProvider implements KeyStoreProvider {
 
     private final String caCertFilePath;
+    private final Supplier<InputStream> caCertsInputStream;
 
     public CaCertKeyStoreProvider(final String caCertFilePath) {
         this.caCertFilePath = caCertFilePath;
+        this.caCertsInputStream = null;
+    }
+
+    public CaCertKeyStoreProvider(final Supplier<InputStream> caCertsInputStream) {
+        this.caCertsInputStream = caCertsInputStream;
+        this.caCertFilePath = null;
     }
 
     @Override
-    public KeyStore provide() throws KeyRefresherException, FileNotFoundException, IOException {
-        KeyStore keyStore = null;
-        try (InputStream inputStream = new FileInputStream(caCertFilePath)) {
-            keyStore = Utils.generateTrustStore(inputStream);
+    public KeyStore provide() throws KeyRefresherException, IOException {
+        KeyStore keyStore;
+        if (caCertFilePath != null) {
+            try (InputStream inputStream = new FileInputStream(caCertFilePath)) {
+                keyStore = Utils.generateTrustStore(inputStream);
+            }
+        } else {
+            keyStore = Utils.generateTrustStore(caCertsInputStream.get());
         }
         return keyStore;
     }

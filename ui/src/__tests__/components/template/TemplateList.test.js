@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,11 @@
 import React from 'react';
 import { render } from '@testing-library/react';
 import TemplateList from '../../../components/template/TemplateList';
+import { renderWithRedux } from '../../../tests_utils/ComponentsTestUtils';
 
 describe('TemplateList', () => {
     it('should render', () => {
-        const { getByTestId } = render(<TemplateList />);
+        const { getByTestId } = renderWithRedux(<TemplateList />);
         const templatelist = getByTestId('template-list');
 
         expect(templatelist).toMatchSnapshot();
@@ -28,34 +29,36 @@ describe('TemplateList', () => {
     it('should render with metadata array', () => {
         const left = 'left';
         const center = 'center';
-        let toReturn =
-            [{
-                "templateName": "aws",
-                "description": "AWS access template",
-                "currentVersion": 4,
-                "latestVersion": 1,
-                "timestamp": "2020-04-28T00:00:00.000Z",
-                "autoUpdate": false
-            }];
+        let toReturn = [
+            {
+                templateName: 'aws',
+                description: 'AWS access template',
+                currentVersion: 4,
+                latestVersion: 1,
+                timestamp: '2020-04-28T00:00:00.000Z',
+                autoUpdate: false,
+            },
+        ];
 
         const api = {
-            updateTemplate: function(params, csrf) {
+            updateTemplate: function (params, csrf) {
                 return new Promise((resolve, reject) => {
                     resolve(toReturn);
                 });
             },
         };
 
-        const { getByTestId } = render(<TemplateList
-            left ={left}
-            center = {center}
-            list={toReturn}
-            serverTemplateDetails={toReturn}
-            api = {api}
-        />);
+        const { getByTestId } = renderWithRedux(
+            <TemplateList
+                left={left}
+                center={center}
+                list={toReturn}
+                serverTemplateDetails={toReturn}
+                api={api}
+            />
+        );
         const templatelist = getByTestId('template-list');
 
         expect(templatelist).toMatchSnapshot();
     });
-
 });

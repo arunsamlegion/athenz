@@ -4,6 +4,7 @@
 
 package com.yahoo.athenz.msd;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.yahoo.rdl.*;
 
 //
@@ -12,8 +13,13 @@ import com.yahoo.rdl.*;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class TransportPolicyEgressRule {
     public long id;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public String identifier;
     public Timestamp lastModified;
     public TransportPolicyEntitySelector entitySelector;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public TransportPolicyPeer to;
 
     public TransportPolicyEgressRule setId(long id) {
@@ -22,6 +28,13 @@ public class TransportPolicyEgressRule {
     }
     public long getId() {
         return id;
+    }
+    public TransportPolicyEgressRule setIdentifier(String identifier) {
+        this.identifier = identifier;
+        return this;
+    }
+    public String getIdentifier() {
+        return identifier;
     }
     public TransportPolicyEgressRule setLastModified(Timestamp lastModified) {
         this.lastModified = lastModified;
@@ -53,6 +66,9 @@ public class TransportPolicyEgressRule {
             }
             TransportPolicyEgressRule a = (TransportPolicyEgressRule) another;
             if (id != a.id) {
+                return false;
+            }
+            if (identifier == null ? a.identifier != null : !identifier.equals(a.identifier)) {
                 return false;
             }
             if (lastModified == null ? a.lastModified != null : !lastModified.equals(a.lastModified)) {

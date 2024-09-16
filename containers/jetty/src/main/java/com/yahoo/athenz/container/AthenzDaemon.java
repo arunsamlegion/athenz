@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,14 +26,12 @@ public class AthenzDaemon implements Daemon {
         args = context.getArguments();
     }
 
-    ///CLOVER:OFF
     public void start() throws Exception {
         if (args == null) {
             return;
         }
         AthenzJettyContainer.main(args);
     }
-    ///CLOVER:ON
 
     public void stop() throws Exception {
     }

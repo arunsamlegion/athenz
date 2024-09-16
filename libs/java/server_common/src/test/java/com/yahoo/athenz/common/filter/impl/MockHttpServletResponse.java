@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,10 +22,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.Locale;
 
-import javax.servlet.ServletOutputStream;
-import javax.servlet.http.Cookie;
-import javax.servlet.http.HttpServletResponse;
-
+import jakarta.servlet.ServletOutputStream;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletResponse;
 
 @SuppressWarnings("RedundantThrows")
 public class MockHttpServletResponse implements HttpServletResponse {
@@ -33,7 +32,7 @@ public class MockHttpServletResponse implements HttpServletResponse {
     private int contentLength = 0;
     private int status = 0;
     private final ByteArrayOutputStream byteOutputStream = new ByteArrayOutputStream();
-    private PrintWriter writer = new PrintWriter(byteOutputStream);
+    private final PrintWriter writer = new PrintWriter(byteOutputStream);
     
     public String getWriterData() throws IOException {
         writer.flush();

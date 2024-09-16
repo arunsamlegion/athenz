@@ -1,4 +1,4 @@
-// Copyright 2017 Yahoo Inc.
+// Copyright The Athenz Authors
 // Licensed under the terms of the Apache version 2.0 license. See LICENSE file for terms.
 
 include "Names.tdl";
@@ -28,6 +28,7 @@ resource ResourceAccess GET "/access/{action}/{resource}?domain={domain}&princip
         ResourceError FORBIDDEN;
         ResourceError UNAUTHORIZED;
         ResourceError NOT_FOUND;
+        ResourceError TOO_MANY_REQUESTS;
     }
 }
 
@@ -46,5 +47,6 @@ resource ResourceAccess GET "/access/{action}?resource={resource}&domain={domain
         ResourceError FORBIDDEN;
         ResourceError UNAUTHORIZED;
         ResourceError NOT_FOUND;
+        ResourceError TOO_MANY_REQUESTS;
     }
 }

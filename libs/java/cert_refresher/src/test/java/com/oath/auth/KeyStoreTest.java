@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Yahoo Holdings, Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,14 +16,14 @@
 package com.oath.auth;
 
 import com.google.common.io.Resources;
-import org.junit.Test;
+import org.testng.annotations.Test;
 
 import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
 import java.security.cert.X509Certificate;
 import java.util.Enumeration;
 
-import static org.junit.Assert.*;
+import static org.testng.Assert.*;
 
 public class KeyStoreTest {
 
@@ -32,21 +32,23 @@ public class KeyStoreTest {
     @Test
     public void testGetKeyStore() throws Exception {
 
-        KeyStore keyStore = Utils.getKeyStore("truststore.jks", "123456".toCharArray());
+        // default password is secret
+
+        KeyStore keyStore = Utils.getKeyStore("truststore.jks", "secret".toCharArray());
         assertNotNull(keyStore);
 
-        // default password is secret - key exception
+        keyStore = Utils.getKeyStore("truststore.jks");
+        assertNotNull(keyStore);
 
         try {
-            Utils.getKeyStore("truststore.jks");
+            Utils.getKeyStore("truststore.jks", "123456".toCharArray());
             fail();
         } catch (Exception ignored) {
         }
     }
 
-
     @Test
-    public void testCreateKeyStore() throws Exception {
+    public void testCreateKeyStoreRSA() throws Exception {
         KeyStore keyStore = Utils.createKeyStore("rsa_public_x509.cert", "unit_test_rsa_private.key");
         assertNotNull(keyStore);
         String alias = null;
@@ -56,7 +58,92 @@ public class KeyStoreTest {
         }
         X509Certificate[] chain = (X509Certificate[]) keyStore.getCertificateChain(alias);
         assertNotNull(chain);
-        assertTrue(chain.length == 1);
+        assertEquals(1, chain.length);
+    }
+
+    @Test
+    public void testCreateKeyStoreEC() throws Exception {
+        KeyStore keyStore = Utils.createKeyStore("ec_public_x509.cert", "unit_test_ec_private.key");
+        assertNotNull(keyStore);
+        String alias = null;
+        for (Enumeration<?> e = keyStore.aliases(); e.hasMoreElements(); ) {
+            alias = (String) e.nextElement();
+            assertEquals(ALIAS_NAME, alias);
+        }
+        X509Certificate[] chain = (X509Certificate[]) keyStore.getCertificateChain(alias);
+        assertNotNull(chain);
+        assertEquals(1, chain.length);
+    }
+
+    @Test
+    public void testCreateKeyStoreRSAMismatch() throws Exception {
+
+        // first enabled public key match
+        Utils.setDisablePublicKeyCheck(false);
+        try {
+            Utils.createKeyStore("rsa_public_x509.cert", "unit_test_rsa_private2.key");
+        } catch (KeyRefresherException ex) {
+            assertEquals(ex.getMessage(), "Public key mismatch");
+        }
+        // now disable public key match
+        Utils.setDisablePublicKeyCheck(true);
+        KeyStore keyStore = Utils.createKeyStore("rsa_public_x509.cert", "unit_test_rsa_private.key");
+        assertNotNull(keyStore);
+        Utils.setDisablePublicKeyCheck(false);
+    }
+
+    @Test
+    public void testCreateKeyStoreECMismatch() throws Exception {
+
+        // first enabled public key match
+        Utils.setDisablePublicKeyCheck(false);
+        try {
+            Utils.createKeyStore("ec_public_x509.cert", "unit_test_ec_private_3.key");
+            fail();
+        } catch (KeyRefresherException ex) {
+            assertEquals(ex.getMessage(), "Public key mismatch");
+        }
+        try {
+            Utils.createKeyStore("ec_public_x509.cert", "unit_test_ec_private_2.key");
+            fail();
+        } catch (KeyRefresherException ex) {
+            assertEquals(ex.getMessage(), "Public key mismatch");
+        }
+        try {
+            Utils.createKeyStore("ec_public_x509_2.cert", "unit_test_ec_private_3.key");
+            fail();
+        } catch (KeyRefresherException ex) {
+            assertEquals(ex.getMessage(), "Public key mismatch");
+        }
+        // our valid pairs should work
+        KeyStore keyStore = Utils.createKeyStore("ec_public_x509.cert", "unit_test_ec_private.key");
+        assertNotNull(keyStore);
+        keyStore = Utils.createKeyStore("ec_public_x509_2.cert", "unit_test_ec_private_2.key");
+        assertNotNull(keyStore);
+        // now disable public key match
+        Utils.setDisablePublicKeyCheck(true);
+        keyStore = Utils.createKeyStore("ec_public_x509.cert", "unit_test_ec_private_3.key");
+        assertNotNull(keyStore);
+        Utils.setDisablePublicKeyCheck(false);
+    }
+
+    @Test
+    public void testCreateKeyStoreAlgorithmMismatch() throws Exception {
+
+        // first enabled public key match
+        Utils.setDisablePublicKeyCheck(false);
+        try {
+            Utils.createKeyStore("ec_public_x509.cert", "unit_test_rsa_private.key");
+            fail();
+        } catch (KeyRefresherException ex) {
+            assertEquals(ex.getMessage(), "Public key mismatch");
+        }
+        try {
+            Utils.createKeyStore("rsa_public_x509.cert", "unit_test_ec_private.key");
+            fail();
+        } catch (KeyRefresherException ex) {
+            assertEquals(ex.getMessage(), "Public key mismatch");
+        }
     }
 
     @Test
@@ -71,7 +158,7 @@ public class KeyStoreTest {
 
         X509Certificate[] chain = (X509Certificate[]) keyStore.getCertificateChain(alias);
         assertNotNull(chain);
-        assertTrue(chain.length == 2);
+        assertEquals(2, chain.length);
     }
 
     @Test
@@ -90,10 +177,10 @@ public class KeyStoreTest {
 
         X509Certificate[] chain = (X509Certificate[]) keyStore.getCertificateChain(alias);
         assertNotNull(chain);
-        assertTrue(chain.length == 2);
+        assertEquals(2, chain.length);
     }
 
-    @Test(expected = KeyRefresherException.class)
+    @Test(expectedExceptions = {KeyRefresherException.class})
     public void testCreateKeyStoreEmpty() throws Exception {
         Utils.createKeyStore("rsa_public_x510_empty.cert", "unit_test_rsa_private.key");
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Oath Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,47 +15,73 @@
  */
 package com.yahoo.athenz.zms;
 
-import com.wix.mysql.EmbeddedMysql;
-import com.wix.mysql.Sources;
-import com.wix.mysql.config.MysqldConfig;
+import com.yahoo.athenz.common.messaging.DomainChangeMessage;
 import com.yahoo.rdl.Timestamp;
 import com.yahoo.rdl.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.testcontainers.containers.MySQLContainer;
+import org.testcontainers.containers.output.Slf4jLogConsumer;
+import org.testcontainers.shaded.org.apache.commons.io.FileUtils;
+import org.testcontainers.utility.DockerImageName;
+import org.testcontainers.utility.MountableFile;
 
 import java.io.File;
+import java.io.IOException;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
-import static com.wix.mysql.EmbeddedMysql.anEmbeddedMysql;
-import static com.wix.mysql.ScriptResolver.classPathScript;
-import static com.wix.mysql.config.MysqldConfig.aMysqldConfig;
-import static com.wix.mysql.distribution.Version.v5_7_latest;
+import static org.testng.Assert.assertEquals;
 
 public class ZMSTestUtils {
 
-    public static EmbeddedMysql startMemoryMySQL(final String userName, final String password) {
+    private static final Logger LOG = LoggerFactory.getLogger(ZMSTestUtils.class);
 
-        System.out.println("Starting Embedded MySQL server...");
+    public static MySQLContainer startMemoryMySQL(final String userName, final String password) {
 
-        final MysqldConfig config = aMysqldConfig(v5_7_latest)
-                .withPort(3310)
-                .withUser(userName, password)
-                .build();
+        System.out.println("Starting MySQL server using testcontainers...");
+        MySQLContainer<?> mysql = null;
+        try {
 
-        File sqlSchemaFile = new File("schema/zms_server.sql");
-        return anEmbeddedMysql(config)
-                .addSchema("zms_server", Sources.fromFile(sqlSchemaFile))
-                .start();
+            String externalInitScriptPath = "schema/zms_server.sql";
+            File destinationInitScript = new File("src/test/resources/mysql/zms_server.sql");
+            FileUtils.copyFile(new File(externalInitScriptPath), destinationInitScript);
+            LOG.info("Copied {} to {}", externalInitScriptPath, destinationInitScript.getAbsolutePath());
+
+            mysql = new MySQLContainer<>(DockerImageName.parse("mysql/mysql-server:8.0").asCompatibleSubstituteFor("mysql"))
+                    .withDatabaseName("zms_server")
+                    .withUsername(userName)
+                    .withPassword(password)
+                    .withEnv("MYSQL_ROOT_PASSWORD", password)
+                    .withInitScript("mysql/zms_server.sql")
+                    .withStartupTimeout(Duration.ofMinutes(1))
+                    .withCopyFileToContainer(
+                            MountableFile.forClasspathResource("mysql/"),
+                            "/athenz-mysql-scripts/");
+            mysql.start();
+            mysql.followOutput(new Slf4jLogConsumer(LOG));
+        } catch (Throwable t) {
+            LOG.error("Unable to start MySQL server using testcontainers", t);
+        }
+
+        return mysql;
     }
 
-    public static void stopMemoryMySQL(EmbeddedMysql mysqld) {
-        System.out.println("Stopping Embedded MySQL server...");
+    public static void stopMemoryMySQL(MySQLContainer<?> mysqld) {
+        System.out.println("Stopping testcontainers MySQL server...");
         mysqld.stop();
     }
 
-    public static void setDatabaseReadOnlyMode(EmbeddedMysql mysqld, boolean readOnly) {
-        final String scriptName = readOnly ? "mysql/set-read-only.sql" : "mysql/unset-read-only.sql";
-        mysqld.executeScripts("zms_server", classPathScript(scriptName));
+    public static void setDatabaseReadOnlyMode(MySQLContainer<?> mysqld, boolean readOnly, final String username, final String password) throws IOException, InterruptedException {
+        final String scriptName = readOnly ? "set-read-only.sql" : "unset-read-only.sql";
+        try {
+            mysqld.execInContainer("mysql", "-u", "root", "-p"+password, "zms_server", "-e", "source /athenz-mysql-scripts/" + scriptName);
+        } catch (Throwable t) {
+            LOG.error("Unable to execute script in testcontainers mysql container: " + scriptName, t);
+        }
+
     }
 
     public static boolean verifyDomainRoleMember(DomainRoleMember domainRoleMember, MemberRole memberRole) {
@@ -97,10 +123,8 @@ public class ZMSTestUtils {
     }
 
     public static boolean verifyDomainRoleMemberTimestamp(List<DomainRoleMember> members,
-                                                          String memberName,
-                                                          String roleName,
-                                                          Timestamp timestamp,
-                                                          Function<MemberRole, Timestamp> timestampGetter) {
+            final String memberName, final String roleName, Timestamp timestamp,
+            Function<MemberRole, Timestamp> timestampGetter) {
 
         for (DomainRoleMember member : members) {
             if (member.getMemberName().equals(memberName)) {
@@ -154,5 +178,115 @@ public class ZMSTestUtils {
 
     public static boolean validateDueDate(long millis, long extMillis) {
         return (millis > System.currentTimeMillis() + extMillis - 5000 && millis < System.currentTimeMillis() + extMillis + 5000);
+    }
+
+    public static Timestamp buildExpiration(int daysInterval, boolean alreadyExpired) {
+        return Timestamp.fromMillis(System.currentTimeMillis() + TimeUnit.MILLISECONDS.convert(alreadyExpired ? -daysInterval : daysInterval , TimeUnit.DAYS));
+    }
+
+    public static void assertChange(DomainChangeMessage change, DomainChangeMessage.ObjectType objType,
+            final String domainName, final String objName, final String apiName) {
+        assertEquals(change.getObjectType(), objType);
+        assertEquals(change.getDomainName(), domainName);
+        assertEquals(change.getObjectName(), objName);
+        assertEquals(change.getApiName(), apiName.toLowerCase());
+    }
+
+    public static RoleMeta createRoleMetaObject(Boolean selfServe) {
+
+        RoleMeta meta = new RoleMeta();
+
+        if (selfServe != null) {
+            meta.setSelfServe(selfServe);
+        }
+        return meta;
+    }
+
+    public static RoleSystemMeta createRoleSystemMetaObject(Boolean auditEnabled) {
+
+        RoleSystemMeta meta = new RoleSystemMeta();
+
+        if (auditEnabled != null) {
+            meta.setAuditEnabled(auditEnabled);
+        }
+        return meta;
+    }
+
+    public static RoleMember getRoleMember(Role role, final String memberName) {
+        if (role.getRoleMembers() == null) {
+            return null;
+        }
+        for (RoleMember roleMember : role.getRoleMembers()) {
+            if (roleMember.getMemberName().equals(memberName)) {
+                return roleMember;
+            }
+        }
+        return null;
+    }
+
+    public static GroupMember getGroupMember(Group group, final String memberName) {
+        if (group.getGroupMembers() == null) {
+            return null;
+        }
+        for (GroupMember groupMember : group.getGroupMembers()) {
+            if (groupMember.getMemberName().equals(memberName)) {
+                return groupMember;
+            }
+        }
+        return null;
+    }
+
+    public static boolean verifyDomainGroupMember(DomainGroupMember domainGroupMember, GroupMember groupMember) {
+        for (GroupMember grpMember : domainGroupMember.getMemberGroups()) {
+            if (grpMember.equals(groupMember)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static boolean verifyDomainGroupMember(List<DomainGroupMember> members, String memberName,
+            String... groups) {
+
+        for (DomainGroupMember member : members) {
+            if (member.getMemberName().equals(memberName)) {
+                List<GroupMember> memberGroups = member.getMemberGroups();
+                if (memberGroups.size() != groups.length) {
+                    return false;
+                }
+                for (String group : groups) {
+                    boolean bMatchFound = false;
+                    for (GroupMember memberGroup : memberGroups) {
+                        if (memberGroup.getGroupName().equals(group)) {
+                            bMatchFound = true;
+                            break;
+                        }
+                    }
+                    if (!bMatchFound) {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static boolean verifyDomainGroupMemberTimestamp(List<DomainGroupMember> members,
+            final String memberName, final String groupName, Timestamp timestamp) {
+
+        for (DomainGroupMember member : members) {
+            if (member.getMemberName().equals(memberName)) {
+                for (GroupMember groupMember : member.getMemberGroups()) {
+                    if (groupMember.getGroupName().equals(groupName)) {
+                        return groupMember.getExpiration().equals(timestamp);
+                    }
+                }
+            }
+        }
+
+        return false;
     }
 }

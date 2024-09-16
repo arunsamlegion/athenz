@@ -23,6 +23,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"testing"
 )
 
@@ -57,19 +58,20 @@ func TestGetMetadata(test *testing.T) {
 	// Mock the metadata endpoints
 	router := httptreemux.New()
 	router.GET("/latest/dynamic/instance-identity/document", func(w http.ResponseWriter, r *http.Request, params map[string]string) {
-		log.Printf("Called /latest/dynamic/instance-identity/document")
-		io.WriteString(w, string("{ \"test\": \"document\"}"))
+		log.Println("Called /latest/dynamic/instance-identity/document")
+		io.WriteString(w, "{ \"test\": \"document\" }")
 	})
 
 	router.GET("/latest/dynamic/instance-identity/pkcs7", func(w http.ResponseWriter, r *http.Request, params map[string]string) {
-		log.Printf("Called /latest/dynamic/instance-identity/pkcs7")
-		io.WriteString(w, string("{ \"test\": \"pkcs7\"}"))
+		log.Println("Called /latest/dynamic/instance-identity/pkcs7")
+		io.WriteString(w, "{ \"test\": \"pkcs7\"}")
 	})
 
 	metaServer := &testServer{}
 	metaServer.start(router)
 	defer metaServer.stop()
 
+	// we are going to fail on v2 and fall back to v1
 	_, err := GetData(metaServer.httpUrl(), "/latest/dynamic/instance-identity/document")
 	if err != nil {
 		test.Errorf("Unable to retrieve instance document - %v", err)
@@ -79,6 +81,143 @@ func TestGetMetadata(test *testing.T) {
 	_, err = GetData(metaServer.httpUrl(), "/latest/dynamic/instance-identity/pkcs7")
 	if err != nil {
 		test.Errorf("Unable to retrieve document signature - %v", err)
+		return
+	}
+}
+
+func TestGetMetadataV1(test *testing.T) {
+	// Mock the metadata endpoints
+	router := httptreemux.New()
+	router.GET("/latest/dynamic/instance-identity/document", func(w http.ResponseWriter, r *http.Request, params map[string]string) {
+		log.Println("Called /latest/dynamic/instance-identity/document")
+		io.WriteString(w, "{ \"test\": \"document\" }")
+	})
+
+	router.GET("/latest/dynamic/instance-identity/pkcs7", func(w http.ResponseWriter, r *http.Request, params map[string]string) {
+		log.Println("Called /latest/dynamic/instance-identity/pkcs7")
+		io.WriteString(w, "{ \"test\": \"pkcs7\"}")
+	})
+
+	metaServer := &testServer{}
+	metaServer.start(router)
+	defer metaServer.stop()
+
+	_, err := GetDataV1(metaServer.httpUrl(), "/latest/dynamic/instance-identity/document")
+	if err != nil {
+		test.Errorf("Unable to retrieve instance document - %v", err)
+		return
+	}
+
+	_, err = GetData(metaServer.httpUrl(), "/latest/dynamic/instance-identity/pkcs7")
+	if err != nil {
+		test.Errorf("Unable to retrieve document signature - %v", err)
+		return
+	}
+}
+
+func TestGetRegionFromDoc(test *testing.T) {
+	// Mock the metadata endpoints
+	router := httptreemux.New()
+	router.GET("/latest/dynamic/instance-identity/document", func(w http.ResponseWriter, r *http.Request, params map[string]string) {
+		log.Println("Called /latest/dynamic/instance-identity/document")
+		io.WriteString(w, "{ \"test\": \"document\", \"region\": \"us-west-1\"}")
+	})
+
+	metaServer := &testServer{}
+	metaServer.start(router)
+	defer metaServer.stop()
+
+	region := GetRegion(metaServer.httpUrl(), false)
+	if region != "us-west-1" {
+		test.Errorf("Unable to match expected region: %s", region)
+	}
+}
+
+func TestGetRegionPreferEnv(test *testing.T) {
+	// Mock the metadata endpoints
+	router := httptreemux.New()
+	router.GET("/latest/dynamic/instance-identity/document", func(w http.ResponseWriter, r *http.Request, params map[string]string) {
+		log.Println("Called /latest/dynamic/instance-identity/document")
+		io.WriteString(w, "{ \"test\": \"document\", \"region\": \"us-west-1\"}")
+	})
+	os.Setenv("AWS_REGION", "us-east-1")
+
+	metaServer := &testServer{}
+	metaServer.start(router)
+	defer metaServer.stop()
+
+	region := GetRegion(metaServer.httpUrl(), true)
+	if region != "us-east-1" {
+		test.Errorf("Unable to match expected region: %s", region)
+	}
+	region = GetRegion(metaServer.httpUrl(), false)
+	if region != "us-west-1" {
+		test.Errorf("Unable to match expected region: %s", region)
+	}
+}
+
+func TestGetRegionFromEnv(test *testing.T) {
+
+	os.Setenv("AWS_REGION", "us-east-1")
+	// Mock the metadata endpoints
+	router := httptreemux.New()
+	router.GET("/latest/dynamic/instance-identity/document", func(w http.ResponseWriter, r *http.Request, params map[string]string) {
+		log.Println("Called /latest/dynamic/instance-identity/document")
+		io.WriteString(w, "{ \"test\": \"document\"}")
+	})
+
+	metaServer := &testServer{}
+	metaServer.start(router)
+	defer metaServer.stop()
+
+	region := GetRegion(metaServer.httpUrl(), false)
+	if region != "us-east-1" {
+		test.Errorf("Unable to match expected region: %s", region)
+	}
+	region = GetRegion(metaServer.httpUrl(), true)
+	if region != "us-east-1" {
+		test.Errorf("Unable to match expected region: %s", region)
+	}
+	os.Setenv("AWS_REGION", "")
+
+	//without doc/env we should default to us-west-2
+	region = GetRegion(metaServer.httpUrl(), false)
+	if region != "us-west-2" {
+		test.Errorf("Unable to match expected region: %s", region)
+	}
+	region = GetRegion(metaServer.httpUrl(), true)
+	if region != "us-west-2" {
+		test.Errorf("Unable to match expected region: %s", region)
+	}
+}
+
+func TestGetMetadataV2(test *testing.T) {
+	// Mock the metadata endpoints
+	router := httptreemux.New()
+	router.PUT("/latest/api/token", func(w http.ResponseWriter, r *http.Request, params map[string]string) {
+		log.Println("Called /latest/api/token")
+		if r.Header.Get("X-aws-ec2-metadata-token-ttl-seconds") != "300" {
+			log.Println("request does not have expected X-aws-ec2-metadata-token-ttl-seconds header")
+			w.WriteHeader(500)
+		}
+		io.WriteString(w, "imdsv2-token")
+	})
+	router.GET("/latest/dynamic/instance-identity/document", func(w http.ResponseWriter, r *http.Request, params map[string]string) {
+		log.Println("Called /latest/dynamic/instance-identity/document")
+		if r.Header.Get("X-aws-ec2-metadata-token") != "imdsv2-token" {
+			log.Println("request does not have expected X-aws-ec2-metadata-token header")
+			w.WriteHeader(500)
+		}
+		io.WriteString(w, "{ \"test\": \"document\" }")
+	})
+
+	metaServer := &testServer{}
+	metaServer.start(router)
+	defer metaServer.stop()
+
+	_, err := GetDataV2(metaServer.httpUrl(), "/latest/dynamic/instance-identity/document")
+	if err != nil {
+		test.Errorf("Unable to retrieve instance document - %v", err)
 		return
 	}
 }

@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
 set -eu
 set -o pipefail
@@ -80,7 +80,7 @@ docker exec --user mysql:mysql \
     "${ZTS_DB_HOST}" mysql \
     --database=zts_store \
     --user=root --password="${ZTS_DB_ROOT_PASS}" \
-    --execute="CREATE USER 'zts_admin'@'${ZTS_HOST}.${DOCKER_NETWORK}' IDENTIFIED BY '${ZTS_DB_ADMIN_PASS}'; GRANT ALL PRIVILEGES ON zts_store.* TO 'zts_admin'@'${ZTS_HOST}.${DOCKER_NETWORK}'; FLUSH PRIVILEGES;"
+    --execute="CREATE USER 'zts_admin'@'%' IDENTIFIED BY '${ZTS_DB_ADMIN_PASS}'; GRANT ALL PRIVILEGES ON zts_store.* TO 'zts_admin'@'%'; FLUSH PRIVILEGES;"
 docker exec --user mysql:mysql \
     "${ZTS_DB_HOST}" mysql \
     --database=mysql \
@@ -93,6 +93,9 @@ docker exec --user mysql:mysql \
     --execute="SELECT user, host FROM user;"
 
 echo '4. start ZTS' | colored_cat g
+if [ ${ENABLE_LOCAL_BUILD_ZTS:-} ]; then
+    EXTRA_ARGS="-v ${ZTS_ASSY_DIR}/webapps/:/opt/athenz/zts/webapps -v ${ZTS_ASSY_DIR}/lib/jars:/opt/athenz/zts/lib/jars"
+fi
 docker run -d -h "${ZTS_HOST}" \
     -p "${ZTS_PORT}:${ZTS_PORT}" \
     --network="${DOCKER_NETWORK}" \
@@ -112,6 +115,7 @@ docker run -d -h "${ZTS_HOST}" \
     -e "ZMS_CLIENT_KEYSTORE_PASS=${ZMS_CLIENT_KEYSTORE_PASS}" \
     -e "ZMS_CLIENT_TRUSTSTORE_PASS=${ZMS_CLIENT_TRUSTSTORE_PASS}" \
     -e "ZTS_PORT=${ZTS_PORT}" \
+    ${EXTRA_ARGS:-} \
     --name "${ZTS_HOST}" athenz/athenz-zts-server:latest
 # wait for ZTS to be ready
 until docker run --rm --entrypoint curl \

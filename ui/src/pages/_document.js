@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,30 +16,37 @@
 import Document, { Html, Head, Main, NextScript } from 'next/document';
 import { extractCritical } from '@emotion/server';
 
+// export async function getServerSideProps(ctx) {
+//     const initialProps = await Document.getInitialProps(ctx);
+//     const styles = extractCritical(initialProps.html);
+//     return {
+//         ...initialProps,
+//         styles: (
+//             <>
+//                 {initialProps.styles}
+//                 <style
+//                     data-emotion-css={styles.ids.join(' ')}
+//                     nonce={ctx.req.headers.rid}
+//                     dangerouslySetInnerHTML={{ __html: styles.css }}
+//                 />
+//             </>
+//         ),
+//     };
+// }
+
 export default class MyDocument extends Document {
     static async getInitialProps(ctx) {
         const initialProps = await Document.getInitialProps(ctx);
-        const styles = extractCritical(initialProps.html);
-        return {
-            ...initialProps,
-            styles: (
-                <>
-                    {initialProps.styles}
-                    <style
-                        data-emotion-css={styles.ids.join(' ')}
-                        nonce={ctx.req.headers.rid}
-                        dangerouslySetInnerHTML={{ __html: styles.css }}
-                    />
-                </>
-            ),
-        };
+        const { nonce } = ctx.res.locals;
+        return { ...initialProps, nonce };
     }
-
     render() {
+        const { nonce } = this.props;
         return (
             <Html>
-                <Head>
+                <Head nonce={nonce}>
                     <link
+                        nonce={nonce}
                         rel='icon'
                         type='image/x-icon'
                         href='/static/favicon.ico'
@@ -47,7 +54,7 @@ export default class MyDocument extends Document {
                 </Head>
                 <body>
                     <Main />
-                    <NextScript />
+                    <NextScript nonce={nonce} />
                 </body>
             </Html>
         );

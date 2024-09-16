@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,15 +15,38 @@
  */
 import styled from '@emotion/styled';
 import DateUtils from '../utils/DateUtils';
+import AppUtils from '../utils/AppUtils';
 import React from 'react';
 import Button from '../denali/Button';
 import Switch from '../denali/Switch';
 import Alert from '../denali/Alert';
-import { MODAL_TIME_OUT } from '../constants/constants';
+import {
+    MODAL_TIME_OUT,
+    ENVIRONMENT_DROPDOWN_OPTIONS,
+} from '../constants/constants';
 import AddModal from '../modal/AddModal';
 import RequestUtils from '../utils/RequestUtils';
 import BusinessServiceModal from '../modal/BusinessServiceModal';
 import { colors } from '../denali/styles';
+import { updateBusinessService } from '../../redux/thunks/domain';
+import { connect } from 'react-redux';
+import {
+    selectDomainAuditEnabled,
+    selectDomainData,
+    selectBusinessServices,
+} from '../../redux/selectors/domainData';
+import {
+    selectBusinessServicesAll,
+    selectProductMasterLink,
+    selectTimeZone,
+} from '../../redux/selectors/domains';
+import { getBusinessServicesAll } from '../../redux/thunks/domains';
+import { makeRolesExpires } from '../../redux/actions/roles';
+import { makePoliciesExpires } from '../../redux/actions/policies';
+import Icon from '../denali/icons/Icon';
+import AddPoc from '../member/AddPoc';
+import { selectAllUsers } from '../../redux/selectors/user';
+import AddEnvironmentModal from '../modal/AddEnvironmentModal';
 
 const DomainSectionDiv = styled.div`
     margin: 20px 0;
@@ -32,10 +55,12 @@ const DomainSectionDiv = styled.div`
 const DetailsDiv = styled.div`
     display: flex;
     flex-flow: row nowrap;
+    margin: 20px 0;
 `;
 
 const SectionDiv = styled.div`
     padding-right: 50px;
+    flex-basis: 15%;
 `;
 
 const ValueDiv = styled.div`
@@ -71,7 +96,11 @@ const StyledAnchor = styled.a`
     font-weight: '';
 `;
 
-export default class DomainDetails extends React.Component {
+const IconContainer = styled.div`
+    margin-left: 5px;
+`;
+
+class DomainDetails extends React.Component {
     constructor(props) {
         super(props);
         this.api = props.api;
@@ -84,12 +113,55 @@ export default class DomainDetails extends React.Component {
             category: 'domain',
             errorMessageForModal: '',
             errorMessage: null,
+            showError: false,
+            showPoc: false,
+            showEnvironment: false,
+            showSecurityPoc: false,
+            poc: AppUtils.getSafe(
+                () => this.props.domainDetails.contacts['product-owner'],
+                'add'
+            ),
+            securityPoc: AppUtils.getSafe(
+                () => this.props.domainDetails.contacts['security-owner'],
+                'add'
+            ),
+            expandedDomain: false,
+            environmentName: this.props.domainDetails.environment || 'add',
         };
+        this.showError = this.showError.bind(this);
         this.closeModal = this.closeModal.bind(this);
         this.onClickOnboardToAWS = this.onClickOnboardToAWS.bind(this);
         this.toggleOnboardToAWSModal = this.toggleOnboardToAWSModal.bind(this);
         this.saveBusinessService = this.saveBusinessService.bind(this);
         this.saveJustification = this.saveJustification.bind(this);
+    }
+
+    componentDidMount() {
+        const { getBusinessServicesAll } = this.props;
+        Promise.all([getBusinessServicesAll()]).catch((err) => {
+            this.showError(RequestUtils.fetcherErrorCheckHelper(err));
+        });
+    }
+
+    componentDidUpdate = (prevProps, prevState, snapshot) => {
+        if (
+            prevState.businessServiceName !==
+                this.props.domainDetails.businessService &&
+            prevProps.domainDetails !== this.props.domainDetails
+        ) {
+            this.setState({
+                businessServiceName: this.props.domainDetails.businessService,
+                tempBusinessServiceName:
+                    this.props.domainDetails.businessService,
+            });
+        }
+    };
+
+    showError(errorMessage) {
+        this.setState({
+            showError: true,
+            errorMessage: errorMessage,
+        });
     }
 
     onClickBusinessService(domainName, businessServiceName, auditEnabled) {
@@ -105,6 +177,44 @@ export default class DomainDetails extends React.Component {
             errorMessage: null,
             errorMessageForModal: '',
             auditRef: '',
+        });
+    }
+
+    onClickPointOfContact(pointOfContact, contactType) {
+        if (contactType === 'product-owner') {
+            this.setState({
+                showPoc: true,
+                tempPocName: pointOfContact,
+            });
+        } else {
+            // contactType = 'security-owner'
+            this.setState({
+                showSecurityPoc: true,
+                tempSecurityPocName: pointOfContact,
+            });
+        }
+    }
+
+    onClickPointOfContactCancel() {
+        this.setState({
+            showPoc: false,
+            showSecurityPoc: false,
+            errorMessage: null,
+            errorMessageForModal: '',
+        });
+    }
+
+    onClickEnvironment() {
+        this.setState({
+            showEnvironment: true,
+        });
+    }
+
+    onClickEnvironmentCancel() {
+        this.setState({
+            showEnvironment: false,
+            errorMessage: null,
+            errorMessageForModal: '',
         });
     }
 
@@ -124,9 +234,8 @@ export default class DomainDetails extends React.Component {
         if (!auditMsg) {
             auditMsg = 'Updated ' + domainName + ' Meta using Athenz UI';
         }
-        this.api
-            .putMeta(
-                domainName,
+        this.props
+            .updateBusinessService(
                 domainName,
                 meta,
                 auditMsg,
@@ -169,7 +278,7 @@ export default class DomainDetails extends React.Component {
         }
 
         if (this.state.tempBusinessServiceName) {
-            var index = this.props.validBusinessServicesAll.findIndex(
+            var index = this.props.businessServicesAll.findIndex(
                 (x) =>
                     x.value ==
                     this.state.tempBusinessServiceName.substring(
@@ -212,6 +321,10 @@ export default class DomainDetails extends React.Component {
                     showSuccess: true,
                     showOnBoardToAWSModal: false,
                 });
+
+                // if template boarded, the policies and roles sorted in the store is out of date
+                this.props.makeRolesAndPoliciesExpires();
+
                 // this is to close the success alert
                 setTimeout(
                     () =>
@@ -238,12 +351,61 @@ export default class DomainDetails extends React.Component {
         this.setState({ showSuccess: null });
     }
 
+    expandDomain() {
+        this.setState({
+            expandedDomain: !this.state.expandedDomain,
+        });
+    }
+
+    onPocUpdateSuccessCb(contactType, pocName) {
+        let newState = {
+            showPoc: false,
+            showSecurityPoc: false,
+            showSuccess: true,
+        };
+        if (contactType === 'product-owner') {
+            newState.poc = pocName;
+            newState.successMessage = 'Successfully added Point of Contact';
+        } else {
+            newState.securityPoc = pocName;
+            newState.successMessage =
+                'Successfully added Security Point of Contact';
+        }
+        this.setState(newState);
+        setTimeout(
+            () =>
+                this.setState({
+                    showSuccess: false,
+                }),
+            MODAL_TIME_OUT + 1000
+        );
+    }
+
+    onEnvironmentUpdateSuccessCb(environmentName) {
+        this.setState({
+            showEnvironment: false,
+            showSuccess: true,
+            environmentName: environmentName,
+            successMessage: 'Successfully updated the domain environment',
+        });
+        setTimeout(
+            () =>
+                this.setState({
+                    showSuccess: false,
+                }),
+            MODAL_TIME_OUT + 1000
+        );
+    }
+
     render() {
+        const arrowup = 'arrowhead-up-circle-solid';
+        const arrowdown = 'arrowhead-down-circle';
+        let expandDomain = this.expandDomain.bind(this);
         let localDate = new DateUtils();
         let modifiedDate = localDate.getLocalDate(
             this.props.domainDetails.modified,
-            'UTC',
-            'UTC'
+            this.props.timeZone,
+            this.props.timeZone
         );
         let showOnBoardToAWS = false;
         if (
@@ -256,7 +418,7 @@ export default class DomainDetails extends React.Component {
             this,
             this.props.domainDetails.name,
             this.state.businessServiceName,
-            this.props.domainDetails.auditEnabled
+            this.props.auditEnabled
         );
         let businessServiceTitle = this.state.businessServiceName
             ? this.state.businessServiceName.substring(
@@ -272,48 +434,123 @@ export default class DomainDetails extends React.Component {
             this.onClickBusinessServiceCancel.bind(this);
         let clickBusinessServiceSubmit =
             this.onSubmitBusinessService.bind(this);
+
+        if (this.state.showError) {
+            return (
+                <Alert
+                    isOpen={this.state.showError}
+                    title={this.state.errorMessage}
+                    onClose={() => {}}
+                    type='danger'
+                />
+            );
+        }
+        let pocObject = {};
+        let securityPocObject = {};
+        if ((this.state.poc || this.state.securityPoc) && this.props.userList) {
+            this.props.userList.find((user) => {
+                let fullName = 'user.' + user.login;
+                if (fullName === this.state.poc) {
+                    pocObject = user;
+                }
+                if (fullName === this.state.securityPoc) {
+                    securityPocObject = user;
+                }
+            });
+        }
+        let onClickPointOfContact = this.onClickPointOfContact.bind(
+            this,
+            this.state.poc,
+            'product-owner'
+        );
+        let onClickSecurityPointOfContact = this.onClickPointOfContact.bind(
+            this,
+            this.state.poc,
+            'security-owner'
+        );
+        let contactType;
+        let pocName;
+        let openPocModal;
+        if (this.state.showPoc) {
+            openPocModal = true;
+            contactType = 'product-owner';
+            pocName = this.state.poc;
+        } else if (this.state.showSecurityPoc) {
+            openPocModal = true;
+            contactType = 'security-owner';
+            pocName = this.state.securityPoc;
+        }
+        let pocModal = openPocModal ? (
+            <AddPoc
+                domain={this.props.domainDetails.name}
+                isOpen={openPocModal}
+                onCancel={this.onClickPointOfContactCancel.bind(this)}
+                errorMessage={this.state.errorMessageForModal}
+                pocName={pocName}
+                contactType={contactType}
+                onPocUpdateSuccessCb={this.onPocUpdateSuccessCb.bind(this)}
+                csrf={this.props._csrf}
+                contacts={this.props.domainDetails.contacts || {}}
+                api={this.api}
+            />
+        ) : (
+            ''
+        );
+        let environmentModal = this.state.showEnvironment ? (
+            <AddEnvironmentModal
+                domain={this.props.domainDetails.name}
+                title='Environment'
+                isOpen={this.state.showEnvironment}
+                cancel={this.onClickEnvironmentCancel.bind(this)}
+                errorMessage={this.state.errorMessageForModal}
+                onEnvironmentUpdateSuccessCb={this.onEnvironmentUpdateSuccessCb.bind(
+                    this
+                )}
+                csrf={this.props._csrf}
+                api={this.api}
+                environmentName={this.state.environmentName}
+                environment={this.props.domainDetails.environment}
+                dropDownOptions={ENVIRONMENT_DROPDOWN_OPTIONS}
+            />
+        ) : (
+            ''
+        );
+
         return (
             <DomainSectionDiv data-testid='domain-details'>
                 <DetailsDiv>
+                    <SectionDiv>
+                        <DivStyledBusinessService>
+                            <StyledAnchor
+                                data-testid='poc-link'
+                                onClick={onClickPointOfContact}
+                            >
+                                {pocObject.name || 'add'}
+                            </StyledAnchor>
+                        </DivStyledBusinessService>
+                        <LabelDiv>POINT OF CONTACT</LabelDiv>
+                    </SectionDiv>
+                    <SectionDiv>
+                        <DivStyledBusinessService>
+                            <StyledAnchor
+                                data-testid='security-poc-link'
+                                onClick={onClickSecurityPointOfContact}
+                            >
+                                {securityPocObject.name || 'add'}
+                            </StyledAnchor>
+                        </DivStyledBusinessService>
+                        <LabelDiv>SECURITY POINT OF CONTACT</LabelDiv>
+                    </SectionDiv>
                     <SectionDiv>
                         <ValueDiv>{modifiedDate}</ValueDiv>
                         <LabelDiv>MODIFIED DATE</LabelDiv>
                     </SectionDiv>
                     <SectionDiv>
                         <ValueDiv>
-                            {this.props.domainDetails.ypmId ? (
-                                <StyledAnchorDiv
-                                    data-testid='pm-id'
-                                    onClick={() =>
-                                        window.open(
-                                            this.props.productMasterLink.url +
-                                                this.props.domainDetails.ypmId,
-                                            this.props.productMasterLink.target
-                                        )
-                                    }
-                                >
-                                    {this.props.domainDetails.ypmId}
-                                </StyledAnchorDiv>
-                            ) : (
-                                'N/A'
-                            )}
-                        </ValueDiv>
-                        <LabelDiv>Product ID</LabelDiv>
-                    </SectionDiv>
-                    <SectionDiv>
-                        <ValueDiv>
-                            {this.props.domainDetails.org
-                                ? this.props.domainDetails.org
-                                : 'N/A'}
-                        </ValueDiv>
-                        <LabelDiv>ORGANIZATION</LabelDiv>
-                    </SectionDiv>
-                    <SectionDiv>
-                        <ValueDiv>
                             <Switch
                                 name={'auditDomainDetails'}
-                                value={this.props.domainDetails.auditEnabled}
-                                checked={this.props.domainDetails.auditEnabled}
+                                value={this.props.auditEnabled}
+                                checked={this.props.auditEnabled}
                                 disabled
                             />
                         </ValueDiv>
@@ -328,13 +565,26 @@ export default class DomainDetails extends React.Component {
                         <LabelDiv>AWS ACCOUNT ID</LabelDiv>
                     </SectionDiv>
                     <SectionDiv>
-                        <DivStyledBusinessService title={businessServiceTitle}>
-                            <StyledAnchor onClick={businessServiceItem}>
-                                {businessServiceTitle}
-                            </StyledAnchor>
-                        </DivStyledBusinessService>
-                        <LabelDiv>BUSINESS SERVICE</LabelDiv>
+                        <ValueDiv>
+                            {this.props.domainDetails.gcpProject
+                                ? this.props.domainDetails.gcpProject
+                                : 'N/A'}
+                        </ValueDiv>
+                        <LabelDiv>GCP PROJECT ID</LabelDiv>
                     </SectionDiv>
+                    <ValueDiv>More Details</ValueDiv>
+                    <IconContainer>
+                        <Icon
+                            icon={
+                                this.state.expandedDomain ? arrowup : arrowdown
+                            }
+                            onClick={expandDomain}
+                            color={colors.icons}
+                            isLink
+                            size={'1.25em'}
+                            verticalAlign={'text-bottom'}
+                        />
+                    </IconContainer>
                     {showOnBoardToAWS && (
                         <SectionDiv>
                             <Button
@@ -363,6 +613,7 @@ export default class DomainDetails extends React.Component {
                             type='success'
                         />
                     ) : null}
+                    {pocModal}
                     {this.state.showBusinessService ? (
                         <BusinessServiceModal
                             isOpen={this.state.showBusinessService}
@@ -370,25 +621,106 @@ export default class DomainDetails extends React.Component {
                             businessServiceName={this.state.businessServiceName}
                             domainName={this.props.domainDetails.name}
                             submit={clickBusinessServiceSubmit}
-                            showJustification={
-                                this.props.domainDetails.auditEnabled
-                            }
+                            showJustification={this.props.auditEnabled}
                             onJustification={this.saveJustification}
                             onBusinessService={this.saveBusinessService}
                             key={'business-service-modal'}
                             errorMessage={this.state.errorMessageForModal}
-                            api={this.api}
                             userId={this.state.userId}
-                            validBusinessServices={
-                                this.props.validBusinessServices
-                            }
+                            validBusinessServices={this.props.businessServices}
                             validBusinessServicesAll={
-                                this.props.validBusinessServicesAll
+                                this.props.businessServicesAll
                             }
                         />
                     ) : null}
+                    {environmentModal}
                 </DetailsDiv>
+                {this.state.expandedDomain ? (
+                    <DetailsDiv>
+                        <SectionDiv>
+                            <ValueDiv>
+                                {this.props.domainDetails.productId ? (
+                                    <StyledAnchorDiv
+                                        data-testid='pm-id'
+                                        onClick={() =>
+                                            window.open(
+                                                this.props.productMasterLink
+                                                    .url +
+                                                    this.props.domainDetails
+                                                        .productId,
+                                                this.props.productMasterLink
+                                                    .target
+                                            )
+                                        }
+                                    >
+                                        {this.props.domainDetails.productId}
+                                    </StyledAnchorDiv>
+                                ) : (
+                                    'N/A'
+                                )}
+                            </ValueDiv>
+                            <LabelDiv>Product ID</LabelDiv>
+                        </SectionDiv>
+                        <SectionDiv>
+                            <ValueDiv>
+                                {this.props.domainDetails.org
+                                    ? this.props.domainDetails.org
+                                    : 'N/A'}
+                            </ValueDiv>
+                            <LabelDiv>ORGANIZATION</LabelDiv>
+                        </SectionDiv>
+                        <SectionDiv>
+                            <DivStyledBusinessService
+                                title={businessServiceTitle}
+                            >
+                                <StyledAnchor onClick={businessServiceItem}>
+                                    {businessServiceTitle}
+                                </StyledAnchor>
+                            </DivStyledBusinessService>
+                            <LabelDiv>BUSINESS SERVICE</LabelDiv>
+                        </SectionDiv>
+                        <SectionDiv>
+                            <DivStyledBusinessService
+                                title={this.state.environmentName}
+                            >
+                                <StyledAnchor
+                                    onClick={this.onClickEnvironment.bind(this)}
+                                >
+                                    {this.state.environmentName}
+                                </StyledAnchor>
+                            </DivStyledBusinessService>
+                            <LabelDiv>ENVIRONMENT</LabelDiv>
+                        </SectionDiv>
+                    </DetailsDiv>
+                ) : null}
             </DomainSectionDiv>
         );
     }
 }
+
+const mapStateToProps = (state, props) => {
+    return {
+        ...props,
+        domainDetails: selectDomainData(state),
+        productMasterLink: selectProductMasterLink(state),
+        auditEnabled: selectDomainAuditEnabled(state),
+        businessServices: selectBusinessServices(state),
+        businessServicesAll: selectBusinessServicesAll(state),
+        timeZone: selectTimeZone(state),
+        userList: selectAllUsers(state),
+    };
+};
+
+const mapDispatchToProps = (dispatch) => ({
+    makeRolesAndPoliciesExpires: () => {
+        dispatch(makeRolesExpires());
+        dispatch(makePoliciesExpires());
+    },
+    updateBusinessService: (domainName, meta, auditMsg, csrf, category) =>
+        dispatch(
+            updateBusinessService(domainName, meta, auditMsg, csrf, category)
+        ),
+    getBusinessServicesAll: () => dispatch(getBusinessServicesAll()),
+});
+
+export default connect(mapStateToProps, mapDispatchToProps)(DomainDetails);

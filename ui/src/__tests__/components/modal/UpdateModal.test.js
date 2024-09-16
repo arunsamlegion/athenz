@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,10 +20,10 @@ import UpdateModal from '../../../components/modal/UpdateModal';
 describe('UpdateModal', () => {
     it('should render', () => {
         const isOpen = true;
-        const cancel = function() {};
+        const cancel = function () {};
         const message = 'test';
         const name = 'name';
-        const submit = function() {};
+        const submit = function () {};
         const { getByTestId } = render(
             <UpdateModal
                 isOpen={isOpen}

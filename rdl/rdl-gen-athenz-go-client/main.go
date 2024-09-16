@@ -1,5 +1,5 @@
-// Copyright 2015 Yahoo Inc. https://github.com/ardielle
-//           2019 Oath Holdings Inc. Modified to generate go client code for Athenz Clients
+// Copyright The Athenz Authors
+// https://github.com/ardielle modified to generate go client code for Athenz Clients
 // Licensed under the terms of the Apache version 2.0 license. See LICENSE file for terms.
 
 package main
@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"text/template"
 
@@ -113,22 +114,21 @@ var _ = rdl.BaseTypeAny
 var _ = ioutil.NopCloser
 
 type {{client}} struct {
-	URL         string
-	Transport   http.RoundTripper
-	CredsHeader *string
-	CredsToken  *string
-	Timeout     time.Duration
+	URL             string
+	Transport       http.RoundTripper
+	CredsHeaders    map[string]string
+	Timeout         time.Duration
+	DisableRedirect bool
 }
 
 // NewClient creates and returns a new HTTP client object for the {{.Name}} service
 func NewClient(url string, transport http.RoundTripper) {{client}} {
-	return {{client}}{url, transport, nil, nil, 0}
+	return {{client}}{url, transport, make(map[string]string), 0, false}
 }
 
 // AddCredentials adds the credentials to the client for subsequent requests.
 func (client *{{client}}) AddCredentials(header string, token string) {
-	client.CredsHeader = &header
-	client.CredsToken = &token
+	client.CredsHeaders[header] = token
 }
 
 func (client {{client}}) getClient() *http.Client {
@@ -138,6 +138,11 @@ func (client {{client}}) getClient() *http.Client {
 	} else {
 		c = &http.Client{}
 	}
+	if client.DisableRedirect {
+		c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
+	}
 	if client.Timeout > 0 {
 		c.Timeout = client.Timeout
 	}
@@ -145,11 +150,14 @@ func (client {{client}}) getClient() *http.Client {
 }
 
 func (client {{client}}) addAuthHeader(req *http.Request) {
-	if client.CredsHeader != nil && client.CredsToken != nil {
-		if strings.HasPrefix(*client.CredsHeader, "Cookie.") {
-			req.Header.Add("Cookie", (*client.CredsHeader)[7:]+"="+*client.CredsToken)
+	if len(client.CredsHeaders) == 0 {
+		return
+	}
+	for key, value := range client.CredsHeaders {
+		if strings.HasPrefix(key, "Cookie.") {
+			req.Header.Add("Cookie", (key)[7:]+"="+value)
 		} else {
-			req.Header.Add(*client.CredsHeader, *client.CredsToken)
+			req.Header.Add(key, value)
 		}
 	}
 }
@@ -225,7 +233,7 @@ func (client {{client}}) httpPostWithContentType(url string, headers map[string]
 }
 
 func (client {{client}}) httpPost(url string, headers map[string]string, body []byte) (*http.Response, error) {
-	return client.httpPostWithContentType(url, headers, body, "application/json")	
+	return client.httpPostWithContentType(url, headers, body, "application/json")
 }
 
 func (client {{client}}) httpPatch(url string, headers map[string]string, body []byte) (*http.Response, error) {
@@ -548,10 +556,10 @@ func goMethodBody(reg rdl.TypeRegistry, r *rdl.Resource, precise bool) string {
 		dataReturn = dret
 		errorReturn = eret
 	}
-	headers := map[string]rdl.Identifier{}
+	headers := map[string]*rdl.ResourceInput{}
 	for _, in := range r.Inputs {
 		if in.Header != "" {
-			headers[in.Header] = in.Name
+			headers[in.Header] = in
 		}
 	}
 	s := ""
@@ -560,11 +568,21 @@ func goMethodBody(reg rdl.TypeRegistry, r *rdl.Resource, precise bool) string {
 	}
 	httpArg := "url, nil"
 	if len(headers) > 0 {
-		//not optimal: when the headers are empty ("") they are still included
+		//sort the header names so we have a defined order every time
+		headerNames := make([]string, 0, len(headers))
+		for headerName := range headers {
+			headerNames = append(headerNames, headerName)
+		}
+		sort.Strings(headerNames)
 		httpArg = "url, headers"
 		s += "\theaders := map[string]string{\n"
-		for k, v := range headers {
-			s += fmt.Sprintf("\t\t%q: %s,\n", k, v)
+		for _, k := range headerNames {
+			v := headers[k]
+			if v.Type == "Bool" {
+				s += fmt.Sprintf("\t\t%q: strconv.FormatBool(*%s),\n", k, v.Name)
+			} else {
+				s += fmt.Sprintf("\t\t%q: %s,\n", k, v.Name)
+			}
 		}
 		s += "\t}\n"
 	}
@@ -622,6 +640,7 @@ func goMethodBody(reg rdl.TypeRegistry, r *rdl.Resource, precise bool) string {
 	expected = append(expected, rdl.StatusCode(r.Expected))
 	couldBeNoContent := "NO_CONTENT" == r.Expected
 	couldBeNotModified := "NOT_MODIFIED" == r.Expected
+	couldBeRedirect := "FOUND" == r.Expected
 	for _, e := range r.Alternatives {
 		if "NO_CONTENT" == e {
 			couldBeNoContent = true
@@ -629,10 +648,13 @@ func goMethodBody(reg rdl.TypeRegistry, r *rdl.Resource, precise bool) string {
 		if "NOT_MODIFIED" == e {
 			couldBeNotModified = true
 		}
+		if "FOUND" == e {
+			couldBeRedirect = true
+		}
 		expected = append(expected, rdl.StatusCode(e))
 	}
 	s += "\tcase " + strings.Join(expected, ", ") + ":\n"
-	if couldBeNoContent || couldBeNotModified {
+	if couldBeNoContent || couldBeNotModified || couldBeRedirect {
 		if !noContent {
 			tmp := ""
 			if couldBeNoContent {
@@ -643,6 +665,12 @@ func goMethodBody(reg rdl.TypeRegistry, r *rdl.Resource, precise bool) string {
 					tmp += " || "
 				}
 				tmp += "304 != resp.StatusCode"
+			}
+			if couldBeRedirect {
+				if tmp != "" {
+					tmp += " || "
+				}
+				tmp += "302 != resp.StatusCode"
 			}
 			s += "\t\tif " + tmp + " {\n"
 			s += "\t\t\terr = json.NewDecoder(resp.Body).Decode(&data)\n"
@@ -668,7 +696,7 @@ func goMethodBody(reg rdl.TypeRegistry, r *rdl.Resource, precise bool) string {
 	//end loop
 	s += "\tdefault:\n"
 	s += "\t\tvar errobj rdl.ResourceError\n"
-	s += "\t\tcontentBytes, err " + assign + " ioutil.ReadAll(resp.Body)\n"
+	s += "\t\tcontentBytes, err " + assign + " io.ReadAll(resp.Body)\n"
 	s += "\t\tif err != nil {\n\t\t\t" + errorReturn + "\n\t\t}\n"
 	s += "\t\tjson.Unmarshal(contentBytes, &errobj)\n"
 	s += "\t\tif errobj.Code == 0 {\n"

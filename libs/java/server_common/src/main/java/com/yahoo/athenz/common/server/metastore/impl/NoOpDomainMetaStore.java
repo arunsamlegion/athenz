@@ -1,5 +1,5 @@
 /*
- *  Copyright Athenz Authors
+ *  Copyright The Athenz Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -64,6 +64,20 @@ public class NoOpDomainMetaStore implements DomainMetaStore {
 
     @Override
     public List<String> getValidAzureSubscriptions(String userName) {
+        return new ArrayList<>();
+    }
+
+    @Override
+    public boolean isValidGcpProject(String domainName, String gcpProject) {
+        return true;
+    }
+
+    @Override
+    public void setGcpProjectDomain(String domainName, String gcpProject) {
+    }
+
+    @Override
+    public List<String> getValidGcpProjects(String userName) {
         return new ArrayList<>();
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,9 +25,13 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.temporal.ChronoUnit;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Date;
 
 import com.google.common.io.Resources;
-import com.yahoo.athenz.common.server.cert.X509CertRecord;
+import com.yahoo.athenz.common.server.cert.Priority;
 import com.yahoo.athenz.common.server.util.ConfigProperties;
 import com.yahoo.athenz.zts.cert.InstanceCertManager;
 import org.bouncycastle.pkcs.PKCS10CertificationRequest;
@@ -86,10 +90,10 @@ public class ZTSUtilsTest {
     @Test
     public void testCreateSSLContextObject() {
         
-        System.setProperty(ZTSConsts.ZTS_PROP_KEYSTORE_PATH, "file:///tmp/keystore");
+        System.setProperty(ZTSConsts.ZTS_PROP_KEYSTORE_PATH, Resources.getResource("keystore.pkcs12").getFile());
         System.setProperty(ZTSConsts.ZTS_PROP_KEYSTORE_TYPE, "PKCS12");
         System.setProperty(ZTSConsts.ZTS_PROP_KEYSTORE_PASSWORD, "pass123");
-        System.setProperty(ZTSConsts.ZTS_PROP_TRUSTSTORE_PATH, "file:///tmp/truststore");
+        System.setProperty(ZTSConsts.ZTS_PROP_TRUSTSTORE_PATH, Resources.getResource("truststore.jks").getFile());
         System.setProperty(ZTSConsts.ZTS_PROP_TRUSTSTORE_TYPE, "PKCS12");
         System.setProperty(ZTSConsts.ZTS_PROP_TRUSTSTORE_PASSWORD, "pass123");
         System.setProperty(ZTSConsts.ZTS_PROP_KEYMANAGER_PASSWORD, "pass123");
@@ -97,24 +101,22 @@ public class ZTSUtilsTest {
         System.setProperty(ZTSConsts.ZTS_PROP_EXCLUDED_PROTOCOLS, ZTSUtils.ZTS_DEFAULT_EXCLUDED_PROTOCOLS);
         System.setProperty(ZTSConsts.ZTS_PROP_WANT_CLIENT_CERT, "true");
         
-        SslContextFactory sslContextFactory = ZTSUtils.createSSLContextObject(null);
+        SslContextFactory.Client sslContextFactory = ZTSUtils.createSSLContextObject(null, null);
         assertNotNull(sslContextFactory);
-        assertEquals(sslContextFactory.getKeyStorePath(), "file:///tmp/keystore");
+        assertEquals(sslContextFactory.getKeyStorePath(), "file://" + Resources.getResource("keystore.pkcs12").getFile());
         assertEquals(sslContextFactory.getKeyStoreType(), "PKCS12");
-        assertEquals(sslContextFactory.getTrustStoreResource().toString(), "file:///tmp/truststore");
+        assertEquals(sslContextFactory.getTrustStoreResource().toString(), "file://" + Resources.getResource("truststore.jks").getFile());
         assertEquals(sslContextFactory.getTrustStoreType(), "PKCS12");
         assertEquals(sslContextFactory.getExcludeCipherSuites(), ZTSUtils.ZTS_DEFAULT_EXCLUDED_CIPHER_SUITES.split(","));
         assertEquals(sslContextFactory.getExcludeProtocols(), ZTSUtils.ZTS_DEFAULT_EXCLUDED_PROTOCOLS.split(","));
-        assertTrue(sslContextFactory.getWantClientAuth());
     }
     
     @Test
     public void testCreateSSLContextObjectNoValues() {
         
-        SslContextFactory sslContextFactory = ZTSUtils.createSSLContextObject(null);
+        SslContextFactory.Client sslContextFactory = ZTSUtils.createSSLContextObject(null, null);
         
         assertNotNull(sslContextFactory);
-        assertFalse(sslContextFactory.getWantClientAuth());
         assertNull(sslContextFactory.getKeyStoreResource());
         // store type always defaults to PKCS12
         assertEquals(sslContextFactory.getKeyStoreType(), "PKCS12");
@@ -126,35 +128,33 @@ public class ZTSUtilsTest {
     @Test
     public void testCreateSSLContextObjectNoKeyStore() {
         
-        System.setProperty(ZTSConsts.ZTS_PROP_TRUSTSTORE_PATH, "file:///tmp/truststore");
+        System.setProperty(ZTSConsts.ZTS_PROP_TRUSTSTORE_PATH, Resources.getResource("truststore.jks").getFile());
         System.setProperty(ZTSConsts.ZTS_PROP_TRUSTSTORE_TYPE, "PKCS12");
         System.setProperty(ZTSConsts.ZTS_PROP_TRUSTSTORE_PASSWORD, "pass123");
         System.setProperty(ZTSConsts.ZTS_PROP_KEYMANAGER_PASSWORD, "pass123");
 
-        SslContextFactory sslContextFactory = ZTSUtils.createSSLContextObject(null);
+        SslContextFactory.Client sslContextFactory = ZTSUtils.createSSLContextObject(null, null);
         assertNotNull(sslContextFactory);
-        assertFalse(sslContextFactory.getWantClientAuth());
         assertNull(sslContextFactory.getKeyStoreResource());
         // store type always defaults to PKCS12
         assertEquals(sslContextFactory.getKeyStoreType(), "PKCS12");
-        assertEquals(sslContextFactory.getTrustStoreResource().toString(), "file:///tmp/truststore");
+        assertEquals(sslContextFactory.getTrustStoreResource().toString(), "file://" + Resources.getResource("truststore.jks").getFile());
         assertEquals(sslContextFactory.getTrustStoreType(), "PKCS12");
     }
     
     @Test
     public void testCreateSSLContextObjectNoTrustStore() {
         
-        System.setProperty(ZTSConsts.ZTS_PROP_KEYSTORE_PATH, "file:///tmp/keystore");
+        System.setProperty(ZTSConsts.ZTS_PROP_KEYSTORE_PATH, Resources.getResource("keystore.pkcs12").getFile());
         System.setProperty(ZTSConsts.ZTS_PROP_KEYSTORE_TYPE, "PKCS12");
         System.setProperty(ZTSConsts.ZTS_PROP_KEYSTORE_PASSWORD, "pass123");
         System.setProperty(ZTSConsts.ZTS_PROP_EXCLUDED_CIPHER_SUITES, ZTSUtils.ZTS_DEFAULT_EXCLUDED_CIPHER_SUITES);
         System.setProperty(ZTSConsts.ZTS_PROP_EXCLUDED_PROTOCOLS, ZTSUtils.ZTS_DEFAULT_EXCLUDED_PROTOCOLS);
         System.setProperty(ZTSConsts.ZTS_PROP_WANT_CLIENT_CERT, "true");
 
-        SslContextFactory sslContextFactory = ZTSUtils.createSSLContextObject(null);
+        SslContextFactory.Client sslContextFactory = ZTSUtils.createSSLContextObject(null, null);
         assertNotNull(sslContextFactory);
-        assertTrue(sslContextFactory.getWantClientAuth());
-        assertEquals(sslContextFactory.getKeyStorePath(), "file:///tmp/keystore");
+        assertEquals(sslContextFactory.getKeyStorePath(), "file://" + Resources.getResource("keystore.pkcs12").getFile());
         assertEquals(sslContextFactory.getKeyStoreType(), "PKCS12");
         assertNull(sslContextFactory.getTrustStoreResource());
         // store type always defaults to PKCS12
@@ -167,13 +167,14 @@ public class ZTSUtilsTest {
     public void testGenerateIdentityFailure() throws IOException {
         
         InstanceCertManager certManager = Mockito.mock(InstanceCertManager.class);
-        Mockito.when(certManager.generateX509Certificate(Mockito.any(), Mockito.any(),
-                Mockito.any(), Mockito.any(), Mockito.anyInt())).thenReturn(null);
+        Mockito.when(certManager.generateX509Certificate(Mockito.any(), Mockito.any(), Mockito.any(),
+                Mockito.any(), Mockito.anyInt(), Mockito.any(), Mockito.any())).thenReturn(null);
         
         Path path = Paths.get("src/test/resources/valid.csr");
         String csr = new String(Files.readAllBytes(path));
         
-        Identity identity = ZTSUtils.generateIdentity(certManager, "aws", "us-west-2", csr, "unknown.syncer", null, 0);
+        Identity identity = ZTSUtils.generateIdentity(certManager, "aws", "us-west-2", csr, "unknown.syncer",
+                null, 0, null);
         assertNull(identity);
     }
     
@@ -206,27 +207,11 @@ public class ZTSUtilsTest {
         Path path = Paths.get("src/test/resources/athenz.instanceid.csr");
         String csr = new String(Files.readAllBytes(path));
         
-        X509CertRecord certRecord = new X509CertRecord();
-        certRecord.setService("athenz.production");
-        certRecord.setInstanceId("1001");
-        
         PKCS10CertificationRequest certReq = Crypto.getPKCS10CertRequest(csr);
-        boolean result = ZTSUtils.verifyCertificateRequest(certReq, "athenz", "production", certRecord);
+        boolean result = ZTSUtils.verifyCertificateRequest(certReq, "athenz", "production");
         assertTrue(result);
-        
-        certRecord.setService("athenz.production");
-        certRecord.setInstanceId("1001");
-        result = ZTSUtils.verifyCertificateRequest(certReq, "athenz2", "production", certRecord);
-        assertFalse(result);
-        
-        certRecord.setService("athenz2.production");
-        certRecord.setInstanceId("1001");
-        result = ZTSUtils.verifyCertificateRequest(certReq, "athenz", "production", certRecord);
-        assertFalse(result);
-        
-        certRecord.setService("athenz.production");
-        certRecord.setInstanceId("1002");
-        result = ZTSUtils.verifyCertificateRequest(certReq, "athenz", "production", certRecord);
+
+        result = ZTSUtils.verifyCertificateRequest(certReq, "athenz2", "production");
         assertFalse(result);
     }
     
@@ -237,7 +222,7 @@ public class ZTSUtilsTest {
         String csr = new String(Files.readAllBytes(path));
         
         PKCS10CertificationRequest certReq = Crypto.getPKCS10CertRequest(csr);
-        boolean result = ZTSUtils.verifyCertificateRequest(certReq, "athenz2", "production", null);
+        boolean result = ZTSUtils.verifyCertificateRequest(certReq, "athenz2", "production");
         assertFalse(result);
     }
     
@@ -248,10 +233,10 @@ public class ZTSUtilsTest {
         String csr = new String(Files.readAllBytes(path));
         
         PKCS10CertificationRequest certReq = Crypto.getPKCS10CertRequest(csr);
-        boolean result = ZTSUtils.verifyCertificateRequest(certReq, "athenz", "production", null);
+        boolean result = ZTSUtils.verifyCertificateRequest(certReq, "athenz", "production");
         assertTrue(result);
         
-        result = ZTSUtils.verifyCertificateRequest(certReq, "athenz2", "production", null);
+        result = ZTSUtils.verifyCertificateRequest(certReq, "athenz2", "production");
         assertFalse(result);
     }
     
@@ -335,18 +320,18 @@ public class ZTSUtilsTest {
     
     @Test
     public void testGetApplicationSecret() {
-        assertEquals(ZTSUtils.getApplicationSecret(null, "appname", "pass"), "pass");
+        assertEquals(ZTSUtils.getApplicationSecret(null, "appname", "pass", null), "pass");
         
         PrivateKeyStore keyStore = Mockito.mock(PrivateKeyStore.class);
-        Mockito.when(keyStore.getApplicationSecret(null, "pass")).thenReturn("app234");
-        assertEquals(ZTSUtils.getApplicationSecret(keyStore, null, "pass"), "app234");
+        Mockito.when(keyStore.getSecret(null, null, "pass")).thenReturn("app234".toCharArray());
+        assertEquals(ZTSUtils.getSecret(keyStore, null, "pass", null), "app234".toCharArray());
         
-        Mockito.when(keyStore.getApplicationSecret("appname", "passname")).thenReturn("app123");
-        assertEquals(ZTSUtils.getApplicationSecret(keyStore, "appname", "passname"), "app123");
+        Mockito.when(keyStore.getSecret("appname", null, "passname")).thenReturn("app123".toCharArray());
+        assertEquals(ZTSUtils.getSecret(keyStore, "appname", "passname", null), "app123".toCharArray());
     }
 
     @Test
-    public void testCreateSSLClientContextObject() {
+    public void testCreateServerSSLContextObject() {
 
         String filePath = Resources.getResource("keystore.pkcs12").getFile();
         System.setProperty("athenz.ssl_key_store", filePath);
@@ -357,7 +342,7 @@ public class ZTSUtilsTest {
         System.setProperty("athenz.ssl_trust_store_type", "JKS");
         System.setProperty("athenz.ssl_trust_store_password", "123456");
 
-        SSLContext sslContext = ZTSUtils.createServerClientSSLContext(null);
+        SSLContext sslContext = ZTSUtils.getAthenzServerSSLContext(null);
         assertNotNull(sslContext);
 
         System.clearProperty("athenz.ssl_key_store");
@@ -368,159 +353,145 @@ public class ZTSUtilsTest {
     }
 
     @Test
-    public void testCreateSSLClientContextObjectLocalCert() {
+    public void testCreateSSLProviderClientContextObjectLocalCert() {
         String certPath = Resources.getResource("gdpr.aws.core.cert.pem").getPath();//public
         String keyPath = Resources.getResource("unit_test_gdpr.aws.core.key.pem").getPath();//private
 
-        System.setProperty("athenz.ssl_client_use_file_cert_and_key", "true");
-        System.setProperty("athenz.ssl_client_public_cert_path", certPath);
-        System.setProperty("athenz.ssl_client_private_key_path", keyPath);
+        System.setProperty("athenz.zts.provider.ssl_client_public_cert_path", certPath);
+        System.setProperty("athenz.zts.provider.ssl_client_private_key_path", keyPath);
         String filePath = Resources.getResource("truststore.jks").getFile();
-        System.setProperty("athenz.ssl_trust_store", filePath);
-        System.setProperty("athenz.ssl_trust_store_type", "JKS");
-        System.setProperty("athenz.ssl_trust_store_password", "123456");
+        System.setProperty("athenz.zts.provider.ssl_client_trust_store", filePath);
+        System.setProperty("athenz.zts.provider.ssl_client_trust_store_type", "JKS");
+        System.setProperty("athenz.zts.provider.ssl_client_trust_store_password", "123456");
 
-        SSLContext sslContext = ZTSUtils.createServerClientSSLContext(null);
+        SSLContext sslContext = ZTSUtils.getAthenzProviderClientSSLContext(null);
         assertNotNull(sslContext);
 
-        System.clearProperty("athenz.ssl_client_use_file_cert_and_key");
-        System.clearProperty("athenz.ssl_client_public_cert_path");
-        System.clearProperty("athenz.ssl_client_private_key_path");
-        System.clearProperty("athenz.ssl_trust_store");
-        System.clearProperty("athenz.ssl_trust_store_type");
-        System.clearProperty("athenz.ssl_trust_store_password");
+        System.clearProperty("athenz.zts.provider.ssl_client_public_cert_path");
+        System.clearProperty("athenz.zts.provider.ssl_client_private_key_path");
+        System.clearProperty("athenz.zts.provider.ssl_client_trust_store");
+        System.clearProperty("athenz.zts.provider.ssl_client_trust_store_type");
+        System.clearProperty("athenz.zts.provider.ssl_client_trust_store_password");
     }
 
     @Test
-    public void testCreateSSLClientContextObjectLocalCertInvalidFile() {
+    public void testCreateSSLProviderClientContextObjectLocalCertInvalidFile() {
         String certPath = Resources.getResource("athenz.instanceid.csr").getPath();//public
         String keyPath = Resources.getResource("unit_test_gdpr.aws.core.key.pem").getPath();//private
 
-        System.setProperty("athenz.ssl_client_use_file_cert_and_key", "true");
-        System.setProperty("athenz.ssl_client_public_cert_path", certPath);
-        System.setProperty("athenz.ssl_client_private_key_path", keyPath);
+        System.setProperty("athenz.zts.provider.ssl_client_public_cert_path", certPath);
+        System.setProperty("athenz.zts.provider.ssl_client_private_key_path", keyPath);
         String filePath = Resources.getResource("truststore.jks").getFile();
         System.setProperty("athenz.ssl_trust_store", filePath);
         System.setProperty("athenz.ssl_trust_store_type", "JKS");
         System.setProperty("athenz.ssl_trust_store_password", "123456");
 
-        SSLContext sslContext = ZTSUtils.createServerClientSSLContext(null);
+        SSLContext sslContext = ZTSUtils.getAthenzProviderClientSSLContext(null);
         assertNull(sslContext);
 
-        System.clearProperty("athenz.ssl_client_use_file_cert_and_key");
-        System.clearProperty("athenz.ssl_client_public_cert_path");
-        System.clearProperty("athenz.ssl_client_private_key_path");
+        System.clearProperty("athenz.zts.provider.ssl_client_public_cert_path");
+        System.clearProperty("athenz.zts.provider.ssl_client_private_key_path");
         System.clearProperty("athenz.ssl_trust_store");
         System.clearProperty("athenz.ssl_trust_store_type");
         System.clearProperty("athenz.ssl_trust_store_password");
     }
 
     @Test
-    public void testCreateSSLClientContextObjectLocalCertBadPath() {
+    public void testCreateSSLProviderClientContextObjectLocalCertBadPath() {
 
-        System.setProperty("athenz.ssl_client_use_file_cert_and_key", "true");
-        System.setProperty("athenz.ssl_client_public_cert_path", "/cert/not/found.pem");
-        System.setProperty("athenz.ssl_client_private_key_path", "/key/not/found.pem");
+        System.setProperty("athenz.zts.provider.ssl_client_public_cert_path", "/cert/not/found.pem");
+        System.setProperty("athenz.zts.provider.ssl_client_private_key_path", "/key/not/found.pem");
         String filePath = Resources.getResource("truststore.jks").getFile();
         System.setProperty("athenz.ssl_trust_store", filePath);
         System.setProperty("athenz.ssl_trust_store_type", "JKS");
         System.setProperty("athenz.ssl_trust_store_password", "123456");
 
-        SSLContext sslContext = ZTSUtils.createServerClientSSLContext(null);
+        SSLContext sslContext = ZTSUtils.getAthenzProviderClientSSLContext(null);
         assertNull(sslContext);
 
-        System.clearProperty("athenz.ssl_client_use_file_cert_and_key");
-        System.clearProperty("athenz.ssl_client_public_cert_path");
-        System.clearProperty("athenz.ssl_client_private_key_path");
+        System.clearProperty("athenz.zts.provider.ssl_client_public_cert_path");
+        System.clearProperty("athenz.zts.provider.ssl_client_private_key_path");
         System.clearProperty("athenz.ssl_trust_store");
         System.clearProperty("athenz.ssl_trust_store_type");
         System.clearProperty("athenz.ssl_trust_store_password");
     }
 
     @Test
-    public void testCreateSSLClientContextObjectLocalCertBadKeyPath() {
+    public void testCreateSSLProviderClientContextObjectLocalCertBadKeyPath() {
         String certPath = Resources.getResource("gdpr.aws.core.cert.pem").getPath();//public
-        System.setProperty("athenz.ssl_client_use_file_cert_and_key", "true");
-        System.setProperty("athenz.ssl_client_public_cert_path", certPath);
-        System.setProperty("athenz.ssl_client_private_key_path", "/key/not/found.pem");
+        System.setProperty("athenz.zts.provider.ssl_client_public_cert_path", certPath);
+        System.setProperty("athenz.zts.provider.ssl_client_private_key_path", "/key/not/found.pem");
         String filePath = Resources.getResource("truststore.jks").getFile();
         System.setProperty("athenz.ssl_trust_store", filePath);
         System.setProperty("athenz.ssl_trust_store_type", "JKS");
         System.setProperty("athenz.ssl_trust_store_password", "123456");
 
-        SSLContext sslContext = ZTSUtils.createServerClientSSLContext(null);
+        SSLContext sslContext = ZTSUtils.getAthenzProviderClientSSLContext(null);
         assertNull(sslContext);
 
-        System.clearProperty("athenz.ssl_client_use_file_cert_and_key");
-        System.clearProperty("athenz.ssl_client_public_cert_path");
-        System.clearProperty("athenz.ssl_client_private_key_path");
+        System.clearProperty("athenz.zts.provider.ssl_client_public_cert_path");
+        System.clearProperty("athenz.zts.provider.ssl_client_private_key_path");
         System.clearProperty("athenz.ssl_trust_store");
         System.clearProperty("athenz.ssl_trust_store_type");
         System.clearProperty("athenz.ssl_trust_store_password");
     }
 
     @Test
-    public void testCreateSSLClientContextObjectLocalCertTrustStoreNotSpecified() {
-        System.setProperty("athenz.ssl_client_use_file_cert_and_key", "true");
+    public void testCreateSSLProviderClientContextObjectLocalCertTrustStoreNotSpecified() {
         System.setProperty("athenz.ssl_trust_store_type", "JKS");
         System.setProperty("athenz.ssl_trust_store_password", "123456");
 
-        SSLContext sslContext = ZTSUtils.createServerClientSSLContext(null);
+        SSLContext sslContext = ZTSUtils.getAthenzProviderClientSSLContext(null);
         assertNull(sslContext);
 
-        System.clearProperty("athenz.ssl_client_use_file_cert_and_key");
         System.clearProperty("athenz.ssl_trust_store_type");
         System.clearProperty("athenz.ssl_trust_store_password");
     }
 
     @Test
-    public void testCreateSSLClientContextObjectLocalCertNotSpecified() {
-        System.setProperty("athenz.ssl_client_use_file_cert_and_key", "true");
+    public void testCreateSSLProviderClientContextObjectLocalCertNotSpecified() {
         String filePath = Resources.getResource("truststore.jks").getFile();
         System.setProperty("athenz.ssl_trust_store", filePath);
         System.setProperty("athenz.ssl_trust_store_type", "JKS");
         System.setProperty("athenz.ssl_trust_store_password", "123456");
 
-        SSLContext sslContext = ZTSUtils.createServerClientSSLContext(null);
+        SSLContext sslContext = ZTSUtils.getAthenzProviderClientSSLContext(null);
         assertNull(sslContext);
 
-        System.clearProperty("athenz.ssl_client_use_file_cert_and_key");
         System.clearProperty("athenz.ssl_trust_store");
         System.clearProperty("athenz.ssl_trust_store_type");
         System.clearProperty("athenz.ssl_trust_store_password");
     }
 
     @Test
-    public void testCreateSSLClientContextObjectLocalCertKeyNotSpecified() {
+    public void testCreateSSLProviderClientContextObjectLocalCertKeyNotSpecified() {
         String certPath = Resources.getResource("gdpr.aws.core.cert.pem").getPath();//public
-        System.setProperty("athenz.ssl_client_public_cert_path", certPath);
-        System.setProperty("athenz.ssl_client_use_file_cert_and_key", "true");
+        System.setProperty("athenz.zts.provider.ssl_client_public_cert_path", certPath);
         String filePath = Resources.getResource("truststore.jks").getFile();
         System.setProperty("athenz.ssl_trust_store", filePath);
         System.setProperty("athenz.ssl_trust_store_type", "JKS");
         System.setProperty("athenz.ssl_trust_store_password", "123456");
 
-        SSLContext sslContext = ZTSUtils.createServerClientSSLContext(null);
+        SSLContext sslContext = ZTSUtils.getAthenzProviderClientSSLContext(null);
         assertNull(sslContext);
 
-        System.clearProperty("athenz.ssl_client_use_file_cert_and_key");
-        System.clearProperty("athenz.ssl_client_public_cert_path");
+        System.clearProperty("athenz.zts.provider.ssl_client_public_cert_path");
         System.clearProperty("athenz.ssl_trust_store");
         System.clearProperty("athenz.ssl_trust_store_type");
         System.clearProperty("athenz.ssl_trust_store_password");
     }
 
     @Test
-    public void testCreateSSLClientContextObjectEmptyKeyStore() {
+    public void testCreateSSLServerContextObjectEmptyKeyStore() {
 
         // make sure we have no keystore path
         System.clearProperty("athenz.ssl_key_store");
-        SSLContext sslContext = ZTSUtils.createServerClientSSLContext(null);
+        SSLContext sslContext = ZTSUtils.getAthenzServerSSLContext(null);
         assertNull(sslContext);
     }
 
     @Test
-    public void testCreateSSLClientContextObjectEmptyTrustStore() {
+    public void testCreateSSLServerContextObjectEmptyTrustStore() {
 
         String filePath = Resources.getResource("keystore.pkcs12").getFile();
         System.setProperty("athenz.ssl_key_store", filePath);
@@ -528,12 +499,12 @@ public class ZTSUtilsTest {
 
         // make sure we have no truststore path
         System.clearProperty("athenz.ssl_trust_store");
-        SSLContext sslContext = ZTSUtils.createServerClientSSLContext(null);
+        SSLContext sslContext = ZTSUtils.getAthenzServerSSLContext(null);
         assertNull(sslContext);
     }
 
     @Test
-    public void testCreateSSLClientContextObjectInvalidTrustPass() {
+    public void testCreateSSLServerContextObjectInvalidTrustPass() {
 
         String filePath = Resources.getResource("keystore.pkcs12").getFile();
         System.setProperty("athenz.ssl_key_store", filePath);
@@ -544,12 +515,12 @@ public class ZTSUtilsTest {
         System.setProperty("athenz.ssl_trust_store_type", "JKS");
         System.setProperty("athenz.ssl_trust_store_password", "invalid");
 
-        SSLContext sslContext = ZTSUtils.createServerClientSSLContext(null);
+        SSLContext sslContext = ZTSUtils.getAthenzServerSSLContext(null);
         assertNull(sslContext);
     }
 
     @Test
-    public void testCreateSSLClientContextObjectNullTrustPass() {
+    public void testCreateSSLServerContextObjectNullTrustPass() {
 
         String filePath = Resources.getResource("keystore.pkcs12").getFile();
         System.setProperty("athenz.ssl_key_store", filePath);
@@ -560,12 +531,12 @@ public class ZTSUtilsTest {
         System.setProperty("athenz.ssl_trust_store_type", "JKS");
         System.clearProperty("athenz.ssl_trust_store_password");
 
-        SSLContext sslContext = ZTSUtils.createServerClientSSLContext(null);
+        SSLContext sslContext = ZTSUtils.getAthenzServerSSLContext(null);
         assertNull(sslContext);
     }
 
     @Test
-    public void testCreateSSLClientContextObjectInvalidKeyPass() {
+    public void testCreateSSLServerContextObjectInvalidKeyPass() {
 
         String filePath = Resources.getResource("keystore.pkcs12").getFile();
         System.setProperty("athenz.ssl_key_store", filePath);
@@ -576,12 +547,12 @@ public class ZTSUtilsTest {
         System.setProperty("athenz.ssl_trust_store_type", "JKS");
         System.setProperty("athenz.ssl_trust_store_password", "123456");
 
-        SSLContext sslContext = ZTSUtils.createServerClientSSLContext(null);
+        SSLContext sslContext = ZTSUtils.getAthenzServerSSLContext(null);
         assertNull(sslContext);
     }
 
     @Test
-    public void testCreateSSLClientContextObjectNullKeyPass() {
+    public void testCreateSSLServerContextObjectNullKeyPass() {
 
         String filePath = Resources.getResource("keystore.pkcs12").getFile();
         System.setProperty("athenz.ssl_key_store", filePath);
@@ -592,12 +563,12 @@ public class ZTSUtilsTest {
         System.setProperty("athenz.ssl_trust_store_type", "JKS");
         System.setProperty("athenz.ssl_trust_store_password", "123456");
 
-        SSLContext sslContext = ZTSUtils.createServerClientSSLContext(null);
+        SSLContext sslContext = ZTSUtils.getAthenzServerSSLContext(null);
         assertNull(sslContext);
     }
 
     @Test
-    public void testCreateSSLClientContextObjectInvalidType() {
+    public void testCreateSSLServerContextObjectInvalidType() {
 
         String filePath = Resources.getResource("keystore.pkcs12").getFile();
         System.setProperty("athenz.ssl_key_store", filePath);
@@ -608,18 +579,8 @@ public class ZTSUtilsTest {
         System.setProperty("athenz.ssl_trust_store_type", "PKS12");
         System.setProperty("athenz.ssl_trust_store_password", "123456");
 
-        SSLContext sslContext = ZTSUtils.createServerClientSSLContext(null);
+        SSLContext sslContext = ZTSUtils.getAthenzServerSSLContext(null);
         assertNull(sslContext);
-    }
-
-    @Test
-    public void testGetPasswordChars() {
-        char [] emptyValue = new char[0];
-        char [] passValue = {'p', 'a', 's', 's'};
-
-        assertEquals(emptyValue, ZTSUtils.getPasswordChars(null));
-        assertEquals(emptyValue, ZTSUtils.getPasswordChars(""));
-        assertEquals(passValue, ZTSUtils.getPasswordChars("pass"));
     }
 
     @Test
@@ -639,5 +600,54 @@ public class ZTSUtilsTest {
         assertTrue(ZTSUtils.parseBoolean("true", false));
         assertFalse(ZTSUtils.parseBoolean("false", true));
         assertFalse(ZTSUtils.parseBoolean("unknown", false));
+    }
+
+    @Test
+    public void testGetCertRequestPriority() {
+        Date currentDate = new Date();
+        Priority certRequestPriority = ZTSUtils.getCertRequestPriority(
+                Date.from(currentDate.toInstant().minus(1, ChronoUnit.DAYS)),
+                Date.from(currentDate.toInstant().plus(29, ChronoUnit.DAYS))
+        );
+        assertEquals(certRequestPriority, Priority.Low);
+
+        certRequestPriority = ZTSUtils.getCertRequestPriority(
+                Date.from(currentDate.toInstant().minus(10, ChronoUnit.DAYS)),
+                Date.from(currentDate.toInstant().plus(20, ChronoUnit.DAYS))
+        );
+        assertEquals(certRequestPriority, Priority.Medium);
+
+        certRequestPriority = ZTSUtils.getCertRequestPriority(
+                Date.from(currentDate.toInstant().minus(20, ChronoUnit.DAYS)),
+                Date.from(currentDate.toInstant().plus(10, ChronoUnit.DAYS))
+        );
+        assertEquals(certRequestPriority, Priority.Medium);
+
+        certRequestPriority = ZTSUtils.getCertRequestPriority(
+                Date.from(currentDate.toInstant().minus(25, ChronoUnit.DAYS)),
+                Date.from(currentDate.toInstant().plus(5, ChronoUnit.DAYS))
+        );
+        assertEquals(certRequestPriority, Priority.High);
+
+        // Cert expired, return High priority
+        certRequestPriority = ZTSUtils.getCertRequestPriority(
+                Date.from(currentDate.toInstant().minus(33, ChronoUnit.DAYS)),
+                Date.from(currentDate.toInstant().minus(3, ChronoUnit.DAYS))
+        );
+        assertEquals(certRequestPriority, Priority.High);
+    }
+
+    @Test
+    public void testValueEndsWith() {
+        assertTrue(ZTSUtils.valueEndsWith("test.athenz.cloud", Collections.singletonList(".athenz.cloud")));
+        assertTrue(ZTSUtils.valueEndsWith("test.athenz.cloud", Arrays.asList(".athenz.cloud", "athenz2.cloud")));
+        assertTrue(ZTSUtils.valueEndsWith("test.athenz.cloud", Arrays.asList(".athenz2.cloud", "athenz.cloud")));
+        assertFalse(ZTSUtils.valueEndsWith("test.athenz1.cloud", Collections.singletonList(".athenz2.cloud")));
+        assertFalse(ZTSUtils.valueEndsWith("test.athenz1.cloud", Arrays.asList(".athenz2.cloud", "athenz.cloud")));
+    }
+
+    @Test
+    public void testConstructor() {
+        new ZTSUtils();
     }
 }

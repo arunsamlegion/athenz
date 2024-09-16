@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,8 @@ import Button from '../denali/Button';
 import { colors } from '../denali/styles';
 import Color from '../denali/Color';
 import RequestUtils from '../utils/RequestUtils';
+import { addAssertionPolicyVersion } from '../../redux/thunks/policies';
+import { connect } from 'react-redux';
 
 const StyledDiv = styled.div`
     background-color: ${colors.white};
@@ -38,13 +40,14 @@ const ErrorDiv = styled.div`
     margin-left: 155px;
 `;
 
-export default class AddAssertion extends React.Component {
+class AddAssertion extends React.Component {
     constructor(props) {
         super(props);
-        this.api = this.props.api;
         this.onChange = this.onChange.bind(this);
         this.onSubmit = this.onSubmit.bind(this);
-        this.state = {};
+        this.state = {
+            case: false,
+        };
     }
 
     onChange(key, value) {
@@ -72,19 +75,21 @@ export default class AddAssertion extends React.Component {
             });
             return;
         }
-        this.api
-            .addAssertion(
+        this.props
+            .addAssertionPolicyVersion(
                 this.props.domain,
                 this.props.name,
+                this.props.version,
                 this.state.role,
                 this.state.resource,
                 this.state.action,
                 this.state.effect,
+                this.state.case,
                 this.props._csrf
             )
             .then((data) => {
                 this.props.submit(
-                    `${this.props.name}-${this.state.role}-${this.state.resource}-${this.state.action}`,
+                    `${this.props.name}-${this.props.version}-${data.role}-${data.resource}-${data.action}`,
                     false
                 );
             })
@@ -99,9 +104,9 @@ export default class AddAssertion extends React.Component {
         return (
             <StyledDiv data-testid='add-assertion'>
                 <AddRuleForm
-                    api={this.api}
                     onChange={this.onChange}
                     domain={this.props.domain}
+                    id={this.props.name + '-' + this.props.version}
                 />
                 {this.state.errorMessage && (
                     <ErrorDiv>
@@ -120,3 +125,32 @@ export default class AddAssertion extends React.Component {
         );
     }
 }
+
+const mapDispatchToProps = (dispatch) => ({
+    addAssertionPolicyVersion: (
+        domain,
+        policyName,
+        version,
+        role,
+        resource,
+        action,
+        effect,
+        caseSensitive,
+        _csrf
+    ) =>
+        dispatch(
+            addAssertionPolicyVersion(
+                domain,
+                policyName,
+                version,
+                role,
+                resource,
+                action,
+                effect,
+                caseSensitive,
+                _csrf
+            )
+        ),
+});
+
+export default connect(null, mapDispatchToProps)(AddAssertion);

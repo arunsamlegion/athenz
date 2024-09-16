@@ -6,6 +6,7 @@ package com.yahoo.athenz.zms;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.List;
+import java.util.Map;
 import com.yahoo.rdl.*;
 
 //
@@ -20,13 +21,13 @@ public class Group {
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public Boolean reviewEnabled;
     @RdlOptional
-    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public String notifyRoles;
     @RdlOptional
-    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public String userAuthorityFilter;
     @RdlOptional
-    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public String userAuthorityExpiration;
     @RdlOptional
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
@@ -34,6 +35,33 @@ public class Group {
     @RdlOptional
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public Integer serviceExpiryDays;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public Map<String, TagValueList> tags;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public Boolean auditEnabled;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public Boolean deleteProtection;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public Timestamp lastReviewedDate;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public Boolean selfRenew;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public Integer selfRenewMins;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public Integer maxMembers;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public ResourceGroupOwnership resourceOwnership;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public String principalDomainFilter;
     public String name;
     @RdlOptional
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
@@ -44,12 +72,6 @@ public class Group {
     @RdlOptional
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public List<GroupAuditLog> auditLog;
-    @RdlOptional
-    @JsonInclude(JsonInclude.Include.NON_EMPTY)
-    public Boolean auditEnabled;
-    @RdlOptional
-    @JsonInclude(JsonInclude.Include.NON_EMPTY)
-    public Timestamp lastReviewedDate;
 
     public Group setSelfServe(Boolean selfServe) {
         this.selfServe = selfServe;
@@ -100,6 +122,69 @@ public class Group {
     public Integer getServiceExpiryDays() {
         return serviceExpiryDays;
     }
+    public Group setTags(Map<String, TagValueList> tags) {
+        this.tags = tags;
+        return this;
+    }
+    public Map<String, TagValueList> getTags() {
+        return tags;
+    }
+    public Group setAuditEnabled(Boolean auditEnabled) {
+        this.auditEnabled = auditEnabled;
+        return this;
+    }
+    public Boolean getAuditEnabled() {
+        return auditEnabled;
+    }
+    public Group setDeleteProtection(Boolean deleteProtection) {
+        this.deleteProtection = deleteProtection;
+        return this;
+    }
+    public Boolean getDeleteProtection() {
+        return deleteProtection;
+    }
+    public Group setLastReviewedDate(Timestamp lastReviewedDate) {
+        this.lastReviewedDate = lastReviewedDate;
+        return this;
+    }
+    public Timestamp getLastReviewedDate() {
+        return lastReviewedDate;
+    }
+    public Group setSelfRenew(Boolean selfRenew) {
+        this.selfRenew = selfRenew;
+        return this;
+    }
+    public Boolean getSelfRenew() {
+        return selfRenew;
+    }
+    public Group setSelfRenewMins(Integer selfRenewMins) {
+        this.selfRenewMins = selfRenewMins;
+        return this;
+    }
+    public Integer getSelfRenewMins() {
+        return selfRenewMins;
+    }
+    public Group setMaxMembers(Integer maxMembers) {
+        this.maxMembers = maxMembers;
+        return this;
+    }
+    public Integer getMaxMembers() {
+        return maxMembers;
+    }
+    public Group setResourceOwnership(ResourceGroupOwnership resourceOwnership) {
+        this.resourceOwnership = resourceOwnership;
+        return this;
+    }
+    public ResourceGroupOwnership getResourceOwnership() {
+        return resourceOwnership;
+    }
+    public Group setPrincipalDomainFilter(String principalDomainFilter) {
+        this.principalDomainFilter = principalDomainFilter;
+        return this;
+    }
+    public String getPrincipalDomainFilter() {
+        return principalDomainFilter;
+    }
     public Group setName(String name) {
         this.name = name;
         return this;
@@ -127,20 +212,6 @@ public class Group {
     }
     public List<GroupAuditLog> getAuditLog() {
         return auditLog;
-    }
-    public Group setAuditEnabled(Boolean auditEnabled) {
-        this.auditEnabled = auditEnabled;
-        return this;
-    }
-    public Boolean getAuditEnabled() {
-        return auditEnabled;
-    }
-    public Group setLastReviewedDate(Timestamp lastReviewedDate) {
-        this.lastReviewedDate = lastReviewedDate;
-        return this;
-    }
-    public Timestamp getLastReviewedDate() {
-        return lastReviewedDate;
     }
 
     @Override
@@ -171,6 +242,33 @@ public class Group {
             if (serviceExpiryDays == null ? a.serviceExpiryDays != null : !serviceExpiryDays.equals(a.serviceExpiryDays)) {
                 return false;
             }
+            if (tags == null ? a.tags != null : !tags.equals(a.tags)) {
+                return false;
+            }
+            if (auditEnabled == null ? a.auditEnabled != null : !auditEnabled.equals(a.auditEnabled)) {
+                return false;
+            }
+            if (deleteProtection == null ? a.deleteProtection != null : !deleteProtection.equals(a.deleteProtection)) {
+                return false;
+            }
+            if (lastReviewedDate == null ? a.lastReviewedDate != null : !lastReviewedDate.equals(a.lastReviewedDate)) {
+                return false;
+            }
+            if (selfRenew == null ? a.selfRenew != null : !selfRenew.equals(a.selfRenew)) {
+                return false;
+            }
+            if (selfRenewMins == null ? a.selfRenewMins != null : !selfRenewMins.equals(a.selfRenewMins)) {
+                return false;
+            }
+            if (maxMembers == null ? a.maxMembers != null : !maxMembers.equals(a.maxMembers)) {
+                return false;
+            }
+            if (resourceOwnership == null ? a.resourceOwnership != null : !resourceOwnership.equals(a.resourceOwnership)) {
+                return false;
+            }
+            if (principalDomainFilter == null ? a.principalDomainFilter != null : !principalDomainFilter.equals(a.principalDomainFilter)) {
+                return false;
+            }
             if (name == null ? a.name != null : !name.equals(a.name)) {
                 return false;
             }
@@ -181,12 +279,6 @@ public class Group {
                 return false;
             }
             if (auditLog == null ? a.auditLog != null : !auditLog.equals(a.auditLog)) {
-                return false;
-            }
-            if (auditEnabled == null ? a.auditEnabled != null : !auditEnabled.equals(a.auditEnabled)) {
-                return false;
-            }
-            if (lastReviewedDate == null ? a.lastReviewedDate != null : !lastReviewedDate.equals(a.lastReviewedDate)) {
                 return false;
             }
         }

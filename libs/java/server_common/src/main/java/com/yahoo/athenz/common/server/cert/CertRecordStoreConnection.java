@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -81,7 +81,7 @@ public interface CertRecordStoreConnection extends Closeable {
      *      - Hadn't been notified in the last 24 hours
      *      - Filter outdated records from rebootstrapped hosts (if several records share the same host / provider / service but not the same instanceId, only leave the records with the latest "currentTime")
      * 2. Update all records matching the criteria with the "lastNotifiedTime" and "lastNotifiedServer".
-     * You can look at JDBCCertRecordStoreConnection and updateUnrefreshedCertificatesNotificationTimestamp for example implementations of JDBC and DynamoDB respectively
+     * You can look at JDBCCertRecordStoreConnection and DynamoDBCertRecordStoreConnection for example implementations of JDBC and DynamoDB respectively
      * @param lastNotifiedServer - Name of athenz server
      * @param lastNotifiedTime last nofitification time
      * @param provider name of the provider

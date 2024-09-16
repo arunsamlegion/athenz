@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,11 +21,11 @@ import RequestUtils from '../utils/RequestUtils';
 export default class AddPolicy extends React.Component {
     constructor(props) {
         super(props);
-        this.api = this.props.api;
         this.onSubmit = this.onSubmit.bind(this);
         this.onChange = this.onChange.bind(this);
         this.state = {
             showModal: !!this.props.showAddPolicy,
+            case: false,
         };
     }
 
@@ -58,20 +58,18 @@ export default class AddPolicy extends React.Component {
             return;
         }
 
-        this.api
-            .addPolicy(
+        this.props
+            .onSubmit(
                 this.props.domain,
                 this.state.name,
                 this.state.role,
                 this.state.resource,
                 this.state.action,
                 this.state.effect,
+                this.state.case,
                 this.props._csrf
             )
-            .then((data) => {
-                this.setState({ showModal: false });
-                this.props.onSubmit(`${this.state.name}`, false);
-            })
+            .then(() => this.setState({ showModal: false }))
             .catch((err) => {
                 this.setState({
                     errorMessage: RequestUtils.xhrErrorCheckHelper(err),
@@ -93,7 +91,6 @@ export default class AddPolicy extends React.Component {
                 errorMessage={this.state.errorMessage}
                 sections={
                     <AddRuleForm
-                        api={this.api}
                         domain={this.props.domain}
                         onChange={this.onChange}
                         isPolicy={true}

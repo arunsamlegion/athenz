@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -163,7 +163,16 @@ class Switch extends React.PureComponent {
 
         return (
             <div className={classes} data-testid='switch-wrapper'>
-                <input {...rest} id={this.switchId} ref={innerRef} />
+                <input
+                    {...rest}
+                    id={this.switchId}
+                    ref={innerRef}
+                    data-testid={
+                        this.props.name
+                            ? this.props.name + '-switch-input'
+                            : 'switch-input'
+                    }
+                />
                 <label htmlFor={this.switchId}>
                     {this.label && (
                         <div className='label-content'>{this.label}</div>

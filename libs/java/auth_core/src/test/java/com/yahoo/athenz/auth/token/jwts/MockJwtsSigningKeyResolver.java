@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Oath Holdings Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ public class MockJwtsSigningKeyResolver extends JwtsSigningKeyResolver {
     }
 
     @Override
-    String getHttpData(String jwksUri, SSLContext sslContext) {
+    String getHttpData(String jwksUri, SSLContext sslContext, String proxyUrl) {
         return responseBody;
     }
 }

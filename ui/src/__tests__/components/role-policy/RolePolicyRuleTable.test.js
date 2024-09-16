@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,21 +14,39 @@
  * limitations under the License.
  */
 import React from 'react';
-import { render } from '@testing-library/react';
 import RolePolicyRuleTable from '../../../components/role-policy/RolePolicyRuleTable';
+import {
+    buildPoliciesForState,
+    getStateWithPolicies,
+    renderWithRedux,
+} from '../../../tests_utils/ComponentsTestUtils';
 
 describe('PolicyRuleTable', () => {
     it('should render', () => {
-        const assertions = [
+        const domain = 'home.pgote';
+        const policyName = 'test';
+        const policies = buildPoliciesForState(
             {
-                role: 'home.pgote:role.allunixusers',
-                resource: 'home.pgote:aaaa',
-                action: 'aaa',
-                effect: 'ALLOW',
-                id: 11921,
+                [`${domain}:policy.${policyName}:0`]: {
+                    name: `${domain}:policy.${policyName}`,
+                    modified: '2022-07-13T09:48:22.510Z',
+                    version: '0',
+                    active: true,
+                    assertions: {
+                        11921: {
+                            role: 'home.pgote:role.allunixusers',
+                            resource: 'home.pgote:aaaa',
+                            action: 'aaa',
+                            effect: 'ALLOW',
+                            id: 11921,
+                        },
+                    },
+                },
             },
-        ];
-        const { getByTestId } = render(
+            domain
+        );
+
+        const { getByTestId } = renderWithRedux(
             <table>
                 <tbody>
                     <tr>
@@ -36,19 +54,20 @@ describe('PolicyRuleTable', () => {
                             showTable={true}
                             color={'white'}
                             number={0}
-                            assertions={assertions}
+                            domain={domain}
+                            name={policyName}
                         />
                     </tr>
                 </tbody>
-            </table>
+            </table>,
+            getStateWithPolicies(policies)
         );
         const ruleTable = getByTestId('role-policy-rule-table');
         expect(ruleTable).toMatchSnapshot();
     });
 
     it('should render empty', () => {
-        const assertions = [];
-        const { getByTestId } = render(
+        const { getByTestId } = renderWithRedux(
             <table>
                 <tbody>
                     <tr>
@@ -56,41 +75,12 @@ describe('PolicyRuleTable', () => {
                             showTable={false}
                             color={'white'}
                             number={0}
-                            assertions={assertions}
                         />
                     </tr>
                 </tbody>
             </table>
         );
         const ruleTable = null;
-        expect(ruleTable).toMatchSnapshot();
-    });
-
-    it('should render', () => {
-        const assertions = [
-            {
-                role: 'home.pgote:role.allunixusers',
-                resource: 'home.pgote:aaaa',
-                action: 'aaa',
-                effect: 'ALLOW',
-                id: 11921,
-            },
-        ];
-        const { getByTestId } = render(
-            <table>
-                <tbody>
-                    <tr>
-                        <RolePolicyRuleTable
-                            showTable={true}
-                            color={'white'}
-                            number={0}
-                            assertions={assertions}
-                        />
-                    </tr>
-                </tbody>
-            </table>
-        );
-        const ruleTable = getByTestId('role-policy-rule-table');
         expect(ruleTable).toMatchSnapshot();
     });
 });

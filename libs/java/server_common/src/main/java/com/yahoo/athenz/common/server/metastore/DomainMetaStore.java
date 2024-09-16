@@ -1,5 +1,5 @@
 /*
- *  Copyright Athenz Authors
+ *  Copyright The Athenz Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -28,13 +28,17 @@ public interface DomainMetaStore {
     int META_ATTR_BUSINESS_SERVICE    = 0;
     int META_ATTR_AWS_ACCOUNT         = 1;
     int META_ATTR_AZURE_SUBSCRIPTION  = 2;
-    int META_ATTR_PRODUCT_ID          = 3;
+    int META_ATTR_PRODUCT_NUMBER      = 3;
+    int META_ATTR_GCP_PROJECT         = 4;
+    int META_ATTR_PRODUCT_ID          = 5;
 
     // valid attribute names
 
     String META_ATTR_BUSINESS_SERVICE_NAME = "businessService";
     String META_ATTR_AWS_ACCOUNT_NAME = "awsAccount";
     String META_ATTR_AZURE_SUBSCRIPTION_NAME = "azureSubscription";
+    String META_ATTR_GCP_PROJECT_NAME = "gcpProject";
+    String META_ATTR_PRODUCT_NUMBER_NAME = "productNumber";
     String META_ATTR_PRODUCT_ID_NAME = "productId";
 
     /**
@@ -103,11 +107,35 @@ public interface DomainMetaStore {
     void setAzureSubscriptionDomain(final String domainName, final String azureSubscription);
 
     /**
-     * Get a list of valid Azue Subscriptions
+     * Get a list of valid Azure Subscriptions
      * @param userName (optional) if not null, only get Azure subscriptions associated with the user
      * @return Azure Subscriptions List
      */
     List<String> getValidAzureSubscriptions(final String userName);
+
+    /**
+     * Validate if the given GCP project name is valid for the domain
+     * @param domainName - name of the domain
+     * @param gcpProject - gcp project (can be null)
+     * @return true if valid, false otherwise
+     */
+    boolean isValidGcpProject(final String domainName, final String gcpProject);
+
+    /**
+     * Sets the athenz domain for the gcp project. This attribute is a domain
+     * system meta attribute can only be changed by athenz system administrators.
+     * @param domainName - name of the domain
+     * @param gcpProject - gcp project (can be null)
+     * @throws com.yahoo.athenz.common.server.rest.ResourceException in case of any failure
+     */
+    void setGcpProjectDomain(final String domainName, final String gcpProject);
+
+    /**
+     * Get a list of valid GCP Projects
+     * @param userName (optional) if not null, only get GCP Projects associated with the user
+     * @return GCP Project List
+     */
+    List<String> getValidGcpProjects(final String userName);
 
     /**
      * Validate if the given product id is valid for the domain
@@ -125,6 +153,26 @@ public interface DomainMetaStore {
      * @throws com.yahoo.athenz.common.server.rest.ResourceException in case of any failure
      */
     void setProductIdDomain(final String domainName, Integer productId);
+
+    /**
+     * Validate if the given product id is valid for the domain
+     * @param domainName - name of the domain
+     * @param productId - product id (can be null)
+     * @return true if valid, false otherwise
+     */
+    default boolean isValidProductId(final String domainName, String productId) {
+        return true;
+    }
+
+    /**
+     * Sets the athenz domain for the given product id. This attribute is a domain
+     * system meta attribute can only be changed by athenz system administrators.
+     * @param domainName - name of the domain
+     * @param productId - product id (can be null)
+     * @throws com.yahoo.athenz.common.server.rest.ResourceException in case of any failure
+     */
+    default void setProductIdDomain(final String domainName, String productId) {
+    }
 
     /**
      * Get a list of valid Product Ids

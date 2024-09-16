@@ -4,7 +4,7 @@
 # manually to pick up the latest rdl to generate the appropriate server stubs.
 
 # Note this script is dependent on the rdl utility.
-# go get github.com/ardielle/ardielle-tools/...
+# go install github.com/ardielle/ardielle-tools/rdl@latest
 # however, we're not going to run this utility during our automated builds since
 # builds must be done based on files already checked-in into git
 
@@ -17,14 +17,14 @@ if [ ! -z "${SCREWDRIVER}" ] || [ ! -z "${TRAVIS_PULL_REQUEST}" ] || [ ! -z "${T
 fi
 
 if [ -x "$(command -v go)" ]; then
-    go get -u github.com/ardielle/ardielle-tools/...
+    go install github.com/ardielle/ardielle-tools/rdl@latest
 fi
 
 command -v rdl >/dev/null 2>&1 || {
     echo >&2 "------------------------------------------------------------------------";
     echo >&2 "SOURCE WARNING";
     echo >&2 "------------------------------------------------------------------------";
-    echo >&2 "Please install rdl utility: go get -u github.com/ardielle/ardielle-tools/...";
+    echo >&2 "Please install rdl utility: go install github.com/ardielle/ardielle-tools/rdl@latest";
     echo >&2 "Skipping source generation...";
     exit 0;
 }
@@ -34,5 +34,5 @@ RDL_ZMS_FILE=src/main/rdl/ZMS.rdl
 echo "Generate the server stubs"
 rdl -s generate -b="/v1" -o="src/main/java" athenz-server $RDL_ZMS_FILE
 
-# Copyright 2016 Yahoo Inc.
+# Copyright The Athenz Authors
 # Licensed under the terms of the Apache version 2.0 license. See LICENSE file for terms.

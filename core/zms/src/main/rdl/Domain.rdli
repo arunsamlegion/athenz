@@ -1,4 +1,4 @@
-// Copyright 2016 Yahoo Inc.
+// Copyright The Athenz Authors
 // Licensed under the terms of the Apache version 2.0 license. See LICENSE file for terms.
 
 //Domain API
@@ -21,29 +21,25 @@ resource Domain GET "/domain/{domain}" {
     }
 }
 
-//A paginated list of domains.
-type DomainList Struct {
-    Array<DomainName> names; //list of domain names
-    String next (optional); //if the response is a paginated list, this attribute specifies the value to be used in the next domain list request as the value for the skip query parameter.
-}
-
 //Enumerate domains. Can be filtered by prefix and depth, and paginated. Most of the
 //query options that are looking for specific domain attributes (e.g. aws account,
-//azure subscriptions, business service, tags, etc) are mutually exclusive. The server
-//will only process the first query argument and ignore the others.
-resource DomainList GET "/domain?limit={limit}&skip={skip}&prefix={prefix}&depth={depth}&account={account}&ypmid={productId}&member={roleMember}&role={roleName}&azure={subscription}&tagKey={tagKey}&tagValue={tagValue}&businessService={businessService}" {
+//azure subscriptions, gcp project, business service, tags, etc) are mutually exclusive.
+//The server will only process the first query argument and ignore the others.
+resource DomainList GET "/domain?limit={limit}&skip={skip}&prefix={prefix}&depth={depth}&account={account}&ypmid={productNumber}&member={roleMember}&role={roleName}&azure={subscription}&gcp={project}&tagKey={tagKey}&tagValue={tagValue}&businessService={businessService}&productId={productId}" {
     Int32 limit (optional); //restrict the number of results in this call
     String skip (optional); //restrict the set to those after the specified "next" token returned from a previous call
     String prefix (optional); //restrict to names that start with the prefix
     Int32 depth (optional); //restrict the depth of the name, specifying the number of '.' characters that can appear
     String account (optional); //restrict to domain names that have specified account name
     String subscription (optional); //restrict to domain names that have specified azure subscription name
-    Int32 productId (optional); //restrict the domain names that have specified product id
+    String project (optional); //restrict to domain names that have specified gcp project name
+    Int32 productNumber (optional); //restrict the domain names that have specified product number
     ResourceName roleMember (optional); //restrict the domain names where the specified user is in a role - see roleName
     ResourceName roleName (optional); //restrict the domain names where the specified user is in this role - see roleMember
-    CompoundName tagKey (optional); //flag to query all domains that have a given tagName
-    CompoundName tagValue (optional); //flag to query all domains that have a given tag name and value
+    TagKey tagKey (optional); //flag to query all domains that have a given tagName
+    TagCompoundValue tagValue (optional); //flag to query all domains that have a given tag name and value
     String businessService (optional); //restrict to domain names that have specified business service name
+    String productId (optional); //restrict the domain names that have specified product id
     String modifiedSince (header="If-Modified-Since"); //This header specifies to the server to return any domains modified since this HTTP date
     authenticate;
     exceptions {
@@ -68,6 +64,7 @@ type SubDomain TopLevelDomain {
 //Create a new top level domain. This is a privileged action for the "sys.auth" administrators.
 resource Domain POST "/domain" {
     String auditRef (header="Y-Audit-Ref"); //Audit param required(not empty) if domain auditEnabled is true.
+    String resourceOwner (header="Athenz-Resource-Owner"); //Resource owner for the request
     TopLevelDomain detail; //TopLevelDomain object to be created
     authorize ("create", "sys.auth:domain");
     expected OK;
@@ -84,6 +81,7 @@ resource Domain POST "/domain" {
 resource Domain POST "/subdomain/{parent}" {
     DomainName parent; //name of the parent domain
     String auditRef (header="Y-Audit-Ref"); //Audit param required(not empty) if domain auditEnabled is true.
+    String resourceOwner (header="Athenz-Resource-Owner"); //Resource owner for the request
     SubDomain detail; //Subdomain object to be created
     authorize ("create", "{parent}:domain");
     expected OK;
@@ -108,6 +106,7 @@ type UserDomain DomainMeta {
 resource Domain POST "/userdomain/{name}" {
     SimpleName name; //name of the domain which will be the user id
     String auditRef (header="Y-Audit-Ref"); //Audit param required(not empty) if domain auditEnabled is true.
+    String resourceOwner (header="Athenz-Resource-Owner"); //Resource owner for the request
     UserDomain detail; //UserDomain object to be created
     authorize ("create", "user.{name}:domain");
     expected OK;
@@ -126,6 +125,7 @@ resource Domain POST "/userdomain/{name}" {
 resource TopLevelDomain DELETE "/domain/{name}" {
     SimpleName name; //name of the domain to be deleted
     String auditRef (header="Y-Audit-Ref"); //Audit param required(not empty) if domain auditEnabled is true.
+    String resourceOwner (header="Athenz-Resource-Owner"); //Resource owner for the request
     authorize ("delete", "sys.auth:domain");
     expected NO_CONTENT;
     exceptions {
@@ -137,14 +137,17 @@ resource TopLevelDomain DELETE "/domain/{name}" {
     }
 }
 
-//Delete the specified subdomain. Caller must have domain delete permissions in parent.
+//Delete the specified subdomain. Caller must have domain delete permissions in parent or
+//in the domain itself. Therefore, the RDL requires authentication only and the server
+//will perform the authorization check based on the caller's identity.
 //Upon successful completion of this delete request, the server will return NO_CONTENT status
 //code without any data (no object will be returned).
 resource SubDomain DELETE "/subdomain/{parent}/{name}" {
     DomainName parent; //name of the parent domain
     SimpleName name; //name of the subdomain to be deleted
     String auditRef (header="Y-Audit-Ref"); //Audit param required(not empty) if domain auditEnabled is true.
-    authorize ("delete", "{parent}:domain");
+    String resourceOwner (header="Athenz-Resource-Owner"); //Resource owner for the request
+    authenticate;
     expected NO_CONTENT;
     exceptions {
         ResourceError NOT_FOUND;
@@ -161,6 +164,7 @@ resource SubDomain DELETE "/subdomain/{parent}/{name}" {
 resource UserDomain DELETE "/userdomain/{name}" {
     SimpleName name; //name of the domain to be deleted which will be the user id
     String auditRef (header="Y-Audit-Ref"); //Audit param required(not empty) if domain auditEnabled is true.
+    String resourceOwner (header="Athenz-Resource-Owner"); //Resource owner for the request
     authorize ("delete", "user.{name}:domain");
     expected NO_CONTENT;
     exceptions {
@@ -177,6 +181,7 @@ resource UserDomain DELETE "/userdomain/{name}" {
 resource Domain PUT "/domain/{name}/meta" {
     DomainName name; //name of the domain to be updated
     String auditRef (header="Y-Audit-Ref"); //Audit param required(not empty) if domain auditEnabled is true.
+    String resourceOwner (header="Athenz-Resource-Owner"); //Resource owner for the request
     DomainMeta detail; //DomainMeta object with updated attribute values
     authorize ("update", "{name}:");
     expected NO_CONTENT;
@@ -296,6 +301,79 @@ resource DomainMetaStoreValidValuesList GET "/domain/metastore?attribute={attrib
     exceptions {
         ResourceError BAD_REQUEST;
         ResourceError NOT_FOUND;
+        ResourceError UNAUTHORIZED;
+        ResourceError TOO_MANY_REQUESTS;
+    }
+}
+
+type AuthHistory Struct {
+    DomainName uriDomain; // Name of the domain from URI
+    DomainName principalDomain; // Principal domain
+    SimpleName principalName; // Principal name
+    Timestamp timestamp; // Last authorization event timestamp
+    String endpoint; // Last authorization endpoint used
+    Int64 ttl; // Time until the record will expire
+}
+
+type AuthHistoryDependencies Struct {
+    Array<AuthHistory> incomingDependencies; //list of incoming auth dependencies for domain
+    Array<AuthHistory> outgoingDependencies; //list of incoming auth dependencies for domain
+}
+
+//Get the authorization and token requests history for the domain
+resource AuthHistoryDependencies GET "/domain/{domainName}/history/auth" {
+    DomainName domainName; //name of the domain
+    authenticate;
+    exceptions {
+        ResourceError BAD_REQUEST;
+        ResourceError NOT_FOUND;
+        ResourceError UNAUTHORIZED;
+        ResourceError TOO_MANY_REQUESTS;
+    }
+}
+
+type ExpiryMember Struct {
+    DomainName domainName; //name of the domain
+    EntityName collectionName; //name of the collection
+    ResourceName principalName; //name of the principal
+    Timestamp expiration; //the expiration timestamp
+}
+
+type ExpiredMembers Struct {
+    Array<ExpiryMember> expiredRoleMembers; //list of deleted expired role members
+    Array<ExpiryMember> expiredGroupMembers; //list of deleted expired groups members
+}
+
+// Delete expired principals
+// This command will purge expired members of the following resources based on the purgeResources value
+// 0 - none of them will be purged
+// 1 - only roles will be purged
+// 2 - only groups will be purged
+// default/3 - both of them will be purged
+resource ExpiredMembers DELETE "/expired-members?purgeResources={purgeResources}" {
+    String auditRef (header="Y-Audit-Ref"); //Audit reference
+    Bool returnObj (optional, default=false, header="Athenz-Return-Object"); //Return object param updated object back.
+    Int32 purgeResources (optional); //defining which resources will be purged. by default all resources will be purged
+    authorize("delete", "sys.auth:expired_members");
+    expected NO_CONTENT, OK;
+    exceptions {
+        ResourceError BAD_REQUEST;
+        ResourceError FORBIDDEN;
+        ResourceError UNAUTHORIZED;
+    }
+}
+
+// Set the resource ownership for the given domain
+resource ResourceDomainOwnership PUT "/domain/{domainName}/ownership" {
+    DomainName domainName; //name of the domain
+    String auditRef (header="Y-Audit-Ref"); //Audit param required(not empty) if domain auditEnabled is true.
+    ResourceDomainOwnership resourceOwnership; //resource ownership to be set for the given domain
+    authorize ("update", "{domainName}:meta.domain.ownership");
+    expected NO_CONTENT;
+    exceptions {
+        ResourceError BAD_REQUEST;
+        ResourceError NOT_FOUND;
+        ResourceError FORBIDDEN;
         ResourceError UNAUTHORIZED;
         ResourceError TOO_MANY_REQUESTS;
     }

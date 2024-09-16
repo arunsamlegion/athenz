@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,8 @@ public interface Principal {
         UNKNOWN(0),
         USER(1),
         SERVICE(2),
-        GROUP(3);
+        GROUP(3),
+        USER_HEADLESS(4);
 
         private final int principalType;
         Type(int type) {
@@ -50,12 +51,13 @@ public interface Principal {
     }
 
     /**
-     * Principal state - active, authority filter disabled or authority system disabled
+     * Principal state - active, authority filter, authority or athenz system disabled
      */
     enum State {
         ACTIVE(0x00),
         AUTHORITY_FILTER_DISABLED(0x01),
-        AUTHORITY_SYSTEM_SUSPENDED(0x02);
+        AUTHORITY_SYSTEM_SUSPENDED(0x02),
+        ATHENZ_SYSTEM_DISABLED(0x04);
 
         private final int principalState;
         State(int state) {
@@ -96,7 +98,8 @@ public interface Principal {
     String getUnsignedCredentials();
 
     /** @return the list of roles this principal is able to assume. This is null 
-     * for user/service principals, but valid for a principal based on ZTokens. */
+     * for user/service principals, but valid for principals based on AccessTokens
+     * and role certificates */
     List<String> getRoles();
     
     /** @return the authority over this principal. Can be null, if not authenticated. */
@@ -143,4 +146,9 @@ public interface Principal {
         return State.ACTIVE;
     }
 
+    /** @return the role principal name. This is null for user/service principals,
+     *  but valid for principals based on AccessTokens and role certificates */
+    default String getRolePrincipalName() {
+        return null;
+    }
 }

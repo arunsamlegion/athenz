@@ -1,5 +1,5 @@
 /*
- * Copyright Athenz Authors
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,9 +22,9 @@ import com.yahoo.athenz.zms.utils.ZMSUtils;
 
 public class MemberDueDays {
 
-    long userDueDateMillis;
-    long serviceDueDateMillis;
-    long groupDueDateMillis;
+    final long userDueDateMillis;
+    final long serviceDueDateMillis;
+    final long groupDueDateMillis;
 
     public enum Type {
         EXPIRY,

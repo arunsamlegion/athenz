@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,29 +15,26 @@
  */
 package com.yahoo.athenz.zms;
 
-import java.util.List;
+import com.yahoo.athenz.auth.Principal;
+import com.yahoo.rdl.Struct;
+import com.yahoo.rdl.Timestamp;
+import org.mockito.ArgumentMatchers;
+import org.mockito.Mock;
+import org.mockito.Mockito;
+import org.mockito.MockitoAnnotations;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
 
+import java.io.IOException;
+import java.net.URISyntaxException;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.*;
+import java.util.stream.Collectors;
 
-import com.yahoo.athenz.auth.Principal;
-import com.yahoo.rdl.Struct;
-import com.yahoo.rdl.Timestamp;
-
-import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertNotNull;
-import static org.testng.Assert.assertNull;
-import static org.testng.Assert.assertTrue;
-import static org.testng.Assert.fail;
-import org.testng.annotations.BeforeMethod;
-
-import org.mockito.Mock;
-import org.mockito.Mockito;
-import org.mockito.MockitoAnnotations;
-import org.mockito.ArgumentMatchers;
-import org.testng.annotations.Test;
+import static org.testng.Assert.*;
 
 @SuppressWarnings("RedundantThrows")
 public class ZMSClientMockTest {
@@ -45,7 +42,7 @@ public class ZMSClientMockTest {
     @Mock ZMSRDLGeneratedClient mockZMS;
 
     ZMSClient    zclt;
-    String       zmsUrl   = "";
+    String       zmsUrl   = "https://localhost";
     List<String> userList;
     String       auditRef = "zmsjcltmktest";
 
@@ -59,7 +56,8 @@ public class ZMSClientMockTest {
                 ArgumentMatchers.isA(String.class), ArgumentMatchers.isA(String.class), ArgumentMatchers.isA(Integer.class),
                 ArgumentMatchers.isA(String.class), ArgumentMatchers.isA(Integer.class), ArgumentMatchers.isA(String.class),
                 ArgumentMatchers.isA(String.class), ArgumentMatchers.isA(String.class), ArgumentMatchers.isA(String.class),
-                ArgumentMatchers.isA(String.class), ArgumentMatchers.isA(String.class), ArgumentMatchers.isA(String.class));
+                ArgumentMatchers.isA(String.class), ArgumentMatchers.isA(String.class), ArgumentMatchers.isA(String.class),
+                ArgumentMatchers.isA(String.class), ArgumentMatchers.isA(String.class));
         userList = new ArrayList<>();
         userList.add("user.johnny");
         zclt = new ZMSClient(zmsUrl);
@@ -72,7 +70,7 @@ public class ZMSClientMockTest {
         String domName = "testdom";
         Mockito.doReturn(new Domain()).when(mockZMS).getDomain(domName);
         Mockito.doReturn(new DomainList()).when(mockZMS).getDomainList(null, null, null,
-            null, null, null, null, null, null, null, null, null, null);
+            null, null, null, null, null, null, null, null, null, null, null, null);
 
         DomainList domList = zclt.getDomainList();
         assertNotNull(domList);
@@ -106,7 +104,7 @@ public class ZMSClientMockTest {
         DateFormat df = new SimpleDateFormat("EEE, d MMM yyyy HH:mm:ss zzz");
         String modifiedSince = df.format(now);
         Mockito.doReturn(domList).when(mockZMS).getDomainList(null, null, null,
-                null, null, null, null, null, null,null, null, null, modifiedSince);
+                null, null, null, null, null, null,null, null, null, null, null, modifiedSince);
 
         DomainList domainList = zclt.getDomainList(null, null, null,
                 null, null, null, now);
@@ -184,6 +182,39 @@ public class ZMSClientMockTest {
         try {
             zmsclt2.putPolicy(domName, polName, auditRef, pol);
             zmsclt2.deletePolicy(domName, polName, auditRef);
+        } catch (Exception exc) {
+            fail();
+        }
+        zmsclt2.close();
+    }
+
+    @Test
+    public void testPolicyVersion() throws Exception {
+
+        String domName = "johnnies-place";
+        String polName = "chefs";
+        String version = "new-version";
+        Mockito.doReturn(new Policy()).when(mockZMS).getPolicyVersion(domName, polName, version);
+        Mockito.doReturn(new PolicyList()).when(mockZMS).getPolicyVersionList(domName, polName);
+
+        ZMSClient zmsclt2 = new ZMSClient(zmsUrl);
+        zmsclt2.client = mockZMS;
+
+        PolicyList polList = zmsclt2.getPolicyVersionList(domName, polName);
+        assertNotNull(polList);
+
+        Policy pol = zmsclt2.getPolicyVersion(domName, polName, version);
+        assertNotNull(pol);
+
+        try {
+            zmsclt2.putPolicyVersion(domName, polName, version, auditRef);
+            zmsclt2.deletePolicyVersion(domName, polName, version, auditRef);
+        } catch (Exception exc) {
+            fail();
+        }
+        try {
+            zmsclt2.putPolicyVersion(domName, polName, version, "from-version", auditRef);
+            zmsclt2.deletePolicyVersion(domName, polName, version, auditRef);
         } catch (Exception exc) {
             fail();
         }
@@ -364,6 +395,66 @@ public class ZMSClientMockTest {
         }
         assertTrue(groupRoleCheck);
         assertTrue(trustRoleCheck);
+    }
+
+    @Test
+    public void testGetGroups() throws Exception {
+
+        String domName  = "group-members";
+
+        Group groupRoleWithMembers = new Group();
+        groupRoleWithMembers.setName(domName + ":group.group-role");
+        List<GroupMember> members = new ArrayList<>();
+        members.add(new GroupMember().setMemberName("user.user1"));
+        members.add(new GroupMember().setMemberName("coretech.service"));
+        groupRoleWithMembers.setGroupMembers(members);
+
+        Group groupRoleWithoutMembers = new Group();
+        groupRoleWithoutMembers.setName(domName + ":group.group-role");
+
+        List<Group> retListWithMembers = new ArrayList<>();
+        retListWithMembers.add(groupRoleWithMembers);
+        Groups retGroupsWithMembers = new Groups().setList(retListWithMembers);
+
+        List<Group> retListWithoutMembers = new ArrayList<>();
+        retListWithoutMembers.add(groupRoleWithoutMembers);
+        Groups retGroupsWithoutMembers = new Groups().setList(retListWithoutMembers);
+
+        Mockito.doReturn(retGroupsWithMembers).when(mockZMS).getGroups(domName, true, null, null);
+        Mockito.doReturn(retGroupsWithoutMembers).when(mockZMS).getGroups(domName, false, null, null);
+
+        // first request with members option set
+
+        Groups groups = zclt.getGroups(domName, true, null, null);
+        assertNotNull(groups);
+        assertNotNull(groups.getList());
+
+        boolean groupCheck = false;
+        for (Group group : groups.getList()) {
+            if (group.getName().equals("group-members:group.group-role")) {
+                assertNotNull(group.getGroupMembers());
+                assertEquals(group.getGroupMembers().size(), 2);
+                assertTrue(group.getGroupMembers().stream().map(GroupMember::getMemberName).collect(Collectors.toList()).contains("user.user1"));
+                assertTrue(group.getGroupMembers().stream().map(GroupMember::getMemberName).collect(Collectors.toList()).contains("coretech.service"));
+                groupCheck = true;
+            }
+        }
+        assertTrue(groupCheck);
+
+        // next without members option
+
+        groups = zclt.getGroups(domName, false, null, null);
+        assertNotNull(groups);
+        assertNotNull(groups.getList());
+
+        groupCheck = false;
+        for (Group group : groups.getList()) {
+            if (group.getName().equals("group-members:group.group-role")) {
+                assertNull(group.getGroupMembers());
+                groupCheck = true;
+            }
+        }
+        assertTrue(groupCheck);
     }
 
     @Test
@@ -625,7 +716,7 @@ public class ZMSClientMockTest {
     }
 
     @Test
-    public void testGetPrincipal() {
+    public void testGetPrincipal() throws URISyntaxException, IOException {
 
         ServicePrincipal svcPrincipal = new ServicePrincipal().setDomain("coretech").setService("storage");
         Mockito.doReturn(svcPrincipal).when(mockZMS).getServicePrincipal();
@@ -647,9 +738,9 @@ public class ZMSClientMockTest {
         DomainList domEmptyList = new DomainList();
 
         Mockito.doReturn(domList).when(mockZMS).getDomainList(null, null, null, null,
-                "1234", null, null, null, null, null, null, null, null);
+                "1234", null, null, null, null, null, null, null, null, null, null);
         Mockito.doReturn(domEmptyList).when(mockZMS).getDomainList(null, null, null, null,
-                "1235", null, null, null, null, null, null, null, null);
+                "1235", null, null, null, null, null, null, null, null, null, null);
 
         DomainList domainList = zclt.getDomainList(null, null, null, null, "1234", null, null);
         assertNotNull(domainList);
@@ -671,9 +762,9 @@ public class ZMSClientMockTest {
         DomainList domEmptyList = new DomainList();
 
         Mockito.doReturn(domList).when(mockZMS).getDomainList(null, null, null, null, null,
-                101, null, null, null, null, null, null, null);
+                101, null, null, null, null, null, null, null, null, null);
         Mockito.doReturn(domEmptyList).when(mockZMS).getDomainList(null, null, null, null, null,
-                102, null, null, null, null, null, null, null);
+                102, null, null, null, null, null, null, null, null, null);
 
         DomainList domainList = zclt.getDomainList(null, null, null, null, null, 101, null);
         assertNotNull(domainList);
@@ -695,9 +786,9 @@ public class ZMSClientMockTest {
         DomainList domEmptyList = new DomainList();
 
         Mockito.doReturn(domList).when(mockZMS).getDomainList(null, null, null, null, null,
-                null, "user.user1", "admin", null, null, null, null, null);
+                null, "user.user1", "admin", null, null, null, null, null, null, null);
         Mockito.doReturn(domEmptyList).when(mockZMS).getDomainList(null, null, null, null, null,
-                null, "user.user2", "admin", null, null, null, null, null);
+                null, "user.user2", "admin", null, null, null, null, null, null, null);
 
         DomainList domainList = zclt.getDomainList("user.user1", "admin");
         assertNotNull(domainList);
@@ -709,7 +800,7 @@ public class ZMSClientMockTest {
     }
 
     @Test
-    public void testEntityList() {
+    public void testEntityList() throws URISyntaxException, IOException {
 
         String domName  = "johnnies-place";
         List<String> names = new ArrayList<>();
@@ -791,8 +882,8 @@ public class ZMSClientMockTest {
         retListWithOutAssertions.add(policyWithOutAssertions);
         Policies retPoliciesWithOutAssertions = new Policies().setList(retListWithOutAssertions);
 
-        Mockito.doReturn(retPoliciesWithAssertions).when(mockZMS).getPolicies(domName, true);
-        Mockito.doReturn(retPoliciesWithOutAssertions).when(mockZMS).getPolicies(domName, false);
+        Mockito.doReturn(retPoliciesWithAssertions).when(mockZMS).getPolicies(domName, true, false, null, null);
+        Mockito.doReturn(retPoliciesWithOutAssertions).when(mockZMS).getPolicies(domName, false, false, null, null);
 
         // first request with assertions option set
 
@@ -831,6 +922,66 @@ public class ZMSClientMockTest {
     }
 
     @Test
+    public void testGetPolicyVersions() throws Exception {
+
+        final String domName  = "get-policy-versions";
+        String policyName = domName + ":policy.test-policy";
+
+        Policy policyWithAssertions = new Policy();
+        policyWithAssertions.setName(policyName);
+        policyWithAssertions.setVersion("0");
+        policyWithAssertions.setActive(true);
+        policyWithAssertions.setModified(Timestamp.fromCurrentTime());
+        List<Assertion> assertions = new ArrayList<>();
+        Assertion assertion = new Assertion()
+                .setAction("update")
+                .setEffect(AssertionEffect.ALLOW)
+                .setId((long) 101)
+                .setResource(domName + ":*")
+                .setRole("admin");
+        assertions.add(assertion);
+        policyWithAssertions.setAssertions(assertions);
+
+        Policy policyWithOutAssertions = new Policy();
+        policyWithOutAssertions.setName(policyName);
+        policyWithOutAssertions.setVersion("no-assertions");
+        policyWithAssertions.setActive(false);
+        policyWithOutAssertions.setModified(Timestamp.fromCurrentTime());
+
+        List<Policy> retList = new ArrayList<>();
+        retList.add(policyWithAssertions);
+        retList.add(policyWithOutAssertions);
+        Policies retPoliciesWithAssertions = new Policies().setList(retList);
+
+        Mockito.doReturn(retPoliciesWithAssertions).when(mockZMS).getPolicies(domName, true, true, null, null);
+
+        Policies policies = zclt.getPolicies(domName, true, true);
+        assertNotNull(policies);
+        assertNotNull(policies.getList());
+
+        boolean policyCheck1 = false;
+        boolean policyCheck2 = false;
+        for (Policy policy : policies.getList()) {
+            if (policy.getName().equals(policyName) && policy.getVersion().equals("0")) {
+                assertNotNull(policy.getModified());
+                List<Assertion> testAssertions = policy.getAssertions();
+                assertNotNull(testAssertions);
+                assertEquals(testAssertions.size(), 1);
+                assertEquals(testAssertions.get(0).getAction(), "update");
+                policyCheck1 = true;
+            }
+            if (policy.getName().equals(policyName) && policy.getVersion().equals("no-assertions")) {
+                assertNotNull(policy.getModified());
+                List<Assertion> testAssertions = policy.getAssertions();
+                assertNull(testAssertions);
+                policyCheck2 = true;
+            }
+        }
+        assertTrue(policyCheck1);
+        assertTrue(policyCheck2);
+    }
+
+    @Test
     public void testGetServices() throws Exception {
 
         final String domName  = "get-services";
@@ -866,6 +1017,24 @@ public class ZMSClientMockTest {
             .setUser("root")
             .setHosts(hosts);
 
+        TagValueList tagValues1 = new TagValueList();
+        TagValueList tagValues2 = new TagValueList();
+        tagValues1.setList(Arrays.asList("value1", "value2", "value3"));
+        tagValues2.setList(Arrays.asList("value4", "value5"));
+        Map<String, TagValueList> tags = new HashMap<>();
+        tags.putIfAbsent("key1", tagValues1);
+        tags.putIfAbsent("key2", tagValues2);
+
+        ServiceIdentity serviceWithTagsOnly = new ServiceIdentity();
+        serviceWithTagsOnly.setName(domName + ".service-tags-only")
+                .setGroup("users")
+                .setExecutable("/usr/bin/jetty")
+                .setModified(Timestamp.fromCurrentTime())
+                .setUser("root")
+                .setTags(tags);
+
+
+
         List<ServiceIdentity> retListWithKeysHosts = new ArrayList<>();
         retListWithKeysHosts.add(serviceWithKeysHosts);
         ServiceIdentities retServicesWithKeysHosts = new ServiceIdentities().setList(retListWithKeysHosts);
@@ -878,13 +1047,18 @@ public class ZMSClientMockTest {
         retListWithHostsOnly.add(serviceWithHostsOnly);
         ServiceIdentities retServicesWithHostsOnly = new ServiceIdentities().setList(retListWithHostsOnly);
 
-        Mockito.doReturn(retServicesWithKeysHosts).when(mockZMS).getServiceIdentities(domName, true, true);
-        Mockito.doReturn(retServicesWithKeysOnly).when(mockZMS).getServiceIdentities(domName, true, false);
-        Mockito.doReturn(retServicesWithHostsOnly).when(mockZMS).getServiceIdentities(domName, false, true);
+        List<ServiceIdentity> retListWithTagsOnly = new ArrayList<>();
+        retListWithTagsOnly.add(serviceWithTagsOnly);
+        ServiceIdentities retServicesWithTagsOnly = new ServiceIdentities().setList(retListWithTagsOnly);
+
+        Mockito.doReturn(retServicesWithKeysHosts).when(mockZMS).getServiceIdentities(domName, true, true, null, null);
+        Mockito.doReturn(retServicesWithKeysOnly).when(mockZMS).getServiceIdentities(domName, true, false, null ,null);
+        Mockito.doReturn(retServicesWithHostsOnly).when(mockZMS).getServiceIdentities(domName, false, true, null, null);
+        Mockito.doReturn(retServicesWithTagsOnly).when(mockZMS).getServiceIdentities(domName, false, false, "key1",  null);
 
         // first request with keys and hosts option set
 
-        ServiceIdentities services = zclt.getServiceIdentities(domName, true, true);
+        ServiceIdentities services = zclt.getServiceIdentities(domName, true, true, null ,null);
         assertNotNull(services);
         assertNotNull(services.getList());
 
@@ -908,7 +1082,7 @@ public class ZMSClientMockTest {
 
         // next with only key option
 
-        services = zclt.getServiceIdentities(domName, true, false);
+        services = zclt.getServiceIdentities(domName, true, false, null, null);
         assertNotNull(services);
         assertNotNull(services.getList());
 
@@ -942,6 +1116,26 @@ public class ZMSClientMockTest {
                 assertNotNull(testHosts);
                 assertEquals(testHosts.size(), 1);
                 assertEquals(testHosts.get(0), "host1");
+                serviceCheck = true;
+            }
+        }
+        assertTrue(serviceCheck);
+
+        services = zclt.getServiceIdentities(domName, false, false, "key1", null);
+        assertNotNull(services);
+        assertNotNull(services.getList());
+
+        serviceCheck = false;
+        for (ServiceIdentity service : services.getList()) {
+            if ("get-services.service-tags-only".equals(service.getName())) {
+                assertNotNull(service.getModified());
+                assertNull(service.getPublicKeys());
+                assertNull(service.getHosts());
+                Map<String, TagValueList> testTags = service.getTags();
+                assertNotNull(testTags);
+                assertEquals(testTags.size(), 2);
+                assertEquals(testTags.get("key1").getList(), Arrays.asList("value1", "value2", "value3"));
+                assertEquals(testTags.get("key2").getList(), Arrays.asList("value4", "value5"));
                 serviceCheck = true;
             }
         }
@@ -1000,17 +1194,31 @@ public class ZMSClientMockTest {
 
         final String domName = "delete-assertion";
 
-        Mockito.doReturn(null).when(mockZMS).deleteAssertion(domName, "policy1", 101L, auditRef);
-        Mockito.doThrow(new ResourceException(403)).when(mockZMS).deleteAssertion(domName, "policy1", 202L, auditRef);
+        Mockito.doReturn(null).when(mockZMS).deleteAssertion(domName, "policy1", 101L, auditRef, null);
+        Mockito.doThrow(new ResourceException(403)).when(mockZMS).deleteAssertion(domName, "policy1", 202L,
+                auditRef, null);
+
+        Mockito.doReturn(null).when(mockZMS).deleteAssertionPolicyVersion(domName, "policy1", "new-version",
+                101L, auditRef, null);
+        Mockito.doThrow(new ResourceException(403)).when(mockZMS).deleteAssertionPolicyVersion(domName, "policy1",
+                "new-version",202L, auditRef, null);
 
         // first valid case should complete successfully
 
         zclt.deleteAssertion(domName, "policy1", 101L, auditRef);
+        zclt.deleteAssertion(domName, "policy1", "new-version", 101L, auditRef);
 
         // now this should throw an exception
 
         try {
             zclt.deleteAssertion(domName, "policy1", 202L, auditRef);
+            fail();
+        } catch (ZMSClientException ex) {
+            assertEquals(ex.getCode(), 403);
+        }
+
+        try {
+            zclt.deleteAssertion(domName, "policy1", "new-version", 202L, auditRef);
             fail();
         } catch (ZMSClientException ex) {
             assertEquals(ex.getCode(), 403);
@@ -1034,18 +1242,34 @@ public class ZMSClientMockTest {
                 .setResource(domName + ":*")
                 .setRole("admin");
 
-        Mockito.doReturn(retAssertion).when(mockZMS).putAssertion(domName, "policy1", auditRef, assertion);
-        Mockito.doThrow(new ResourceException(403)).when(mockZMS).putAssertion(domName, "policy2", auditRef, assertion);
-
+        Mockito.doReturn(retAssertion).when(mockZMS).putAssertion(domName, "policy1",
+                auditRef, null, assertion);
+        Mockito.doThrow(new ResourceException(403)).when(mockZMS).putAssertion(domName, "policy2",
+                auditRef, null, assertion);
+        Mockito.doReturn(retAssertion).when(mockZMS).putAssertionPolicyVersion(domName, "policy1",
+                "new-version", auditRef, null, assertion);
+        Mockito.doThrow(new ResourceException(403)).when(mockZMS).putAssertionPolicyVersion(domName,
+                "policy2", "new-version", auditRef, null, assertion);
         // first valid case should complete successfully
 
         Assertion checkAssertion = zclt.putAssertion(domName, "policy1", auditRef, assertion);
+        assertEquals(checkAssertion.getId(), Long.valueOf(101));
+
+        checkAssertion = zclt.client.putAssertionPolicyVersion(domName, "policy1", "new-version",
+                auditRef, null, assertion);
         assertEquals(checkAssertion.getId(), Long.valueOf(101));
 
         // now this should throw an exception
 
         try {
             zclt.putAssertion(domName, "policy2", auditRef, assertion);
+            fail();
+        } catch (ZMSClientException ex) {
+            assertEquals(ex.getCode(), 403);
+        }
+
+        try {
+            zclt.putAssertionPolicyVersion(domName, "policy2", "new-version", auditRef, null, assertion);
             fail();
         } catch (ZMSClientException ex) {
             assertEquals(ex.getCode(), 403);

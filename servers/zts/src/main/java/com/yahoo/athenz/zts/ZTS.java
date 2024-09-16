@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 package com.yahoo.athenz.zts;
 
 import org.glassfish.jersey.server.ResourceConfig;
+import org.glassfish.jersey.server.ServerProperties;
 
 public class ZTS extends ResourceConfig {
     public ZTS() {
@@ -24,6 +25,7 @@ public class ZTS extends ResourceConfig {
         register(JsonParseExceptionMapper.class, 1);
         register(JsonProcessingExceptionMapper.class, 1);
         register(ZTSResources.class);
-        register(new ZTSBinder());
+        register(ZTSBinder.getInstance());
+        property(ServerProperties.WADL_FEATURE_DISABLE, true);
     }
 }

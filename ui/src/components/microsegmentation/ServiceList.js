@@ -64,9 +64,7 @@ const StyledLink = styled.a`
     cursor: pointer;
 `;
 
-const StyledInvalidLink = styled.a`
-    color: red;
-`;
+const StyledInvalidLink = styled.a``;
 
 const StyledMessageDiv = styled.div`
     min-width: 200px;
@@ -79,7 +77,6 @@ const StyledMenu = styled(Menu)`
 class ServiceList extends React.Component {
     constructor(props) {
         super(props);
-        this.api = props.api;
         this.localDate = new DateUtils();
         this.viewServiceDetails = this.viewServiceDetails.bind(this);
     }
@@ -90,8 +87,7 @@ class ServiceList extends React.Component {
         let service = item.substring(index + 1);
         this.props.router.push(
             `/domain/${dom}/service/${service}/instance/dynamic`,
-            `/domain/${dom}/service/${service}/instance/dynamic`,
-            { getInitialProps: true }
+            `/domain/${dom}/service/${service}/instance/dynamic`
         );
     }
 
@@ -113,24 +109,7 @@ class ServiceList extends React.Component {
                             </StyledLink>
                         )}
 
-                        {item.includes('*') && (
-                            <StyledMenu
-                                placement='right'
-                                trigger={
-                                    <StyledInvalidLink>
-                                        {' '}
-                                        {item}{' '}
-                                    </StyledInvalidLink>
-                                }
-                            >
-                                <StyledMessageDiv>
-                                    <p>
-                                        Service is invalid as it contains
-                                        wildcard characters.
-                                    </p>
-                                </StyledMessageDiv>
-                            </StyledMenu>
-                        )}
+                        {item.includes('*') && <p>{item} </p>}
                     </StyledTd>
                 </StyledTr>
             );
@@ -142,10 +121,12 @@ class ServiceList extends React.Component {
                 data-testid={'segmentation-service-list'}
             >
                 <StyleTable>
-                    <StyledTr>
-                        <StyledTh> Services </StyledTh>
-                    </StyledTr>
-                    {rows}
+                    <thead>
+                        <StyledTr>
+                            <StyledTh> Services </StyledTh>
+                        </StyledTr>
+                    </thead>
+                    <tbody>{rows}</tbody>
                 </StyleTable>
             </StyledDiv>
         );

@@ -87,6 +87,7 @@ exports[`TemplateRow should render templateRow 1`] = `
         class="emotion-4"
         data-testid="icon"
         height="1.25em"
+        id=""
         viewBox="0 0 1024 1024"
         width="1.25em"
       >
@@ -131,7 +132,6 @@ exports[`TemplateRow should render templateRow 1`] = `
     >
       Update
     </button>
-    
   </td>
 </tr>
 `;
@@ -162,7 +162,7 @@ exports[`TemplateRow should render templaterow with pop up 1`] = `
 .emotion-13 {
   border: none;
   border-radius: 2px;
-  box-shadow: 0 0 0 1px transparent inset,0 0 0 0 #d5d5d5 inset;
+  box-shadow: 0 0 0 1px #3697f2 inset;
   box-sizing: border-box;
   cursor: pointer;
   display: inline-block;
@@ -182,7 +182,6 @@ exports[`TemplateRow should render templaterow with pop up 1`] = `
   vertical-align: baseline;
   white-space: nowrap;
   background: transparent;
-  box-shadow: 0 0 0 1px #3697f2 inset;
   color: #3697f2;
 }
 
@@ -222,6 +221,7 @@ exports[`TemplateRow should render templaterow with pop up 1`] = `
         class="emotion-4"
         data-testid="icon"
         height="1.25em"
+        id=""
         viewBox="0 0 1024 1024"
         width="1.25em"
       >
@@ -266,7 +266,6 @@ exports[`TemplateRow should render templaterow with pop up 1`] = `
     >
       Update
     </button>
-    
   </td>
 </tr>
 `;
@@ -297,7 +296,7 @@ exports[`TemplateRow should render with description 1`] = `
 .emotion-13 {
   border: none;
   border-radius: 2px;
-  box-shadow: 0 0 0 1px transparent inset,0 0 0 0 #d5d5d5 inset;
+  box-shadow: 0 0 0 1px #3697f2 inset;
   box-sizing: border-box;
   cursor: pointer;
   display: inline-block;
@@ -317,7 +316,6 @@ exports[`TemplateRow should render with description 1`] = `
   vertical-align: baseline;
   white-space: nowrap;
   background: transparent;
-  box-shadow: 0 0 0 1px #3697f2 inset;
   color: #3697f2;
 }
 
@@ -355,6 +353,7 @@ exports[`TemplateRow should render with description 1`] = `
         class="emotion-4"
         data-testid="icon"
         height="1.25em"
+        id=""
         viewBox="0 0 1024 1024"
         width="1.25em"
       >
@@ -399,7 +398,6 @@ exports[`TemplateRow should render with description 1`] = `
     >
       Update
     </button>
-    
   </td>
 </tr>
 `;
@@ -430,7 +428,7 @@ exports[`TemplateRow should render without pop up 1`] = `
 .emotion-13 {
   border: none;
   border-radius: 2px;
-  box-shadow: 0 0 0 1px transparent inset,0 0 0 0 #d5d5d5 inset;
+  box-shadow: 0 0 0 1px #3697f2 inset;
   box-sizing: border-box;
   cursor: pointer;
   display: inline-block;
@@ -450,7 +448,6 @@ exports[`TemplateRow should render without pop up 1`] = `
   vertical-align: baseline;
   white-space: nowrap;
   background: transparent;
-  box-shadow: 0 0 0 1px #3697f2 inset;
   color: #3697f2;
 }
 
@@ -488,6 +485,7 @@ exports[`TemplateRow should render without pop up 1`] = `
         class="emotion-4"
         data-testid="icon"
         height="1.25em"
+        id=""
         viewBox="0 0 1024 1024"
         width="1.25em"
       >
@@ -532,7 +530,6 @@ exports[`TemplateRow should render without pop up 1`] = `
     >
       Update
     </button>
-    
   </td>
 </tr>
 `;

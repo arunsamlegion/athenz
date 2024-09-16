@@ -51,6 +51,12 @@ public class GroupMember {
     @RdlOptional
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public Integer principalType;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public String pendingState;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public String notifyRoles;
 
     public GroupMember setMemberName(String memberName) {
         this.memberName = memberName;
@@ -143,6 +149,20 @@ public class GroupMember {
     public Integer getPrincipalType() {
         return principalType;
     }
+    public GroupMember setPendingState(String pendingState) {
+        this.pendingState = pendingState;
+        return this;
+    }
+    public String getPendingState() {
+        return pendingState;
+    }
+    public GroupMember setNotifyRoles(String notifyRoles) {
+        this.notifyRoles = notifyRoles;
+        return this;
+    }
+    public String getNotifyRoles() {
+        return notifyRoles;
+    }
 
     @Override
     public boolean equals(Object another) {
@@ -188,6 +208,12 @@ public class GroupMember {
                 return false;
             }
             if (principalType == null ? a.principalType != null : !principalType.equals(a.principalType)) {
+                return false;
+            }
+            if (pendingState == null ? a.pendingState != null : !pendingState.equals(a.pendingState)) {
+                return false;
+            }
+            if (notifyRoles == null ? a.notifyRoles != null : !notifyRoles.equals(a.notifyRoles)) {
                 return false;
             }
         }

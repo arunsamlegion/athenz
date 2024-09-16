@@ -17,12 +17,14 @@ import React from 'react';
 import styled from '@emotion/styled';
 import Icon from '../denali/icons/Icon';
 import { colors } from '../denali/styles';
-import PublicKeyTable from '../service/PublicKeyTable';
-import ProviderTable from '../service/ProviderTable';
 import DateUtils from '../utils/DateUtils';
-import RequestUtils from '../utils/RequestUtils';
-import { keyframes, css } from '@emotion/react';
+import { css, keyframes } from '@emotion/react';
 import { withRouter } from 'next/router';
+import PublicKeyTable from './PublicKeyTable';
+import { selectProvider } from '../../redux/selectors/services';
+import { deleteService, getProvider } from '../../redux/thunks/services';
+import { connect } from 'react-redux';
+import ProviderTable from './ProviderTable';
 
 const TdStyled = styled.td`
     background-color: ${(props) => props.color};
@@ -33,12 +35,12 @@ const TdStyled = styled.td`
 `;
 
 const colorTransition = keyframes`
-        0% {
-            background-color: rgba(21, 192, 70, 0.20);
-        }
-        100% {
-            background-color: transparent;
-        }
+    0% {
+        background-color: rgba(21, 192, 70, 0.20);
+    }
+    100% {
+        background-color: transparent;
+    }
 `;
 
 const TrStyled = styled.tr`
@@ -52,12 +54,15 @@ const TrStyled = styled.tr`
 class ServiceRow extends React.Component {
     constructor(props) {
         super(props);
-        this.api = this.props.api;
         this.togglePublicKeys = this.togglePublicKeys.bind(this);
         this.toggleProviders = this.toggleProviders.bind(this);
         this.toggleInstances = this.toggleInstances.bind(this);
+        this.clickTag = this.clickTag.bind(this);
+        this.clickMicrosegmentation = this.clickMicrosegmentation.bind(this);
         this.state = {
             provider: null,
+            publicKeys: false,
+            providers: false,
         };
         this.localDate = new DateUtils();
     }
@@ -67,56 +72,38 @@ class ServiceRow extends React.Component {
         let service = this.props.serviceName;
         this.props.router.push(
             `/domain/${domain}/service/${service}/instance/dynamic`,
-            `/domain/${domain}/service/${service}/instance/dynamic`,
-            { getInitialProps: true }
+            `/domain/${domain}/service/${service}/instance/dynamic`
+        );
+    }
+
+    clickTag() {
+        this.props.router.push(
+            `/domain/${this.props.domainName}/service/${this.props.serviceName}/tags`,
+            `/domain/${this.props.domainName}/service/${this.props.serviceName}/tags`
+        );
+    }
+
+    clickMicrosegmentation() {
+        this.props.router.push(
+            `/domain/${this.props.domainName}/service/${this.props.serviceName}/microsegmentation`,
+            `/domain/${this.props.domainName}/service/${this.props.serviceName}/microsegmentation`
         );
     }
 
     togglePublicKeys() {
-        if (this.state.serviceDetails) {
-            this.setState({
-                serviceDetails: null,
-            });
-        } else {
-            this.api
-                .getService(this.props.domainName, this.props.serviceName)
-                .then((detail) => {
-                    this.setState({
-                        serviceDetails: detail,
-                    });
-                })
-                .catch((err) => {
-                    this.setState({
-                        serviceDetails: {
-                            errorMessage: RequestUtils.xhrErrorCheckHelper(err),
-                        },
-                    });
-                });
-        }
+        this.setState({
+            publicKeys: !this.state.publicKeys,
+        });
     }
 
     toggleProviders() {
-        if (this.state.provider) {
-            this.setState({
-                provider: null,
-            });
-        } else {
-            this.api
-                .getProvider(this.props.domainName, this.props.serviceName)
-                .then((data) => {
-                    this.setState({
-                        provider: { provider: data.provider },
-                        allProviders: data.allProviders,
-                    });
-                })
-                .catch((err) => {
-                    this.setState({
-                        provider: {
-                            errorMessage: RequestUtils.xhrErrorCheckHelper(err),
-                        },
-                    });
+        this.props
+            .getProvider(this.props.domainName, this.props.serviceName)
+            .then(() => {
+                this.setState({
+                    providers: !this.state.providers,
                 });
-        }
+            });
     }
 
     render() {
@@ -138,14 +125,26 @@ class ServiceRow extends React.Component {
                 <TdStyled color={color} align={left}>
                     {this.localDate.getLocalDate(
                         this.props.modified,
-                        'UTC',
-                        'UTC'
+                        this.props.timeZone,
+                        this.props.timeZone
                     )}
                 </TdStyled>
+                {this.props.featureFlag ? (
+                    <TdStyled color={color} align={center}>
+                        <Icon
+                            icon={'data-source'}
+                            onClick={this.toggleInstances}
+                            color={colors.icons}
+                            isLink
+                            size={'1.25em'}
+                            verticalAlign={'text-bottom'}
+                        />
+                    </TdStyled>
+                ) : null}
                 <TdStyled color={color} align={center}>
                     <Icon
-                        icon={'data-source'}
-                        onClick={this.toggleInstances}
+                        icon={'key'}
+                        onClick={this.togglePublicKeys}
                         color={colors.icons}
                         isLink
                         size={'1.25em'}
@@ -154,8 +153,18 @@ class ServiceRow extends React.Component {
                 </TdStyled>
                 <TdStyled color={color} align={center}>
                     <Icon
-                        icon={'key'}
-                        onClick={this.togglePublicKeys}
+                        icon={'tag'}
+                        onClick={this.clickTag}
+                        color={colors.icons}
+                        isLink
+                        size={'1.25em'}
+                        verticalAlign={'text-bottom'}
+                    />
+                </TdStyled>
+                <TdStyled color={color} align={center}>
+                    <Icon
+                        icon={'list-check'}
+                        onClick={this.clickMicrosegmentation}
                         color={colors.icons}
                         isLink
                         size={'1.25em'}
@@ -185,31 +194,26 @@ class ServiceRow extends React.Component {
             </TrStyled>
         );
 
-        if (this.state.serviceDetails) {
+        if (this.state.publicKeys) {
             row.push(
                 <tr key={this.props.domainName + serviceName}>
                     <PublicKeyTable
                         color={this.props.color}
-                        serviceDetails={this.state.serviceDetails}
                         service={serviceName}
                         domain={this.props.domainName}
-                        api={this.api}
                         _csrf={this.props._csrf}
                     />
                 </tr>
             );
         }
 
-        if (this.state.provider) {
+        if (this.state.providers) {
             row.push(
                 <tr key={serviceName + this.state.provider}>
                     <ProviderTable
                         color={this.props.color}
                         provider={this.state.provider}
-                        api={this.api}
                         _csrf={this.props._csrf}
-                        key={serviceName + this.state.provider}
-                        allProviders={this.state.allProviders}
                         service={serviceName}
                         domain={this.props.domainName}
                     />
@@ -219,4 +223,22 @@ class ServiceRow extends React.Component {
         return row;
     }
 }
-export default withRouter(ServiceRow);
+
+const mapStateToProps = (state, props) => {
+    return {
+        ...props,
+        provider: selectProvider(state, props.domainName, props.serviceName),
+    };
+};
+
+const mapDispatchToProps = (dispatch) => ({
+    deleteService: (serviceName, _csrf, onSuccess, onFail) =>
+        dispatch(deleteService(serviceName, _csrf, onSuccess, onFail)),
+    getProvider: (domainName, serviceName) =>
+        dispatch(getProvider(domainName, serviceName)),
+});
+
+export default connect(
+    mapStateToProps,
+    mapDispatchToProps
+)(withRouter(ServiceRow));

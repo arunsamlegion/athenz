@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -50,19 +50,14 @@ const Header = (props) => {
             <NavBar background={'#002339'}>
                 <NavBarItem>
                     <Link href={PageUtils.homePage()}>
-                        <a>
-                            <LogoStyled />
-                        </a>
+                        <LogoStyled />
                     </Link>
                 </NavBarItem>
                 <NavBarItemDiv>
                     <NavBarItem width='100%'>{search}</NavBarItem>
                 </NavBarItemDiv>
                 <NavBarItem right>
-                    <HeaderMenu
-                        headerDetails={props.headerDetails}
-                        pending={props.pending}
-                    />
+                    <HeaderMenu />
                 </NavBarItem>
             </NavBar>
         </NavBarDiv>

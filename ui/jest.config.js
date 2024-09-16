@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,17 +28,24 @@ module.exports = {
     globalSetup: './src/global-jest-setup.js',
     moduleDirectories: ['node_modules'],
     reporters: ['default', 'jest-junit'],
-    setupFilesAfterEnv: ['./src/setup-jest-test-framework.js'],
-    testURL: 'http://localhost',
+    setupFilesAfterEnv: [
+        '@testing-library/jest-dom',
+        '<rootDir>/src/setup-jest-test-framework.js',
+    ],
+    testEnvironmentOptions: {
+        url: 'http://localhost/',
+    },
     testPathIgnorePatterns: [
         './.next/',
         './node_modules/',
         './src/__tests__/spec/',
     ],
     transform: {
-        '^.+\\.js$': 'babel-jest',
+        '^.+\\.js$': ['babel-jest', { presets: ['next/babel'] }],
     },
     moduleNameMapper: {
         '\\.(css|less)$': 'identity-obj-proxy',
     },
+    testEnvironment: 'jsdom',
+    snapshotSerializers: ['@emotion/jest/serializer'],
 };

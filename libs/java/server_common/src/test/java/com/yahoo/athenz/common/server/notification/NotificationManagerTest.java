@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Oath Holdings Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,11 @@
 package com.yahoo.athenz.common.server.notification;
 
 import com.yahoo.athenz.common.server.db.RolesProvider;
+import com.yahoo.athenz.zms.ResourceException;
 import org.mockito.Mockito;
 import org.mockito.MockitoAnnotations;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.BeforeMethod;
@@ -32,9 +35,11 @@ import static org.testng.Assert.*;
 
 public class NotificationManagerTest {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(NotificationManagerTest.class);
+
     @BeforeClass
     public void setUp() {
-        MockitoAnnotations.initMocks(this);
+        MockitoAnnotations.openMocks(this);
     }
 
     @BeforeMethod
@@ -49,7 +54,7 @@ public class NotificationManagerTest {
 
     @Test
     public void testSendNotification() {
-        Notification notification = new Notification();
+        Notification notification = new Notification(Notification.Type.ROLE_MEMBER_EXPIRY);
         Set<String> recipients = new HashSet<>();
         recipients.add("user.joe");
         notification.setRecipients(recipients);
@@ -92,9 +97,9 @@ public class NotificationManagerTest {
         notificationTasks.add(notificationTask2);
 
         if (notificationServiceFactories == null) {
-            return new NotificationManager(notificationTasks);
+            return new NotificationManager(notificationTasks, null, null, null);
         }
-        return new NotificationManager(notificationServiceFactories, notificationTasks);
+        return new NotificationManager(notificationServiceFactories, notificationTasks, null);
     }
 
     @Test
@@ -115,7 +120,7 @@ public class NotificationManagerTest {
 
         // Test with two factories
         System.setProperty(NOTIFICATION_PROP_SERVICE_FACTORY_CLASS, emailNotificationFactory + ", " + metricNotificationFactory);
-        NotificationManager notificationManager = new NotificationManager(notificationTasks);
+        NotificationManager notificationManager = new NotificationManager(notificationTasks, null, null, null);
         assertEquals(notificationManager.getLoadedNotificationServices().size(), 2);
         assertEquals(notificationManager.getLoadedNotificationServices().get(0), emailNotificationService);
         assertEquals(notificationManager.getLoadedNotificationServices().get(1), metricNotificationService);
@@ -123,14 +128,14 @@ public class NotificationManagerTest {
 
         // Test with a single factory
         System.setProperty(NOTIFICATION_PROP_SERVICE_FACTORY_CLASS, emailNotificationFactory);
-        notificationManager = new NotificationManager(notificationTasks);
+        notificationManager = new NotificationManager(notificationTasks, null, null, null);
         assertEquals(notificationManager.getLoadedNotificationServices().size(), 1);
         assertEquals(notificationManager.getLoadedNotificationServices().get(0), emailNotificationService);
         assertTrue(notificationManager.isNotificationFeatureAvailable());
 
         // Test with no factories
         System.clearProperty(NOTIFICATION_PROP_SERVICE_FACTORY_CLASS);
-        notificationManager = new NotificationManager(notificationTasks);
+        notificationManager = new NotificationManager(notificationTasks, null, null, null);
         assertEquals(notificationManager.getLoadedNotificationServices().size(), 0);
         assertFalse(notificationManager.isNotificationFeatureAvailable());
     }
@@ -139,7 +144,7 @@ public class NotificationManagerTest {
     public void testSendNotificationNullService() {
 
         NotificationServiceFactory testfact = () -> null;
-        Notification notification = new Notification();
+        Notification notification = new Notification(Notification.Type.ROLE_MEMBER_EXPIRY);
         Set<String> recipients = new HashSet<>();
         recipients.add("user.joe");
         notification.setRecipients(recipients);
@@ -167,7 +172,8 @@ public class NotificationManagerTest {
 
         NotificationToEmailConverter converter = Mockito.mock(NotificationToEmailConverter.class);
         NotificationToMetricConverter metricConverter = Mockito.mock(NotificationToMetricConverter.class);
-        Notification notification = notificationCommon.createNotification(recipients, details, converter, metricConverter);
+        Notification notification = notificationCommon.createNotification(Notification.Type.ROLE_MEMBER_EXPIRY,
+                recipients, details, converter, metricConverter);
         assertNotNull(notification);
 
         assertTrue(notification.getRecipients().contains("user.recipient1"));
@@ -178,12 +184,58 @@ public class NotificationManagerTest {
     }
 
     @Test
+    public void testCreateNotificationGroup() {
+        System.clearProperty(NOTIFICATION_PROP_SERVICE_FACTORY_CLASS);
+        RolesProvider rolesProvider = Mockito.mock(RolesProvider.class);
+        Mockito.when(rolesProvider.getRolesByDomain(Mockito.any())).thenThrow(new ResourceException(404));
+        DomainRoleMembersFetcher domainRoleMembersFetcher = new DomainRoleMembersFetcher(rolesProvider, USER_DOMAIN_PREFIX);
+        NotificationCommon notificationCommon = new NotificationCommon(domainRoleMembersFetcher, USER_DOMAIN_PREFIX);
+
+        String recipient = "test.domain:group.testgroup";
+
+        Map<String, String> details = new HashMap<>();
+        details.put("key1", "value1");
+        details.put("key2", "value2");
+
+        NotificationToEmailConverter converter = Mockito.mock(NotificationToEmailConverter.class);
+        NotificationToMetricConverter metricConverter = Mockito.mock(NotificationToMetricConverter.class);
+        Notification notification = notificationCommon.createNotification(Notification.Type.ROLE_MEMBER_EXPIRY,
+                recipient, details, converter, metricConverter);
+        Mockito.verify(rolesProvider, Mockito.times(0)).getRolesByDomain(Mockito.any());
+        assertNull(notification);
+    }
+
+    @Test
+    public void testCreateNotificationException() {
+        System.clearProperty(NOTIFICATION_PROP_SERVICE_FACTORY_CLASS);
+        RolesProvider rolesProvider = Mockito.mock(RolesProvider.class);
+        Mockito.when(rolesProvider.getRolesByDomain(Mockito.any())).thenThrow(new ResourceException(404));
+        DomainRoleMembersFetcher domainRoleMembersFetcher = new DomainRoleMembersFetcher(rolesProvider, USER_DOMAIN_PREFIX);
+        NotificationCommon notificationCommon = new NotificationCommon(domainRoleMembersFetcher, USER_DOMAIN_PREFIX);
+
+        String recipient = "test.domain:role.admin";
+
+        Map<String, String> details = new HashMap<>();
+        details.put("key1", "value1");
+        details.put("key2", "value2");
+
+        NotificationToEmailConverter converter = Mockito.mock(NotificationToEmailConverter.class);
+        NotificationToMetricConverter metricConverter = Mockito.mock(NotificationToMetricConverter.class);
+        Notification notification = notificationCommon.createNotification(Notification.Type.ROLE_MEMBER_EXPIRY,
+                recipient, details, converter, metricConverter);
+        Mockito.verify(rolesProvider, Mockito.times(1)).getRole("test.domain", "admin", false, true, false);
+        assertNull(notification);
+    }
+
+    @Test
     public void testCreaeteNotificationNullRecipients() {
         RolesProvider rolesProvider = Mockito.mock(RolesProvider.class);
         DomainRoleMembersFetcher domainRoleMembersFetcher = new DomainRoleMembersFetcher(rolesProvider, USER_DOMAIN_PREFIX);
         NotificationCommon notificationCommon = new NotificationCommon(domainRoleMembersFetcher, USER_DOMAIN_PREFIX);
-        assertNull(notificationCommon.createNotification((Set<String>) null, null, null, null));
-        assertNull(notificationCommon.createNotification(Collections.emptySet(), null, null, null));
+        assertNull(notificationCommon.createNotification(Notification.Type.ROLE_MEMBER_EXPIRY,
+                (Set<String>) null, null, null, null));
+        assertNull(notificationCommon.createNotification(Notification.Type.ROLE_MEMBER_EXPIRY,
+                Collections.emptySet(), null, null, null));
     }
 
     @Test
@@ -197,14 +249,14 @@ public class NotificationManagerTest {
         NotificationCommon notificationCommon = new NotificationCommon(domainRoleMembersFetcher, USER_DOMAIN_PREFIX);
         NotificationToEmailConverter converter = Mockito.mock(NotificationToEmailConverter.class);
         NotificationToMetricConverter metricConverter = Mockito.mock(NotificationToMetricConverter.class);
-        Notification notification = notificationCommon.createNotification(recipients, null, converter, metricConverter);
+        Notification notification = notificationCommon.createNotification(Notification.Type.ROLE_MEMBER_EXPIRY,
+                recipients, null, converter, metricConverter);
         assertNull(notification);
     }
 
     @Test
     public void testNotificationManagerFail() {
         System.setProperty(NOTIFICATION_PROP_SERVICE_FACTORY_CLASS, "aa");
-        RolesProvider rolesProvider = Mockito.mock(RolesProvider.class);
 
         NotificationManager notificationManager = getNotificationManager(null);
         assertNotNull(notificationManager);
@@ -245,13 +297,32 @@ public class NotificationManagerTest {
 
         NotificationToEmailConverter converter = Mockito.mock(NotificationToEmailConverter.class);
         NotificationToMetricConverter metricConverter = Mockito.mock(NotificationToMetricConverter.class);
-        assertNull(notificationCommon.createNotification((String) null, details, converter, metricConverter));
-        assertNull(notificationCommon.createNotification("", details, converter, metricConverter));
-        assertNull(notificationCommon.createNotification("athenz", details, converter, metricConverter));
+        assertNull(notificationCommon.createNotification(Notification.Type.ROLE_MEMBER_EXPIRY,
+                (String) null, details, converter, metricConverter));
+        assertNull(notificationCommon.createNotification(Notification.Type.ROLE_MEMBER_EXPIRY,
+                "", details, converter, metricConverter));
+        assertNull(notificationCommon.createNotification(Notification.Type.ROLE_MEMBER_EXPIRY,
+                "athenz", details, converter, metricConverter));
 
         // valid service name but we have no valid domain so we're still
         // going to get null notification
 
-        assertNull(notificationCommon.createNotification("athenz.service", details, converter, metricConverter));
+        assertNull(notificationCommon.createNotification(Notification.Type.ROLE_MEMBER_EXPIRY,
+                "athenz.service", details, converter, metricConverter));
+    }
+
+    @Test
+    public void testPrintNotificationDetailsToLog() {
+        RolesProvider rolesProvider = Mockito.mock(RolesProvider.class);
+        DomainRoleMembersFetcher domainRoleMembersFetcher = new DomainRoleMembersFetcher(rolesProvider, USER_DOMAIN_PREFIX);
+        NotificationCommon notificationCommon = new NotificationCommon(domainRoleMembersFetcher, USER_DOMAIN_PREFIX);
+        assertNull(notificationCommon.printNotificationDetailsToLog(null, "description"));
+        assertNotNull(notificationCommon.printNotificationDetailsToLog(new ArrayList<>(), "description"));
+        List<Notification> notifications = new ArrayList<>();
+
+        Map<String, String> details = new HashMap<>();
+        details.put("test", "test");
+        notifications.add(new Notification(Notification.Type.ROLE_MEMBER_EXPIRY).setDetails(details));
+        assertNotNull(notificationCommon.printNotificationDetailsToLog(notifications, "description"));
     }
 }

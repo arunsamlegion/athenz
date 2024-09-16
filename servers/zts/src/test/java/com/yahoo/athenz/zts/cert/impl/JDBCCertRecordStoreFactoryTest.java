@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Oath Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,7 +34,7 @@ public class JDBCCertRecordStoreFactoryTest {
         System.setProperty(ZTSConsts.ZTS_PROP_CERT_JDBC_PASSWORD, "password");
         
         PrivateKeyStore keyStore = Mockito.mock(PrivateKeyStore.class);
-        Mockito.doReturn("password").when(keyStore).getApplicationSecret("jdbc", "password");
+        Mockito.doReturn("password".toCharArray()).when(keyStore).getSecret("jdbc", "", "password");
         
         JDBCCertRecordStoreFactory factory = new JDBCCertRecordStoreFactory();
         CertRecordStore store = factory.create(keyStore);

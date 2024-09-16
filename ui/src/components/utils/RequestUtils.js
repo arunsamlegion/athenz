@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,8 +32,15 @@ class RequestUtils {
         let message;
         if (err && err.statusCode === 0) {
             message = 'Session expired. Please refresh the page.';
-        } else {
+        } else if (
+            err.body !== null &&
+            err.body !== undefined &&
+            err.body.message !== null &&
+            err.body.message !== undefined
+        ) {
             message = `Status: ${err.statusCode}. Message: ${err.body.message}`;
+        } else {
+            message = `Status: ${err.statusCode}.`;
         }
         return message;
     }
@@ -43,8 +50,10 @@ class RequestUtils {
             message = 'Session expired. Please refresh the page.';
         } else if (err.output && err.output.message) {
             message = `Status: ${err.statusCode}. Message: ${err.output.message}`;
-        } else {
+        } else if (err.body && err.body.message) {
             message = `Status: ${err.statusCode}. Message: ${err.body.message}`;
+        } else {
+            message = `Status: ${err.statusCode}`;
         }
         return message;
     }

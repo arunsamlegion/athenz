@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,11 @@ import {
 import RequestUtils from '../utils/RequestUtils';
 import { css, keyframes } from '@emotion/react';
 import NameUtils from '../utils/NameUtils';
+import {
+    deleteAssertionPolicyVersion,
+    getPolicyVersion,
+} from '../../redux/thunks/policies';
+import { connect } from 'react-redux';
 
 const StyleTable = styled.table`
     width: 100%;
@@ -45,7 +50,7 @@ const RuleHeadStyled = styled.th`
     border-bottom: 2px solid #d5d5d5;
     color: #9a9a9a;
     font-weight: 600;
-    font-size: 0.7rem;
+    font-size: 1.2rem;
     padding-bottom: 5px;
     vertical-align: top;
     text-transform: uppercase;
@@ -58,7 +63,6 @@ const IconHeadStyled = styled.th`
     border-bottom: 2px solid #d5d5d5;
     color: #9a9a9a;
     font-weight: 600;
-    font-size: 0.8rem;
     padding-bottom: 5px;
     vertical-align: top;
     text-transform: uppercase;
@@ -119,7 +123,7 @@ const colorTransition = keyframes`
         }
 `;
 
-export default class PolicyRuleTable extends React.Component {
+class PolicyRuleTable extends React.Component {
     constructor(props) {
         super(props);
         this.toggleAddAssertion = this.toggleAddAssertion.bind(this);
@@ -127,7 +131,6 @@ export default class PolicyRuleTable extends React.Component {
         this.onSubmitDeleteAssertion = this.onSubmitDeleteAssertion.bind(this);
         this.onCancelDeleteAssertion = this.onCancelDeleteAssertion.bind(this);
         this.closeModal = this.closeModal.bind(this);
-        this.api = this.props.api;
         this.state = {
             addAssertion: false,
             assertions: this.props.assertions ? this.props.assertions : [],
@@ -140,11 +143,15 @@ export default class PolicyRuleTable extends React.Component {
     }
 
     reLoadAssertions(successMessage, showSuccess) {
-        this.api
-            .getPolicy(this.props.domain, this.props.name)
-            .then((assertions) => {
+        this.props
+            .getPolicyVersion(
+                this.props.domain,
+                this.props.name,
+                this.props.version
+            )
+            .then((policy) => {
                 this.setState({
-                    assertions: assertions.assertions,
+                    assertions: policy.assertions,
                     addAssertion: false,
                     successMessage,
                     showDelete: false,
@@ -181,17 +188,17 @@ export default class PolicyRuleTable extends React.Component {
     }
 
     onSubmitDeleteAssertion() {
-        this.api
-            .deleteAssertion(
+        this.props
+            .deleteAssertionPolicyVersion(
                 this.props.domain,
                 this.props.name,
+                this.props.version,
                 this.state.deleteAssertionId,
-                DELETE_AUDIT_REFERENCE,
                 this.props._csrf
             )
             .then(() => {
                 this.reLoadAssertions(
-                    `Successfully deleted assertion from policy ${this.props.name}`
+                    `Successfully deleted assertion from policy ${this.props.name} version ${this.props.version}`
                 );
             })
             .catch((err) => {
@@ -232,6 +239,8 @@ export default class PolicyRuleTable extends React.Component {
             let newAssertion =
                 this.props.name +
                     '-' +
+                    this.props.version +
+                    '-' +
                     tempRole +
                     '-' +
                     tempResource +
@@ -240,7 +249,13 @@ export default class PolicyRuleTable extends React.Component {
                 this.state.successMessage;
             rows.push(
                 <TrStyled
-                    key={this.props.name + i + '-assertion'}
+                    key={
+                        this.props.name +
+                        '-' +
+                        this.props.version +
+                        i +
+                        '-assertion'
+                    }
                     isSuccess={newAssertion}
                 >
                     <TDStyled align={left}>{assertion.effect}</TDStyled>
@@ -266,18 +281,18 @@ export default class PolicyRuleTable extends React.Component {
         if (this.state.addAssertion) {
             addAssertion = (
                 <AddAssertion
-                    api={this.api}
                     domain={this.props.domain}
                     cancel={this.toggleAddAssertion}
                     submit={this.reLoadAssertions}
                     _csrf={this.props._csrf}
                     name={this.props.name}
+                    version={this.props.version}
                 />
             );
         }
         return (
             <StyleTd
-                colSpan={4}
+                colSpan={7}
                 backgroundColor={'black'}
                 data-testid='ruletable'
             >
@@ -303,10 +318,10 @@ export default class PolicyRuleTable extends React.Component {
                             </TableHeadStyled>
                         </tr>
                         <tr>
-                            <td colSpan={4}>{addAssertion}</td>
+                            <td colSpan={7}>{addAssertion}</td>
                         </tr>
                         <tr>
-                            <td colSpan={4}>
+                            <td colSpan={7}>
                                 <TableDiv>
                                     <StyleTable>
                                         <thead>
@@ -357,3 +372,27 @@ export default class PolicyRuleTable extends React.Component {
         );
     }
 }
+
+const mapDispatchToProps = (dispatch) => ({
+    getPolicyVersion: (domain, policy, version) =>
+        dispatch(getPolicyVersion(domain, policy, version)),
+    deleteAssertionPolicyVersion: (
+        domain,
+        policyName,
+        policyVersion,
+        deleteAssertionId,
+        _csrf
+    ) =>
+        dispatch(
+            deleteAssertionPolicyVersion(
+                domain,
+                policyName,
+                policyVersion,
+                deleteAssertionId,
+                DELETE_AUDIT_REFERENCE,
+                _csrf
+            )
+        ),
+});
+
+export default connect(null, mapDispatchToProps)(PolicyRuleTable);

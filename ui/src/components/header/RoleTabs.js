@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,43 +55,37 @@ class RoleTabs extends React.Component {
             case 'members':
                 this.props.router.push(
                     `/domain/${domain}/role/${role}/members`,
-                    `/domain/${domain}/role/${role}/members`,
-                    { getInitialProps: true }
+                    `/domain/${domain}/role/${role}/members`
                 );
                 break;
             case 'review':
                 this.props.router.push(
                     `/domain/${domain}/role/${role}/review`,
-                    `/domain/${domain}/role/${role}/review`,
-                    { getInitialProps: true }
+                    `/domain/${domain}/role/${role}/review`
                 );
                 break;
             case 'policies':
                 this.props.router.push(
                     `/domain/${domain}/role/${role}/policy`,
-                    `/domain/${domain}/role/${role}/policy`,
-                    { getInitialProps: true }
+                    `/domain/${domain}/role/${role}/policy`
                 );
                 break;
             case 'settings':
                 this.props.router.push(
                     `/domain/${domain}/role/${role}/settings`,
-                    `/domain/${domain}/role/${role}/settings`,
-                    { getInitialProps: true }
+                    `/domain/${domain}/role/${role}/settings`
                 );
                 break;
             case 'history':
                 this.props.router.push(
                     `/domain/${domain}/role/${role}/history`,
-                    `/domain/${domain}/role/${role}/history`,
-                    { getInitialProps: true }
+                    `/domain/${domain}/role/${role}/history`
                 );
                 break;
             case 'tags':
                 this.props.router.push(
                     `/domain/${domain}/role/${role}/tags`,
-                    `/domain/${domain}/role/${role}/tags`,
-                    { getInitialProps: true }
+                    `/domain/${domain}/role/${role}/tags`
                 );
                 break;
         }

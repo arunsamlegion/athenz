@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Oath Holdings, Inc
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ public class PrivateKeyStoreTest {
         PrivateKeyStore keyStore = new PrivateKeyStore() {
         };
 
-        assertEquals("key1", keyStore.getApplicationSecret("jdbc", "key1"));
+        assertEquals("key1".toCharArray(), keyStore.getSecret("jdbc", "key1"));
         assertNull(keyStore.getPrivateKey("service", "host1", null));
         assertNull(keyStore.getPrivateKey("service", "host1", "us-west-2", "rsa"));
     }

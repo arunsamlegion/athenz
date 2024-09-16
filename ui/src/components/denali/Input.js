@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -125,6 +125,10 @@ const disabledCss = css`
     }
 `;
 
+const boldInputCss = css`
+    font-weight: bold;
+`;
+
 const makeIconClass = (props) => css`
     & input {
         padding-right: ${props.size === 'small' ? '28px' : '36px'};
@@ -193,6 +197,7 @@ class Input extends React.PureComponent {
             noanim,
             renderIcon,
             size,
+            isBold,
             ...rest
         } = this.props;
 
@@ -236,6 +241,12 @@ class Input extends React.PureComponent {
             inputWrapperClass = css`
                 ${inputWrapperClass};
                 ${makeIconClass(this.props)};
+            `;
+        }
+        if (isBold) {
+            inputWrapperClass = css`
+                ${inputWrapperClass};
+                ${boldInputCss}
             `;
         }
         return (

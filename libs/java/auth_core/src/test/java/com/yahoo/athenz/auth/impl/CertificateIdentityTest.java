@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,7 @@ import org.testng.annotations.Test;
 public class CertificateIdentityTest {
 
     private final ClassLoader classLoader = this.getClass().getClassLoader();
-    private final X509Certificate readCert(String resourceName) throws Exception {
+    private X509Certificate readCert(String resourceName) throws Exception {
         try (FileInputStream certIs = new FileInputStream(this.classLoader.getResource(resourceName).getFile())) {
             CertificateFactory cf = CertificateFactory.getInstance("X.509");
             return (X509Certificate) cf.generateCertificate(certIs);
@@ -58,10 +58,13 @@ public class CertificateIdentityTest {
     @Test
     public void testToString() throws Exception {
         X509Certificate cert = this.readCert("valid_cn_x509.cert");
-        CertificateIdentity certId = new CertificateIdentity("domain", "service", Arrays.asList("role_1", "role_2"), cert);
+        CertificateIdentity certId = new CertificateIdentity("domain", "service", Arrays.asList("role_1", "role_2"),
+                "domain.service", cert);
 
         assertNotNull(certId);
-        assertEquals(certId.toString(), String.format("{domain:\"domain\", service:\"service\", roles:[\"role_1\", \"role_2\"], x509Cert:\"%s\"}", certId.getX509Certificate().toString()));
+        assertEquals(certId.toString(), String.format("{\"domain\":\"domain\", \"service\":\"service\", " +
+                "\"roles\":[\"role_1\", \"role_2\"], \"rolePrincipalName\":\"domain.service\", \"x509Cert\":\"%s\"}",
+                certId.getX509Certificate().toString()));
     }
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,35 +17,42 @@ import React from 'react';
 import { render } from '@testing-library/react';
 import MemberTable from '../../../components/member/MemberTable';
 import API from '../../../api';
+import { renderWithRedux } from '../../../tests_utils/ComponentsTestUtils';
 
 describe('MemberTable', () => {
     it('should render member table', () => {
         let members = [];
-        let domain= 'domain';
+        let domain = 'domain';
         let role = 'roleName';
         let user1 = {
             memberName: 'user1',
             approved: true,
-        }
+        };
         let user2 = {
             memberName: 'user2',
             approved: false,
-        }
+        };
         let user3 = {
             memberName: 'user3',
             approved: false,
-        }
+        };
         let user4 = {
             memberName: 'user4',
             approved: true,
-        }
+        };
         members.push(user1);
         members.push(user2);
         members.push(user3);
         members.push(user4);
 
-        const { getByTestId } = render(
-            <MemberTable api={API()} domain={domain} role={role} members={members} caption='Approved' justificationRequired={true} />
+        const { getByTestId } = renderWithRedux(
+            <MemberTable
+                domain={domain}
+                role={role}
+                members={members}
+                caption='Approved'
+                justificationRequired={true}
+            />
         );
         const membertable = getByTestId('member-table');
 

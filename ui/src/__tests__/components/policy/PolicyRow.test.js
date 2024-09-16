@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,22 +17,22 @@ import React from 'react';
 import { render } from '@testing-library/react';
 import PolicyRow from '../../../components/policy/PolicyRow';
 import { colors } from '../../../components/denali/styles';
+import { renderWithRedux } from '../../../tests_utils/ComponentsTestUtils';
 
 describe('PolicyRow', () => {
     it('should render', () => {
         const color = colors.row;
         const name = 'sections';
-        const api = {
-            getPolicy(domain) {
-                return new Promise((resolve, reject) => {
-                    resolve(['a, b']);
-                });
-            },
-        };
-        const { getByTestId } = render(
+        const timeZone = 'UTC';
+        const { getByTestId } = renderWithRedux(
             <table>
                 <tbody>
-                    <PolicyRow name={name} color={color} api={api} />
+                    <PolicyRow
+                        name={name}
+                        color={color}
+                        isActive={true}
+                        timeZone={timeZone}
+                    />
                 </tbody>
             </table>
         );

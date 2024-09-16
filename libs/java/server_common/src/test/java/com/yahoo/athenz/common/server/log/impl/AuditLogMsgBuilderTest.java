@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -154,13 +154,13 @@ public class AuditLogMsgBuilderTest {
     @Test
     public void testSetReplaceMethods() {
         AuditLogMsgBuilder msgBldr = starter("testBuild");
-        Assert.assertTrue(msgBldr.whatDetails("testWhatDetails") instanceof AuditLogMsgBuilder);
+        Assert.assertNotNull(msgBldr.whatDetails("testWhatDetails"));
         Assert.assertEquals(msgBldr.whatDetails(), "testWhatDetails");
 
-        Assert.assertTrue(msgBldr.uuId("testUUID") instanceof AuditLogMsgBuilder);
+        Assert.assertNotNull(msgBldr.uuId("testUUID"));
         Assert.assertEquals(msgBldr.uuId(), "testUUID");
 
-        Assert.assertTrue(msgBldr.whoFullName("testWhoFullName") instanceof AuditLogMsgBuilder);
+        Assert.assertNotNull(msgBldr.whoFullName("testWhoFullName"));
         Assert.assertEquals(msgBldr.whoFullName(), "testWhoFullName");
     }
 

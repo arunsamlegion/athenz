@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 package com.yahoo.athenz.zms.store;
+
+import com.yahoo.athenz.zms.DomainOptions;
 
 public interface ObjectStore {
 
@@ -38,9 +40,19 @@ public interface ObjectStore {
      * Set limitation for number of role and domain tags
      * @param domainLimit domain tags limit
      * @param roleLimit role tags limit
+     * @param groupLimit group tags limit
+     * @param policyLimit policy tags limit
+     * @param serviceLimit service tags limit
      */
-    void setTagLimit(int domainLimit, int roleLimit);
-    
+    void setTagLimit(int domainLimit, int roleLimit, int groupLimit, int policyLimit, int serviceLimit);
+
+    /**
+     * Set uniqueness checks options for the object store.
+     * @param domainOptions domain attribute unique enforcement options
+     */
+    default void setDomainOptions(DomainOptions domainOptions) {
+    }
+
     /**
      * Clear all connections to the object store. This is called when
      * the server tries to write some object to the object store yet

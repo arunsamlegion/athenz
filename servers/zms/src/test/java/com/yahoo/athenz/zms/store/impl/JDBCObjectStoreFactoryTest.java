@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Oath Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,7 +37,7 @@ public class JDBCObjectStoreFactoryTest {
         System.clearProperty(ZMSConsts.ZMS_PROP_JDBC_RO_PASSWORD);
 
         PrivateKeyStore keyStore = Mockito.mock(PrivateKeyStore.class);
-        Mockito.doReturn("password").when(keyStore).getApplicationSecret("jdbc", "password");
+        Mockito.doReturn("password".toCharArray()).when(keyStore).getSecret("jdbc", "", "password");
 
         JDBCObjectStoreFactory factory = new JDBCObjectStoreFactory();
         ObjectStore store = factory.create(keyStore);
@@ -56,10 +56,18 @@ public class JDBCObjectStoreFactoryTest {
         System.setProperty(ZMSConsts.ZMS_PROP_JDBC_RO_PASSWORD, "password");
 
         PrivateKeyStore keyStore = Mockito.mock(PrivateKeyStore.class);
-        Mockito.doReturn("password").when(keyStore).getApplicationSecret("jdbc", "password");
+        char[] passwordMock = new char[]{'p','a','s','s','w','o','r','d'};
+        Mockito.doReturn(passwordMock).when(keyStore).getSecret("jdbc", "", "password");
 
         JDBCObjectStoreFactory factory = new JDBCObjectStoreFactory();
         ObjectStore store = factory.create(keyStore);
         assertNotNull(store);
+
+        System.clearProperty(ZMSConsts.ZMS_PROP_JDBC_RW_STORE);
+        System.clearProperty(ZMSConsts.ZMS_PROP_JDBC_RW_USER);
+        System.clearProperty(ZMSConsts.ZMS_PROP_JDBC_RW_PASSWORD);
+        System.clearProperty(ZMSConsts.ZMS_PROP_JDBC_RO_STORE);
+        System.clearProperty(ZMSConsts.ZMS_PROP_JDBC_RO_USER);
+        System.clearProperty(ZMSConsts.ZMS_PROP_JDBC_RO_PASSWORD);
     }
 }

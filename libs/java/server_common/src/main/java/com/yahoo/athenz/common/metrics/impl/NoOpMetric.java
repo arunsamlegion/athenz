@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,6 +55,10 @@ public class NoOpMetric implements Metric {
     }
 
     @Override
+    public void increment(String metric, long change, final String... attributes) {
+    }
+
+    @Override
     public Object startTiming(String metric, String requestDomainName) {
         return null;
     }
@@ -84,7 +88,7 @@ public class NoOpMetric implements Metric {
     @Override
     public void flush() {
     }
-    
+
     @Override
     public void quit() {
     }

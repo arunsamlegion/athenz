@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 import React from 'react';
 import styled from '@emotion/styled';
 import RoleRow from './RoleRow';
+//import 'denali-css/css/denali.css';
 import RoleGroup from './RoleGroup';
 
 const StyleTable = styled.div`
@@ -29,7 +30,6 @@ const StyleTable = styled.div`
 const TableHeadStyled = styled.div`
     border-bottom: 2px solid rgb(213, 213, 213);
     color: rgb(154, 154, 154);
-    font-size: 0.8rem;
     vertical-align: top;
     text-transform: uppercase;
     padding: 5px 0px 5px 15px;
@@ -57,7 +57,6 @@ const TableHeadStyledRoleName = styled.th`
     border-bottom: 2px solid #d5d5d5;
     color: #9a9a9a;
     font-weight: 600;
-    font-size: 0.8rem;
     padding-bottom: 5px;
     vertical-align: top;
     text-transform: uppercase;
@@ -68,10 +67,7 @@ const TableHeadStyledRoleName = styled.th`
 export default class RoleTable extends React.Component {
     constructor(props) {
         super(props);
-        this.api = props.api;
-
-        let subRows = [];
-
+        let subRows = props.roles;
         if (props.prefixes) {
             props.prefixes.map((prefix) => {
                 let rows = props.roles.filter((item) =>
@@ -80,19 +76,13 @@ export default class RoleTable extends React.Component {
                 subRows[prefix.name] = rows;
             });
         }
-
         this.state = {
-            roles: props.roles || [],
             rows: subRows,
         };
     }
 
     componentDidUpdate = (prevProps) => {
-        if (prevProps.domain !== this.props.domain) {
-            this.setState({
-                rows: {},
-            });
-        } else if (prevProps.roles !== this.props.roles) {
+        if (prevProps.roles !== this.props.roles) {
             let subRows = [];
             if (this.props.prefixes) {
                 this.props.prefixes.map((prefix) => {
@@ -102,9 +92,7 @@ export default class RoleTable extends React.Component {
                     subRows[prefix.name] = rows;
                 });
             }
-
             this.setState({
-                roles: this.props.roles || [],
                 rows: subRows,
             });
         }
@@ -116,9 +104,8 @@ export default class RoleTable extends React.Component {
         const { domain } = this.props;
         const adminRole = domain + ':role.admin';
         let rows = [];
-
-        if (this.state.roles && this.state.roles.length > 0) {
-            let remainingRows = this.state.roles.filter((item) => {
+        if (this.props.roles && this.props.roles.length > 0) {
+            let remainingRows = this.props.roles.filter((item) => {
                 if (item.name === adminRole) {
                     return false;
                 }
@@ -139,7 +126,7 @@ export default class RoleTable extends React.Component {
             });
 
             // put admin role at first place
-            let adminRow = this.state.roles
+            let adminRow = this.props.roles
                 .filter((item) => {
                     return item.name == adminRole;
                 })
@@ -149,14 +136,10 @@ export default class RoleTable extends React.Component {
                             details={item}
                             idx={i}
                             domain={domain}
-                            api={this.api}
                             key={item.name}
                             onUpdateSuccess={this.props.onSubmit}
+                            timeZone={this.props.timeZone}
                             _csrf={this.props._csrf}
-                            justificationRequired={
-                                this.props.justificationRequired
-                            }
-                            userProfileLink={this.props.userProfileLink}
                         />
                     );
                 });
@@ -165,15 +148,14 @@ export default class RoleTable extends React.Component {
 
             if (this.state.rows) {
                 for (let name in this.state.rows) {
-                    // group rows
                     let roleGroup = (
                         <RoleGroup
                             key={'group:' + name}
-                            api={this.api}
                             domain={domain}
                             name={name}
                             roles={this.state.rows[name]}
                             onUpdateSuccess={this.props.onSubmit}
+                            timeZone={this.props.timeZone}
                             _csrf={this.props._csrf}
                             newRole={this.props.newRole}
                         />
@@ -193,14 +175,10 @@ export default class RoleTable extends React.Component {
                             details={item}
                             idx={i}
                             domain={domain}
-                            api={this.api}
                             key={item.name}
                             onUpdateSuccess={this.props.onSubmit}
+                            timeZone={this.props.timeZone}
                             _csrf={this.props._csrf}
-                            justificationRequired={
-                                this.props.justificationRequired
-                            }
-                            userProfileLink={this.props.userProfileLink}
                             newRole={this.props.newRole}
                         />
                     );
@@ -223,7 +201,7 @@ export default class RoleTable extends React.Component {
                     <StyledIconCol align={center}>History</StyledIconCol>
                     <StyledIconCol align={center}>Delete</StyledIconCol>
                 </TableHeadStyled>
-                <tbody>{rows}</tbody>
+                {rows}
             </StyleTable>
         );
     }

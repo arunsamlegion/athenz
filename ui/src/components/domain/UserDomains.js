@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,11 @@ import { colors } from '../denali/styles';
 import Link from 'next/link';
 import { withRouter } from 'next/router';
 import PageUtils from '../utils/PageUtils';
+import { connect } from 'react-redux';
+import { getUserDomainsList } from '../../redux/thunks/domains';
+import { selectIsLoading } from '../../redux/selectors/loading';
+import { selectUserDomains } from '../../redux/selectors/domains';
+import RequestUtils from '../utils/RequestUtils';
 
 const DomainListDiv = styled.div`
     padding: 0 30px 0 15px;
@@ -92,9 +97,11 @@ const DividerSpan = styled.span`
 class UserDomains extends React.Component {
     constructor(props) {
         super(props);
-        this.api = props.api;
         this.toggleDomains = this.toggleDomains.bind(this);
+        this.showError = this.showError.bind(this);
         this.state = {
+            errorMessage: '',
+            showError: false,
             showDomains: !(props.hideDomains ? props.hideDomains : false),
         };
     }
@@ -102,6 +109,20 @@ class UserDomains extends React.Component {
     toggleDomains() {
         this.setState({
             showDomains: !this.state.showDomains,
+        });
+    }
+
+    componentDidMount() {
+        const { getDomainList } = this.props;
+        Promise.all([getDomainList()]).catch((err) => {
+            this.showError(RequestUtils.fetcherErrorCheckHelper(err));
+        });
+    }
+
+    showError(errorMessage) {
+        this.setState({
+            showError: true,
+            errorMessage: errorMessage,
         });
     }
 
@@ -124,7 +145,11 @@ class UserDomains extends React.Component {
                                 verticalAlign={'baseline'}
                             />
                         </UserAdminLogoDiv>
-                        <Link href={PageUtils.rolePage(domainName)}>
+                        <Link
+                            href={PageUtils.rolePage(domainName)}
+                            passHref
+                            legacyBehavior
+                        >
                             <StyledAnchor active={currentDomain === domainName}>
                                 {domainName}
                             </StyledAnchor>
@@ -156,20 +181,45 @@ class UserDomains extends React.Component {
                                 My Domains
                             </ManageDomainsTitleDiv>
                             <div>
-                                <Link href={PageUtils.createDomainPage()}>
+                                <Link
+                                    href={PageUtils.createDomainPage()}
+                                    passHref
+                                    legacyBehavior
+                                >
                                     <StyledAnchor>Create</StyledAnchor>
                                 </Link>
                                 <DividerSpan> | </DividerSpan>
-                                <Link href={PageUtils.manageDomainPage()}>
+                                <Link
+                                    href={PageUtils.manageDomainPage()}
+                                    passHref
+                                    legacyBehavior
+                                >
                                     <StyledAnchor>Manage</StyledAnchor>
                                 </Link>
                             </div>
                         </ManageDomainsHeaderDiv>
-                        <DomainListDiv>{userIcons}</DomainListDiv>
+                        <DomainListDiv>
+                            {this.state.showError
+                                ? this.state.errorMessage
+                                : userIcons}
+                        </DomainListDiv>
                     </ShowDomainsDiv>
                 )}
             </div>
         );
     }
 }
-export default withRouter(UserDomains);
+
+const mapStateToProps = (state) => ({
+    domains: selectUserDomains(state),
+    isLoading: selectIsLoading(state),
+});
+
+const mapDispatchToProps = (dispatch) => ({
+    getDomainList: () => dispatch(getUserDomainsList()),
+});
+
+export default connect(
+    mapStateToProps,
+    mapDispatchToProps
+)(withRouter(UserDomains));

@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,9 @@ import Menu from '../denali/Menu/Menu';
 import DateUtils from '../utils/DateUtils';
 import RequestUtils from '../utils/RequestUtils';
 import { withRouter } from 'next/router';
-import { keyframes, css } from '@emotion/react';
+import { css, keyframes } from '@emotion/react';
+import { deleteRole } from '../../redux/thunks/roles';
+import { connect } from 'react-redux';
 
 const TDName = styled.div`
     background-color: ${(props) => props.color};
@@ -78,12 +80,12 @@ const TrStyled = styled.div`
 `;
 
 const colorTransition = keyframes`
-        0% {
-            background-color: rgba(21, 192, 70, 0.20);
-        }
-        100% {
-            background-color: transparent;
-        }
+    0% {
+        background-color: rgba(21, 192, 70, 0.20);
+    }
+    100% {
+        background-color: transparent;
+    }
 `;
 
 const MenuDiv = styled.div`
@@ -100,7 +102,6 @@ const LeftSpan = styled.span`
 class RoleSectionRow extends React.Component {
     constructor(props) {
         super(props);
-        this.api = this.props.api;
         this.onSubmitDelete = this.onSubmitDelete.bind(this);
         this.onClickDeleteCancel = this.onClickDeleteCancel.bind(this);
         this.saveJustification = this.saveJustification.bind(this);
@@ -125,7 +126,7 @@ class RoleSectionRow extends React.Component {
     }
 
     onClickFunction(route) {
-        this.props.router.push(route, route, { getInitialProps: true });
+        this.props.router.push(route, route);
     }
 
     onSubmitDelete(domain) {
@@ -141,9 +142,8 @@ class RoleSectionRow extends React.Component {
             return;
         }
 
-        this.api
+        this.props
             .deleteRole(
-                domain,
                 roleName,
                 this.state.deleteJustification
                     ? this.state.deleteJustification
@@ -231,6 +231,42 @@ class RoleSectionRow extends React.Component {
             </Menu>
         );
 
+        let iconDescription = (
+            <Menu
+                placement='bottom-start'
+                trigger={
+                    <span data-testid='description-icon'>
+                        <Icon
+                            icon={'information-circle'}
+                            color={colors.icons}
+                            size={'1.15em'}
+                            verticalAlign={'text-bottom'}
+                            enableTitle={false}
+                            onClick={() => {
+                                this.setState({
+                                    recentlyCopiedToClipboard: true,
+                                });
+                                setTimeout(
+                                    () =>
+                                        this.setState({
+                                            recentlyCopiedToClipboard: false,
+                                        }),
+                                    1000
+                                );
+                                navigator.clipboard.writeText(role.description);
+                            }}
+                        />
+                    </span>
+                }
+            >
+                <MenuDiv>
+                    {this.state.recentlyCopiedToClipboard
+                        ? 'Copied to clipboard'
+                        : role.description}
+                </MenuDiv>
+            </Menu>
+        );
+
         let auditEnabled = !!role.auditEnabled;
         let iconAudit = (
             <Menu
@@ -253,6 +289,7 @@ class RoleSectionRow extends React.Component {
         );
 
         let roleTypeIcon = role.trust ? iconDelegated : '';
+        let roleDescriptionIcon = role.description ? iconDescription : '';
         let roleAuditIcon = auditEnabled ? iconAudit : '';
 
         let roleNameSpan =
@@ -268,14 +305,14 @@ class RoleSectionRow extends React.Component {
                     <TDName color={color} align={left} category={category}>
                         {roleTypeIcon}
                         {roleAuditIcon}
-                        {roleNameSpan}
+                        {roleNameSpan} {roleDescriptionIcon}
                     </TDName>
                     <TDTime color={color} align={left} category={category}>
                         {role.expiration
                             ? this.localDate.getLocalDate(
                                   role.expiration,
-                                  'UTC',
-                                  'UTC'
+                                  this.props.timeZone,
+                                  this.props.timeZone
                               )
                             : 'N/A'}
                     </TDTime>
@@ -313,21 +350,21 @@ class RoleSectionRow extends React.Component {
                     <TDName color={color} align={left}>
                         {roleTypeIcon}
                         {roleAuditIcon}
-                        {roleNameSpan}
+                        {roleNameSpan} {roleDescriptionIcon}
                     </TDName>
                     <TDTime color={color} align={left}>
                         {this.localDate.getLocalDate(
                             role.modified,
-                            'UTC',
-                            'UTC'
+                            this.props.timeZone,
+                            this.props.timeZone
                         )}
                     </TDTime>
                     <TDTime color={color} align={left}>
                         {role.lastReviewedDate
                             ? this.localDate.getLocalDate(
                                   role.lastReviewedDate,
-                                  'UTC',
-                                  'UTC'
+                                  this.props.timeZone,
+                                  this.props.timeZone
                               )
                             : 'N/A'}
                     </TDTime>
@@ -488,4 +525,10 @@ class RoleSectionRow extends React.Component {
         return rows;
     }
 }
-export default withRouter(RoleSectionRow);
+
+const mapDispatchToProps = (dispatch) => ({
+    deleteRole: (roleName, auditRef, _csrf) =>
+        dispatch(deleteRole(roleName, auditRef, _csrf)),
+});
+
+export default connect(null, mapDispatchToProps)(withRouter(RoleSectionRow));

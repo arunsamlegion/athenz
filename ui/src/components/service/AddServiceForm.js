@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -70,7 +70,6 @@ const StyledAnchor = styled.a`
 export default class AddServiceForm extends React.Component {
     constructor(props) {
         super(props);
-        this.api = props.api;
         this.state = {};
         this.keyChanged = this.keyChanged.bind(this);
     }

@@ -1,5 +1,5 @@
 /*
- *  Copyright 2020 Verizon Media
+ *  Copyright The Athenz Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -16,20 +16,21 @@
 
 package com.yahoo.athenz.zts.store;
 
+import java.net.URI;
 import java.util.HashMap;
 import java.util.Map;
 
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.ConcurrentHashMap;
 
 import com.amazonaws.AmazonServiceException;
 import com.yahoo.athenz.common.server.util.ConfigProperties;
 import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.client.api.ContentResponse;
+import org.eclipse.jetty.client.api.Request;
+import org.eclipse.jetty.http.HttpMethod;
 import org.eclipse.jetty.util.StringUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,16 +56,26 @@ import static com.yahoo.athenz.common.ServerCommonConsts.ZTS_PROP_AWS_REGION_NAM
 
 public class CloudStore {
     private static final Logger LOGGER = LoggerFactory.getLogger(CloudStore.class);
-    private static final String AWS_ROLE_SESSION_NAME = "athenz-zts-service";
+
+    private static final String AWS_METADATA_BASE_URI = "http://169.254.169.254/latest";
+    private static final String AWS_METADATA_TOKEN_URI = "http://169.254.169.254/latest/api/token";
+    private static final String AWS_METADATA_TOKEN_HEADER = "X-aws-ec2-metadata-token";
+    private static final String AWS_METADATA_TOKEN_TTL_HEADER = "X-aws-ec2-metadata-token-ttl-seconds";
 
     String awsRole = null;
     String awsRegion;
+    String awsRoleSessionName;
     boolean awsEnabled;
     int cacheTimeout;
     int invalidCacheTimeout;
     BasicSessionCredentials credentials;
     final private Map<String, String> awsAccountCache;
     final private Map<String, String> azureSubscriptionCache;
+    final private Map<String, String> azureTenantCache;
+    final private Map<String, String> azureClientCache;
+
+    final private Map<String, String> gcpProjectIdCache;
+    final private Map<String, String> gcpProjectNumberCache;
     ConcurrentHashMap<String, AWSTemporaryCredentials> awsCredsCache;
     ConcurrentHashMap<String, Long> awsInvalidCredsCache;
     private HttpClient httpClient;
@@ -82,6 +93,13 @@ public class CloudStore {
         // initialize azure cache
 
         azureSubscriptionCache = new ConcurrentHashMap<>();
+        azureTenantCache = new ConcurrentHashMap<>();
+        azureClientCache = new ConcurrentHashMap<>();
+
+        // initialize gcp cache
+
+        gcpProjectIdCache = new ConcurrentHashMap<>();
+        gcpProjectNumberCache = new ConcurrentHashMap<>();
 
         // Instantiate and start our HttpClient
 
@@ -100,6 +118,10 @@ public class CloudStore {
         invalidCacheTimeout = Integer.parseInt(
                 System.getProperty(ZTSConsts.ZTS_PROP_AWS_CREDS_INVALID_CACHE_TIMEOUT, "120"));
 
+        // fetch the default session name if one is configured
+
+        awsRoleSessionName = System.getProperty(ZTSConsts.ZTS_PROP_AWS_ROLE_SESSION_NAME);
+
         // initialize aws support
 
         awsEnabled = Boolean.parseBoolean(
@@ -110,7 +132,6 @@ public class CloudStore {
     void setupHttpClient(HttpClient client) {
 
         client.setFollowRedirects(false);
-        client.setStopTimeout(1000);
         try {
             client.start();
         } catch (Exception ex) {
@@ -201,7 +222,7 @@ public class CloudStore {
 
         // first load the dynamic document
 
-        String document = getMetaData("/dynamic/instance-identity/document");
+        final String document = getMetaData("/dynamic/instance-identity/document");
         if (document == null) {
             return false;
         }
@@ -213,14 +234,14 @@ public class CloudStore {
 
         // then the document signature
 
-        String docSignature = getMetaData("/dynamic/instance-identity/pkcs7");
+        final String docSignature = getMetaData("/dynamic/instance-identity/pkcs7");
         if (docSignature == null) {
             return false;
         }
 
         // next the iam profile data
 
-        String iamRole = getMetaData("/meta-data/iam/info");
+        final String iamRole = getMetaData("/meta-data/iam/info");
         if (iamRole == null) {
             return false;
         }
@@ -253,11 +274,10 @@ public class CloudStore {
         // if we're overriding the region name, then we'll
         // extract that value here
 
-        if (awsRegion == null || awsRegion.isEmpty()) {
+        if (StringUtil.isEmpty(awsRegion)) {
             awsRegion = instStruct.getString("region");
-            if (awsRegion == null || awsRegion.isEmpty()) {
-                LOGGER.error("CloudStore: unable to extract region from instance identity document: {}",
-                        document);
+            if (StringUtil.isEmpty(awsRegion)) {
+                LOGGER.error("CloudStore: unable to extract region from instance identity document: {}", document);
                 return false;
             }
         }
@@ -277,7 +297,7 @@ public class CloudStore {
         // "InstanceProfileArn" : "arn:aws:iam::1111111111111:instance-profile/iaas.athenz.zts,athenz",
 
         String profileArn = iamRoleStruct.getString("InstanceProfileArn");
-        if (profileArn == null || profileArn.isEmpty()) {
+        if (StringUtil.isEmpty(profileArn)) {
             LOGGER.error("CloudStore: unable to extract InstanceProfileArn from iam role data: {}", iamRole);
             return false;
         }
@@ -327,7 +347,7 @@ public class CloudStore {
 
         // verify that we have a valid awsRole already retrieved
 
-        if (awsRole == null || awsRole.isEmpty()) {
+        if (StringUtil.isEmpty(awsRole)) {
             LOGGER.error("CloudStore: awsRole is not available to fetch role credentials");
             return false;
         }
@@ -353,32 +373,67 @@ public class CloudStore {
 
     String getMetaData(String path) {
 
-        final String baseUri = "http://169.254.169.254/latest";
+        // first we need to get a token for IMDSv2 support
+        // if the token is not available we'll just try without
+        // it to see if we can get the data with v1 support
+
+        final String token = processHttpRequest(HttpMethod.PUT, AWS_METADATA_TOKEN_URI, AWS_METADATA_TOKEN_TTL_HEADER, "60");
+        if (StringUtil.isEmpty(token)) {
+            LOGGER.info("unable to get token for IMDSv2 support");
+        }
+        return processHttpRequest(HttpMethod.GET, AWS_METADATA_BASE_URI + path, AWS_METADATA_TOKEN_HEADER, token);
+    }
+
+    String processHttpRequest(HttpMethod httpMethod, String uri, String headerName, String headerValue) {
+
         ContentResponse response;
         try {
-            response = httpClient.GET(baseUri + path);
-        } catch (InterruptedException | ExecutionException | TimeoutException ex) {
-            LOGGER.error("CloudStore: unable to fetch requested uri '{}':{}",
-                    path, ex.getMessage());
+            Request request = httpClient.newRequest(URI.create(uri)).method(httpMethod);
+            if (!StringUtil.isEmpty(headerName) && !StringUtil.isEmpty(headerValue)) {
+                request.headers((fields) -> fields.put(headerName, headerValue));
+            }
+            response = request.send();
+        } catch (Exception ex) {
+            LOGGER.error("unable to fetch requested uri '{}':{}", uri, ex.getMessage());
             return null;
         }
         if (response.getStatus() != 200) {
-            LOGGER.error("CloudStore: unable to fetch requested uri '{}' status:{}",
-                    path, response.getStatus());
+            LOGGER.error("unable to fetch requested uri '{}' status:{}", uri, response.getStatus());
             return null;
         }
 
         String data = response.getContentAsString();
-        if (data == null || data.isEmpty()) {
-            LOGGER.error("CloudStore: received empty response from uri '{}' status:{}",
-                    path, response.getStatus());
+        if (StringUtil.isEmpty(data)) {
+            LOGGER.error("received empty response from uri '{}' status:{}", uri, response.getStatus());
             return null;
         }
 
         return data;
     }
 
-    AssumeRoleRequest getAssumeRoleRequest(String account, String roleName, Integer durationSeconds, String externalId) {
+    String getAssumeRoleSessionName(final String principal) {
+
+        // if we're configured to use a specific session name
+        // then that's what we'll use and ignore the principal name
+
+        if (!StringUtil.isEmpty(awsRoleSessionName)) {
+            return awsRoleSessionName;
+        }
+
+        // make sure the role session name is valid and not too long
+        // and does not contain any invalid characters. From aws docs:
+        //   Length Constraints: Minimum length of 2. Maximum length of 64.
+        //   Pattern: [\w+=,.@-]*
+        // if the Athenz principal identity is longer than 64 characters,
+        // we'll truncate the principal name to 60 and add insert ... in
+        // the middle to indicate truncation
+
+        return (principal.length() > 64) ?
+                principal.substring(0, 30) + "..." + principal.substring(principal.length() - 30) : principal;
+    }
+
+    AssumeRoleRequest getAssumeRoleRequest(final String account, final String roleName, Integer durationSeconds,
+            final String externalId, final String principal) {
 
         // assume the target role to get the credentials for the client
         // aws format is arn:aws:iam::<account-id>:role/<role-name>
@@ -387,15 +442,11 @@ public class CloudStore {
 
         AssumeRoleRequest req = new AssumeRoleRequest();
         req.setRoleArn(arn);
-
-        // for role session name AWS has a limit on length: 64
-        // so we need to make sure our session is shorter than that
-
-        req.setRoleSessionName(AWS_ROLE_SESSION_NAME);
+        req.setRoleSessionName(getAssumeRoleSessionName(principal));
         if (durationSeconds != null && durationSeconds > 0) {
             req.setDurationSeconds(durationSeconds);
         }
-        if (externalId != null && !externalId.isEmpty()) {
+        if (!StringUtil.isEmpty(externalId)) {
             req.setExternalId(externalId);
         }
         return req;
@@ -526,7 +577,7 @@ public class CloudStore {
     }
 
     public AWSTemporaryCredentials assumeAWSRole(String account, String roleName, String principal,
-                                                 Integer durationSeconds, String externalId, StringBuilder errorMessage) {
+            Integer durationSeconds, String externalId, StringBuilder errorMessage) {
 
         if (!awsEnabled) {
             throw new ResourceException(ResourceException.INTERNAL_SERVER_ERROR,
@@ -552,7 +603,7 @@ public class CloudStore {
             return null;
         }
 
-        AssumeRoleRequest req = getAssumeRoleRequest(account, roleName, durationSeconds, externalId);
+        AssumeRoleRequest req = getAssumeRoleRequest(account, roleName, durationSeconds, externalId, principal);
 
         try {
             AWSSecurityTokenService client = getTokenServiceClient();
@@ -601,11 +652,27 @@ public class CloudStore {
         return azureSubscriptionCache.get(domainName);
     }
 
+    public String getAzureTenant(String domainName) {
+        return azureTenantCache.get(domainName);
+    }
+
+    public String getAzureClient(String domainName) {
+        return azureClientCache.get(domainName);
+    }
+
+    public String getGCPProjectId(String domainName) {
+        return gcpProjectIdCache.get(domainName);
+    }
+
+    public String getGCPProjectNumber(String domainName) {
+        return gcpProjectNumberCache.get(domainName);
+    }
+
     void updateAwsAccount(final String domainName, final String awsAccount) {
 
         /* if we have a value specified for the domain, then we're just
          * going to insert it into our map and update the record. If
-         * the new value is not present and we had a value stored before
+         * the new value is not present, and we had a value stored before
          * then let's remove it */
 
         if (!StringUtil.isEmpty(awsAccount)) {
@@ -615,17 +682,43 @@ public class CloudStore {
         }
     }
 
-    void updateAzureSubscription(final String domainName, final String azureSubscription) {
+    void updateAzureSubscription(final String domainName, final String azureSubscription, final String azureTenant, final String azureClient) {
 
         /* if we have a value specified for the domain, then we're just
          * going to insert it into our map and update the record. If
-         * the new value is not present and we had a value stored before
+         * the new value is not present, and we had a value stored before
          * then let's remove it */
 
         if (!StringUtil.isEmpty(azureSubscription)) {
             azureSubscriptionCache.put(domainName, azureSubscription);
-        } else if (awsAccountCache.get(domainName) != null) {
+            if (!StringUtil.isEmpty(azureTenant)) {
+                azureTenantCache.put(domainName, azureTenant);
+            }
+            if (!StringUtil.isEmpty(azureClient)) {
+                azureClientCache.put(domainName, azureClient);
+            }
+        } else if (azureSubscriptionCache.get(domainName) != null) {
             azureSubscriptionCache.remove(domainName);
+            azureTenantCache.remove(domainName);
+            azureClientCache.remove(domainName);
+        }
+    }
+
+    void updateGCPProject(final String domainName, final String gcpProjectId, final String gcpProjectNumber) {
+
+        /* if we have a value specified for the domain, then we're just
+         * going to insert it into our map and update the record. If
+         * the new value is not present, and we had a value stored before
+         * then let's remove it */
+
+        if (!StringUtil.isEmpty(gcpProjectId)) {
+            gcpProjectIdCache.put(domainName, gcpProjectId);
+            if (!StringUtil.isEmpty(gcpProjectNumber)) {
+                gcpProjectNumberCache.put(domainName, gcpProjectNumber);
+            }
+        } else if (gcpProjectIdCache.get(domainName) != null) {
+            gcpProjectIdCache.remove(domainName);
+            gcpProjectNumberCache.remove(domainName);
         }
     }
 

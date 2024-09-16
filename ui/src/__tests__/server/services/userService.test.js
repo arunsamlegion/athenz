@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,20 +25,30 @@ describe('userService test', () => {
         let metadata = {
             ContentLength: 100,
         };
-        sandbox.stub(userServiceImpl, 'checkUsersUpdate').returns(Promise.resolve(metadata));
+        sandbox
+            .stub(userServiceImpl, 'checkUsersUpdate')
+            .returns(Promise.resolve(metadata));
         let userData = [
             {
                 is_human: 1,
                 login: 'testuser',
                 gecos: 'full name',
                 enabled_status: 1,
-            }
-        ]
-        sandbox.stub(userServiceImpl, 'fetchUpdatedUsers').returns(Promise.resolve( JSON.stringify(userData)));
-        userService.refreshUserData({userFilePath: 'data', userFileName: 'users_data.json', userDomains: 'user,unix'})
+            },
+        ];
+        sandbox
+            .stub(userServiceImpl, 'fetchUpdatedUsers')
+            .returns(Promise.resolve(JSON.stringify(userData)));
+        userService
+            .refreshUserData({
+                userFilePath: 'data',
+                userFileName: 'users_data.json',
+                userDomains: 'user,unix',
+            })
             .then(() => {
-                expect(userService.getUserFullName('user.testuser')).toEqual('full name');
+                expect(userService.getUserFullName('user.testuser')).toEqual(
+                    'full name'
+                );
             });
-
     });
 });

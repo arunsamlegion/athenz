@@ -17,4 +17,22 @@
   <suppress checks="MethodName"
              files="IdToken.java"
              lines="1-9999"/>
+  <suppress checks="MemberName"
+            files="OpenIDConfig.java"
+            lines="1-9999"/>
+  <suppress checks="MethodName"
+            files="OpenIDConfig.java"
+            lines="1-9999"/>
+  <suppress checks="MemberName"
+            files="OAuthConfig.java"
+            lines="1-9999"/>
+  <suppress checks="MethodName"
+            files="OAuthConfig.java"
+            lines="1-9999"/>
+  <suppress checks="MemberName"
+            files="OIDCResponse.java"
+            lines="1-9999"/>
+  <suppress checks="MethodName"
+            files="OIDCResponse.java"
+            lines="1-9999"/>
 </suppressions>

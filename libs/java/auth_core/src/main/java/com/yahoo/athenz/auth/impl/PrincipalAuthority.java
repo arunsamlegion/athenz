@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -54,7 +54,7 @@ public class PrincipalAuthority implements Authority, AuthorityKeyStore {
     private int allowedOffset;
     IpCheckMode ipCheckMode;
     final String userDomain;
-    private String headerName;
+    private final String headerName;
     
     public PrincipalAuthority() {
         allowedOffset = Integer.parseInt(System.getProperty(ATHENZ_PROP_TOKEN_OFFSET, "300"));

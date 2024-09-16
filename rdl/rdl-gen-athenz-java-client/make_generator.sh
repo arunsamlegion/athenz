@@ -24,13 +24,14 @@ command -v go >/dev/null 2>&1 || {
 }
 
 if [ -z "${GOPATH}" ]; then
-    echo >&2 "GOPATH is not set. please configure this environment variable"
-    exit 1;
+    export GOPATH=$(go env GOPATH)
+    echo >&2 "[INFO] GOPATH is not set, setting to ${GOPATH} (from 'go env GOPATH)."
 fi
 
-go get -u github.com/ardielle/ardielle-go/...
+go install github.com/ardielle/ardielle-go/...
 go build
+rm -f ${GOPATH}/bin/rdl-gen-athenz-java-client
 cp rdl-gen-athenz-java-client ${GOPATH}/bin/rdl-gen-athenz-java-client
 
-# Copyright 2021 Athenz Authors
+# Copyright The Athenz Authors
 # Licensed under the terms of the Apache version 2.0 license. See LICENSE file for terms.

@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.Set;
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 import org.mockito.Mockito;
 import org.testng.annotations.Test;
 
@@ -32,12 +32,11 @@ public class OAuthAuthorityUtilsTest {
 
     @Test
     public void testGetProperty() {
-        String propValue = null;
 
         // prop not set
         System.clearProperty("athenz.auth.oauth.jwt.test_prop");
-        propValue = OAuthAuthorityUtils.getProperty("test_prop", null);
-        assertEquals(propValue, null);
+        String propValue = OAuthAuthorityUtils.getProperty("test_prop", null);
+        assertNull(propValue);
         propValue = OAuthAuthorityUtils.getProperty("test_prop", "");
         assertEquals(propValue, "");
         propValue = OAuthAuthorityUtils.getProperty("test_prop", "default_value");
@@ -56,10 +55,9 @@ public class OAuthAuthorityUtilsTest {
 
     @Test
     public void testCsvToSet() {
-        Set<String> propValue = null;
 
         // empty csv
-        propValue = OAuthAuthorityUtils.csvToSet(null, ",");
+        Set<String> propValue = OAuthAuthorityUtils.csvToSet(null, ",");
         assertNull(propValue);
         propValue = OAuthAuthorityUtils.csvToSet("", ",");
         assertNull(propValue);
@@ -84,14 +82,12 @@ public class OAuthAuthorityUtilsTest {
 
     @Test
     public void testExtractHeaderToken() {
-        String tokenString = null;
-        Enumeration<String> headers = null;
         HttpServletRequest request = Mockito.mock(HttpServletRequest.class);
 
         // strict bearer token
-        headers = Collections.enumeration(Arrays.asList("Bearer dummy_access_token_1"));
+        Enumeration<String> headers = Collections.enumeration(Arrays.asList("Bearer dummy_access_token_1"));
         Mockito.when(request.getHeaders("Authorization")).thenReturn(headers);
-        tokenString = OAuthAuthorityUtils.extractHeaderToken(request);
+        String tokenString = OAuthAuthorityUtils.extractHeaderToken(request);
         assertEquals(tokenString, "dummy_access_token_1");
 
         // case-insensitive bearer token
@@ -109,13 +105,13 @@ public class OAuthAuthorityUtilsTest {
         // empty header
         Mockito.when(request.getHeaders("Authorization")).thenReturn(Collections.emptyEnumeration());
         tokenString = OAuthAuthorityUtils.extractHeaderToken(request);
-        assertEquals(tokenString, null);
+        assertNull(tokenString);
 
         // non-bearer header
         headers = Collections.enumeration(Arrays.asList("Basic encoded_password"));
         Mockito.when(request.getHeaders("Authorization")).thenReturn(headers);
         tokenString = OAuthAuthorityUtils.extractHeaderToken(request);
-        assertEquals(tokenString, null);
+        assertNull(tokenString);
     }
 
     @Test

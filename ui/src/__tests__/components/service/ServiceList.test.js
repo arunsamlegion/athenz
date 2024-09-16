@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,67 +14,75 @@
  * limitations under the License.
  */
 import React from 'react';
-import { render, fireEvent, waitForElement } from '@testing-library/react';
+import { render, fireEvent, waitFor } from '@testing-library/react';
 import ServiceList from '../../../components/service/ServiceList';
+import {
+    buildServicesForState,
+    getStateWithServices,
+    renderWithRedux,
+} from '../../../tests_utils/ComponentsTestUtils';
+import MockApi from '../../../mock/MockApi';
 const pageConfig = {
     servicePageConfig: {
         keyCreationLink: {
             title: 'Key Creation',
-            url:
-                'https://test.com',
+            url: 'https://test.com',
             target: '_blank',
         },
-        keyCreationMessage:
-            'Test Message',
-    }
+        keyCreationMessage: 'Test Message',
+    },
 };
-describe('ServiceList', () => {
-    it('should render without services', () => {
+const domain = 'home.test';
+const service = 'openhouse';
+const fullServiceName = domain + '.' + service;
+const servicesForState = buildServicesForState(
+    {
+        [fullServiceName]: {
+            name: fullServiceName,
+            modified: '2020-02-08T00:02:49.477Z',
+        },
+    },
+    'home.test'
+);
 
-        const { getByTestId } = render(<ServiceList pageConfig={pageConfig}/>);
+describe('ServiceList', () => {
+    afterEach(() => {
+        MockApi.cleanMockApi();
+    });
+
+    it('should render without services', () => {
+        const { getByTestId } = renderWithRedux(
+            <ServiceList pageConfig={pageConfig} />
+        );
         const servicelist = getByTestId('service-list');
 
         expect(servicelist).toMatchSnapshot();
     });
 
     it('should render with services', () => {
-        const services = [
-            {
-                name: 'home.test.openhouse',
-                modified: '2020-02-08T00:02:49.477Z',
-            },
-        ];
-        const { getByTestId } = render(<ServiceList services={services} pageConfig={pageConfig}/>);
+        const { getByTestId } = renderWithRedux(
+            <ServiceList pageConfig={pageConfig} />,
+            getStateWithServices(servicesForState)
+        );
         const servicelist = getByTestId('service-list');
 
         expect(servicelist).toMatchSnapshot();
     });
 
     it('should render add service modal after click', async () => {
-        const services = [
-            {
-                name: 'home.test.openhouse',
-                modified: '2020-02-08T00:02:49.477Z',
-            },
-        ];
-        const { getByText, getByTestId } = render(
-            <ServiceList services={services} pageConfig={pageConfig}/>
+        const { getByText, getByTestId } = renderWithRedux(
+            <ServiceList pageConfig={pageConfig} />,
+            getStateWithServices(servicesForState)
         );
         fireEvent.click(getByText('Add Service'));
         expect(
-            await waitForElement(() => getByTestId('service-list'))
+            await waitFor(() => getByTestId('service-list'))
         ).toMatchSnapshot();
     });
 
     it('should render delete service modal error(refresh) after click', async () => {
-        const services = [
-            {
-                name: 'home.test1.openhouse',
-                modified: '2020-02-08T00:02:49.477Z',
-            },
-        ];
         const api = {
-            deleteService: function(domain, deleteServiceName, _csrf) {
+            deleteService: function (domain, deleteServiceName, _csrf) {
                 return new Promise((resolve, reject) => {
                     reject({
                         statusCode: 0,
@@ -82,28 +90,25 @@ describe('ServiceList', () => {
                 });
             },
         };
-        const { getByText, getByTestId, getByTitle } = render(
-            <ServiceList services={services} api={api} pageConfig={pageConfig}/>
+        MockApi.setMockApi(api);
+
+        const { getByText, getByTestId, getByTitle } = renderWithRedux(
+            <ServiceList domain={domain} pageConfig={pageConfig} />,
+            getStateWithServices(servicesForState)
         );
         fireEvent.click(getByTitle('trash'));
 
-        await waitForElement(() =>
+        await waitFor(() =>
             fireEvent.click(getByTestId('delete-modal-delete'))
         );
         expect(
-            await waitForElement(() => getByTestId('service-list'))
+            await waitFor(() => getByTestId('service-list'))
         ).toMatchSnapshot();
     });
 
     it('should render delete service modal error(other) after click', async () => {
-        const services = [
-            {
-                name: 'home.test1.openhouse',
-                modified: '2020-02-08T00:02:49.477Z',
-            },
-        ];
         const api = {
-            deleteService: function(domain, deleteServiceName, _csrf) {
+            deleteService: function (domain, deleteServiceName, _csrf) {
                 return new Promise((resolve, reject) => {
                     reject({
                         statusCode: 1,
@@ -114,53 +119,47 @@ describe('ServiceList', () => {
                 });
             },
         };
-        const { getByText, getByTestId, getByTitle } = render(
-            <ServiceList services={services} api={api} pageConfig={pageConfig}/>
+        MockApi.setMockApi(api);
+
+        const { getByText, getByTestId, getByTitle } = renderWithRedux(
+            <ServiceList domain={domain} pageConfig={pageConfig} />,
+            getStateWithServices(servicesForState)
         );
         fireEvent.click(getByTitle('trash'));
 
-        await waitForElement(() =>
+        await waitFor(() =>
             fireEvent.click(getByTestId('delete-modal-delete'))
         );
         expect(
-            await waitForElement(() => getByTestId('error-message'))
+            await waitFor(() => getByTestId('error-message'))
         ).toMatchSnapshot();
         expect(
-            await waitForElement(() => getByTestId('service-list'))
+            await waitFor(() => getByTestId('service-list'))
         ).toMatchSnapshot();
     });
 
     it('should render serviceList again after confirm delete', async () => {
-        const services = [
-            {
-                name: 'home.test1.openhouse',
-                modified: '2020-02-08T00:02:49.477Z',
-            },
-        ];
         const api = {
-            deleteService: function(domain, deleteServiceName, _csrf) {
+            deleteService: function (domain, deleteServiceName, _csrf) {
                 return new Promise((resolve, reject) => {
                     resolve();
                 });
             },
-            getServices: function(domain) {
-                return new Promise((resolve, reject) => {
-                    resolve([]);
-                });
-            },
         };
+        MockApi.setMockApi(api);
 
-        const { getByText, getByTestId, getByTitle } = render(
-            <ServiceList services={services} api={api} pageConfig={pageConfig} />
+        const { getByText, getByTestId, getByTitle } = renderWithRedux(
+            <ServiceList domain={domain} pageConfig={pageConfig} />,
+            getStateWithServices(servicesForState)
         );
         fireEvent.click(getByTitle('trash'));
 
-        await waitForElement(() =>
+        await waitFor(() =>
             fireEvent.click(getByTestId('delete-modal-delete'))
         );
 
         expect(
-            await waitForElement(() => getByTestId('service-list'))
+            await waitFor(() => getByTestId('service-list'))
         ).toMatchSnapshot();
     });
 
@@ -172,29 +171,26 @@ describe('ServiceList', () => {
             },
         ];
         const api = {
-            deleteService: function(domain, deleteServiceName, _csrf) {
+            deleteService: function (domain, deleteServiceName, _csrf) {
                 return new Promise((resolve, reject) => {
                     resolve();
                 });
             },
-            getServices: function(domain) {
-                return new Promise((resolve, reject) => {
-                    resolve([]);
-                });
-            },
         };
+        MockApi.setMockApi(api);
 
-        const { getByText, getByTestId, getByTitle } = render(
-            <ServiceList services={services} api={api} pageConfig={pageConfig}/>
+        const { getByText, getByTestId, getByTitle } = renderWithRedux(
+            <ServiceList domain={domain} pageConfig={pageConfig} />,
+            getStateWithServices(servicesForState)
         );
         fireEvent.click(getByTitle('trash'));
 
-        await waitForElement(() =>
+        await waitFor(() =>
             fireEvent.click(getByTestId('delete-modal-cancel'))
         );
 
         expect(
-            await waitForElement(() => getByTestId('service-list'))
+            await waitFor(() => getByTestId('service-list'))
         ).toMatchSnapshot();
     });
 });

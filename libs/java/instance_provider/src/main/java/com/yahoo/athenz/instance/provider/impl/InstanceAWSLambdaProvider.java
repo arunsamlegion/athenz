@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Yahoo Holdings, Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ import com.yahoo.athenz.instance.provider.InstanceProvider;
 public class InstanceAWSLambdaProvider extends InstanceAWSProvider {
 
     @Override
-    boolean validateAWSDocument(final String provider, AWSAttestationData info,
+    protected boolean validateAWSDocument(final String provider, AWSAttestationData info,
             final String awsAccount, final String instanceId, boolean checkTime,
             StringBuilder privateIp, StringBuilder errMsg) {
         
@@ -35,8 +35,8 @@ public class InstanceAWSLambdaProvider extends InstanceAWSProvider {
     }
     
     @Override
-    void setConfirmationAttributes(InstanceConfirmation confirmation, boolean sshCert,
-                                   final String privateIP) {
+    protected void setConfirmationAttributes(InstanceConfirmation confirmation, boolean instanceDocumentCreds,
+             final String privateIP, final String instanceId) {
         
         // for lambda we can only issue client certificates
         // and we always do not allow ssh certs

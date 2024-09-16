@@ -1,5 +1,5 @@
 //
-// Copyright 2020 Verizon Media
+// Copyright The Athenz Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,18 +18,21 @@ package sia
 
 import (
 	"fmt"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"os"
+	"testing"
+	"time"
+
+	"github.com/AthenZ/athenz/libs/go/sia/util"
 	"github.com/AthenZ/athenz/provider/azure/sia-vm/data/attestation"
 	"github.com/AthenZ/athenz/provider/azure/sia-vm/devel/ztsmock"
 	"github.com/AthenZ/athenz/provider/azure/sia-vm/options"
-	"io/ioutil"
-	"os"
-	"testing"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func setup() {
-	go ztsmock.StartZtsServer("127.0.0.1:5081")
+	go ztsmock.StartZtsServer("127.0.0.1:5085")
+	time.Sleep(3 * time.Second)
 }
 
 func teardown() {}
@@ -55,26 +58,25 @@ func TestGetProviderName(test *testing.T) {
 }
 
 func TestRegisterInstance(test *testing.T) {
-	siaDir, err := ioutil.TempDir("", "sia.")
-	require.Nil(test, err)
-	defer os.RemoveAll(siaDir)
+	siaDir := test.TempDir()
 
 	keyFile := fmt.Sprintf("%s/athenz.hockey.key.pem", siaDir)
 	certFile := fmt.Sprintf("%s/athenz.hockey.cert.pem", siaDir)
 	caCertFile := fmt.Sprintf("%s/ca.cert.pem", siaDir)
-
-	require.Nil(test, err)
 
 	opts := &options.Options{
 		Domain: "athenz",
 		Services: []options.Service{
 			{
 				Name: "hockey",
+				Uid:  util.ExecIdCommand("-u"),
+				Gid:  util.ExecIdCommand("-g"),
 			},
 		},
 		KeyDir:           siaDir,
 		CertDir:          siaDir,
 		AthenzCACertFile: caCertFile,
+		ZTSAzureDomains:  []string{"zts-azure-domain"},
 	}
 
 	a := &attestation.Data{
@@ -99,7 +101,7 @@ func TestRegisterInstance(test *testing.T) {
 		Document:          nil,
 	}
 
-	err = RegisterInstance([]*attestation.Data{a}, "http://127.0.0.1:5081/zts/v1", &identityDocument, opts, os.Stdout)
+	err := RegisterInstance([]*attestation.Data{a}, "http://127.0.0.1:5085/zts/v1", &identityDocument, opts)
 	assert.Nil(test, err, "unable to regster instance")
 
 	_, err = os.Stat(keyFile)
@@ -113,23 +115,27 @@ func TestRegisterInstance(test *testing.T) {
 }
 
 func TestRegisterInstanceMultiple(test *testing.T) {
-	siaDir, err := ioutil.TempDir("", "sia.")
-	require.Nil(test, err)
-	defer os.RemoveAll(siaDir)
+	siaDir := test.TempDir()
 
 	caCertFile := fmt.Sprintf("%s/ca.cert.pem", siaDir)
-
-	require.Nil(test, err)
 
 	opts := &options.Options{
 		Domain: "athenz",
 		Services: []options.Service{
-			{Name: "hockey"},
-			{Name: "soccer"},
+			{Name: "hockey",
+				Uid: util.ExecIdCommand("-u"),
+				Gid: util.ExecIdCommand("-g"),
+			},
+			{
+				Name: "soccer",
+				Uid:  util.ExecIdCommand("-u"),
+				Gid:  util.ExecIdCommand("-g"),
+			},
 		},
 		KeyDir:           siaDir,
 		CertDir:          siaDir,
 		AthenzCACertFile: caCertFile,
+		ZTSAzureDomains:  []string{"zts-azure-domain"},
 	}
 
 	data := []*attestation.Data{
@@ -150,8 +156,8 @@ func TestRegisterInstanceMultiple(test *testing.T) {
 		Document:          nil,
 	}
 
-	err = RegisterInstance(data, "http://127.0.0.1:5081/zts/v1", &identityDocument, opts, os.Stdout)
-	assert.Nil(test, err, "unable to regster instance")
+	err := RegisterInstance(data, "http://127.0.0.1:5085/zts/v1", &identityDocument, opts)
+	assert.Nil(test, err, "unable to register instance")
 
 	// Verify the first service
 	keyFile := fmt.Sprintf("%s/athenz.hockey.key.pem", siaDir)
@@ -178,23 +184,21 @@ func TestRegisterInstanceMultiple(test *testing.T) {
 }
 
 func copyFile(src, dst string) error {
-	data, err := ioutil.ReadFile(src)
+	data, err := os.ReadFile(src)
 	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile(dst, data, 0644)
+	return os.WriteFile(dst, data, 0644)
 }
 
 func TestRefreshInstance(test *testing.T) {
-	siaDir, err := ioutil.TempDir("", "sia.")
-	require.Nil(test, err)
-	defer os.RemoveAll(siaDir)
+	siaDir := test.TempDir()
 
 	keyFile := fmt.Sprintf("%s/athenz.hockey.key.pem", siaDir)
 	certFile := fmt.Sprintf("%s/athenz.hockey.cert.pem", siaDir)
 	caCertFile := fmt.Sprintf("%s/ca.cert.pem", siaDir)
 
-	err = copyFile("devel/data/unit_test_key.pem", keyFile)
+	err := copyFile("devel/data/unit_test_key.pem", keyFile)
 	require.Nil(test, err, fmt.Sprintf("unable to copy file: %q to %q, error: %v", "devel/data/unit_test_key.pem", keyFile, err))
 
 	err = copyFile("devel/data/cert.pem", certFile)
@@ -208,11 +212,14 @@ func TestRefreshInstance(test *testing.T) {
 		Services: []options.Service{
 			{
 				Name: "hockey",
+				Uid:  util.ExecIdCommand("-u"),
+				Gid:  util.ExecIdCommand("-g"),
 			},
 		},
 		KeyDir:           siaDir,
 		CertDir:          siaDir,
 		AthenzCACertFile: caCertFile,
+		ZTSAzureDomains:  []string{"zts-azure-domain"},
 	}
 
 	a := &attestation.Data{
@@ -232,11 +239,11 @@ func TestRefreshInstance(test *testing.T) {
 		Document:          nil,
 	}
 
-	err = RefreshInstance([]*attestation.Data{a}, "http://127.0.0.1:5081/zts/v1", &identityDocument, &opts, os.Stdout)
+	err = RefreshInstance([]*attestation.Data{a}, "http://127.0.0.1:5085/zts/v1", &identityDocument, &opts)
 	assert.Nil(test, err, fmt.Sprintf("unable to refresh instance: %v", err))
 
-	oldCert, _ := ioutil.ReadFile("devel/data/cert.pem")
-	newCert, _ := ioutil.ReadFile(certFile)
+	oldCert, _ := os.ReadFile("devel/data/cert.pem")
+	newCert, _ := os.ReadFile(certFile)
 	if string(oldCert) == string(newCert) {
 		test.Errorf("Certificate was not refreshed")
 		return
@@ -244,16 +251,14 @@ func TestRefreshInstance(test *testing.T) {
 }
 
 func TestRoleCertificateRequest(test *testing.T) {
-	siaDir, err := ioutil.TempDir("", "sia.")
-	require.Nil(test, err)
-	defer os.RemoveAll(siaDir)
+	siaDir := test.TempDir()
 
 	keyFile := fmt.Sprintf("%s/athenz.hockey.key.pem", siaDir)
 	certFile := fmt.Sprintf("%s/athenz.hockey.cert.pem", siaDir)
 	caCertFile := fmt.Sprintf("%s/ca.cert.pem", siaDir)
 	roleCertFile := fmt.Sprintf("%s/testrole.cert.pem", siaDir)
 
-	err = copyFile("devel/data/unit_test_key.pem", keyFile)
+	err := copyFile("devel/data/unit_test_key.pem", keyFile)
 	require.Nil(test, err, fmt.Sprintf("unable to copy file: %q to %q, error: %v", "devel/data/unit_test_key.pem", keyFile, err))
 
 	err = copyFile("devel/data/cert.pem", certFile)
@@ -267,6 +272,8 @@ func TestRoleCertificateRequest(test *testing.T) {
 		Services: []options.Service{
 			{
 				Name: "hockey",
+				Uid:  util.ExecIdCommand("-u"),
+				Gid:  util.ExecIdCommand("-g"),
 			},
 		},
 		Roles: map[string]options.ConfigRole{
@@ -277,11 +284,12 @@ func TestRoleCertificateRequest(test *testing.T) {
 		KeyDir:           siaDir,
 		CertDir:          siaDir,
 		AthenzCACertFile: caCertFile,
+		ZTSAzureDomains:  []string{"zts-azure-domain"},
 	}
 
-	result := GetRoleCertificate("http://127.0.0.1:5081/zts/v1", keyFile, certFile, opts, os.Stdout)
+	result := GetRoleCertificate("http://127.0.0.1:5085/zts/v1", keyFile, certFile, opts)
 	if !result {
-		test.Errorf("Unable to get role certificate: %v", err)
+		test.Errorf("Unable to get role certificate")
 		return
 	}
 

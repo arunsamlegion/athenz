@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,8 +28,10 @@ describe('logger middleware test', () => {
     test('should execute middleware as expected', async () => {
         expressApp.get('/ping', (req, res) => res.status(200).send('pong'));
         logger(expressApp);
-        await request(expressApp).get('/ping').then(res => {
-            expect(res.status).toEqual(200);
-        });
+        await request(expressApp)
+            .get('/ping')
+            .then((res) => {
+                expect(res.status).toEqual(200);
+            });
     });
 });

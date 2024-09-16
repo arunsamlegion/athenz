@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import com.yahoo.athenz.auth.token.KerberosToken;
 public class MockPrivExcAction implements PrivilegedExceptionAction<String> {
 
     private byte[] kerberosTicket;
-    private String realm = System.getProperty(KerberosToken.KRB_PROP_TOKEN_PRIV_ACTION + "_TEST_REALM",
+    private final String realm = System.getProperty(KerberosToken.KRB_PROP_TOKEN_PRIV_ACTION + "_TEST_REALM",
             KerberosToken.KRB_USER_REALM);
 
     public MockPrivExcAction(String kerberosTicket) {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,11 +24,11 @@ import com.yahoo.athenz.auth.KeyStore;
 
 public class KeyStoreMock implements KeyStore {
 
-    private String servicePublicKeyStringK0;
-    private String servicePublicKeyStringK1;
-    private String ztsPublicKeyStringK0;
-    private String ztsPublicKeyStringK1;
-    private String hostPublic;
+    private final String servicePublicKeyStringK0;
+    private final String servicePublicKeyStringK1;
+    private final String ztsPublicKeyStringK0;
+    private final String ztsPublicKeyStringK1;
+    private final String hostPublic;
 
     public KeyStoreMock() throws IOException {
         Path path = Paths.get("./src/test/resources/fantasy_public_k0.key");

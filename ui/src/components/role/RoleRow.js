@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,10 @@ import DateUtils from '../utils/DateUtils';
 import RequestUtils from '../utils/RequestUtils';
 import { withRouter } from 'next/router';
 import { css, keyframes } from '@emotion/react';
+import { deleteRole } from '../../redux/thunks/roles';
+import { connect } from 'react-redux';
+import { selectDomainAuditEnabled } from '../../redux/selectors/domainData';
+import { isReviewRequired } from '../utils/ReviewUtils';
 
 const TDStyledName = styled.div`
     background-color: ${(props) => props.color};
@@ -71,12 +75,12 @@ const TrStyled = styled.div`
 `;
 
 const colorTransition = keyframes`
-        0% {
-            background-color: rgba(21, 192, 70, 0.20);
-        }
-        100% {
-            background-color: transparent;
-        }
+    0% {
+        background-color: rgba(21, 192, 70, 0.20);
+    }
+    100% {
+        background-color: transparent;
+    }
 `;
 
 const MenuDiv = styled.div`
@@ -93,7 +97,6 @@ const LeftSpan = styled.span`
 class RoleRow extends React.Component {
     constructor(props) {
         super(props);
-        this.api = this.props.api;
         this.onSubmitDelete = this.onSubmitDelete.bind(this);
         this.onClickDeleteCancel = this.onClickDeleteCancel.bind(this);
         this.saveJustification = this.saveJustification.bind(this);
@@ -116,7 +119,16 @@ class RoleRow extends React.Component {
     }
 
     onClickFunction(route) {
-        this.props.router.push(route, route, { getInitialProps: true });
+        this.props.router.push(route, route);
+    }
+
+    // opens new tab on cmd + click or ctrl + click
+    onClickNewTabFunction(route, args) {
+        if(args.metaKey || args.ctrlKey) {
+            args.view.open(args.view.origin + route, '_blank', 'noopener,norefferer');
+        } else {
+            this.props.router.push(route, route);
+        }
     }
 
     onSubmitDelete(domain) {
@@ -131,17 +143,12 @@ class RoleRow extends React.Component {
             });
             return;
         }
-
-        this.api
-            .deleteRole(
-                domain,
-                roleName,
-                this.state.deleteJustification
-                    ? this.state.deleteJustification
-                    : 'deleted using Athenz UI',
-                this.props._csrf
-            )
-            .then(() => {
+        let auditRef = this.state.deleteJustification
+            ? this.state.deleteJustification
+            : 'deleted using Athenz UI';
+        this.props
+            .deleteRole(roleName, auditRef, this.props._csrf)
+            .then((thenRoleName) => {
                 this.setState({
                     showDelete: false,
                     deleteName: null,
@@ -175,7 +182,7 @@ class RoleRow extends React.Component {
         let color = this.props.color;
         let idx = this.props.idx;
 
-        let clickMembers = this.onClickFunction.bind(
+        let clickMembers = this.onClickNewTabFunction.bind(
             this,
             `/domain/${this.props.domain}/role/${this.state.name}/members`
         );
@@ -223,6 +230,42 @@ class RoleRow extends React.Component {
             </Menu>
         );
 
+        let iconDescription = (
+            <Menu
+                placement='bottom-start'
+                trigger={
+                    <span data-testid='description-icon'>
+                        <Icon
+                            icon={'information-circle'}
+                            color={colors.icons}
+                            size={'1.15em'}
+                            verticalAlign={'text-bottom'}
+                            enableTitle={false}
+                            onClick={() => {
+                                this.setState({
+                                    recentlyCopiedToClipboard: true,
+                                });
+                                setTimeout(
+                                    () =>
+                                        this.setState({
+                                            recentlyCopiedToClipboard: false,
+                                        }),
+                                    1000
+                                );
+                                navigator.clipboard.writeText(role.description);
+                            }}
+                        />
+                    </span>
+                }
+            >
+                <MenuDiv>
+                    {this.state.recentlyCopiedToClipboard
+                        ? 'Copied to clipboard'
+                        : role.description}
+                </MenuDiv>
+            </Menu>
+        );
+
         let auditEnabled = !!role.auditEnabled;
         let iconAudit = (
             <Menu
@@ -244,10 +287,10 @@ class RoleRow extends React.Component {
             </Menu>
         );
 
-        let reviewRequired =
-            role.reviewEnabled && (role.memberExpiryDays || role.serviceExpiry);
+        let reviewRequired = isReviewRequired(role);
 
         let roleTypeIcon = role.trust ? iconDelegated : '';
+        let roleDescriptionIcon = role.description ? iconDescription : '';
         let roleAuditIcon = auditEnabled ? iconAudit : '';
 
         let roleNameSpan =
@@ -267,17 +310,21 @@ class RoleRow extends React.Component {
                 <TDStyledName color={color} align={left}>
                     {roleTypeIcon}
                     {roleAuditIcon}
-                    {roleNameSpan}
+                    {roleNameSpan} {roleDescriptionIcon}
                 </TDStyledName>
                 <TDStyledTime color={color} align={left}>
-                    {this.localDate.getLocalDate(role.modified, 'UTC', 'UTC')}
+                    {this.localDate.getLocalDate(
+                        role.modified,
+                        this.props.timeZone,
+                        this.props.timeZone
+                    )}
                 </TDStyledTime>
                 <TDStyledTime color={color} align={left}>
                     {role.lastReviewedDate
                         ? this.localDate.getLocalDate(
                               role.lastReviewedDate,
-                              'UTC',
-                              'UTC'
+                              this.props.timeZone,
+                              this.props.timeZone
                           )
                         : 'N/A'}
                 </TDStyledTime>
@@ -316,11 +363,12 @@ class RoleRow extends React.Component {
                                     isLink
                                     size={'1.25em'}
                                     verticalAlign={'text-bottom'}
+                                    enableTitle={false}
                                 />
                             </span>
                         }
                     >
-                        <MenuDiv>Review Members</MenuDiv>
+                        <MenuDiv>{reviewRequired ? 'Role Review is required' : 'Review Members'}</MenuDiv>
                     </Menu>
                 </TDStyledIcon>
                 <TDStyledIcon color={color} align={center}>
@@ -405,6 +453,7 @@ class RoleRow extends React.Component {
                         trigger={
                             <span>
                                 <Icon
+                                    id={`${this.state.name}-delete-role-button`}
                                     icon={'trash'}
                                     onClick={clickDelete}
                                     color={colors.icons}
@@ -441,4 +490,20 @@ class RoleRow extends React.Component {
         return rows;
     }
 }
-export default withRouter(RoleRow);
+
+const mapStateToProps = (state, props) => {
+    return {
+        ...props,
+        justificationRequired: selectDomainAuditEnabled(state),
+    };
+};
+
+const mapDispatchToProps = (dispatch) => ({
+    deleteRole: (roleName, auditRef, _csrf) =>
+        dispatch(deleteRole(roleName, auditRef, _csrf)),
+});
+
+export default connect(
+    mapStateToProps,
+    mapDispatchToProps
+)(withRouter(RoleRow));

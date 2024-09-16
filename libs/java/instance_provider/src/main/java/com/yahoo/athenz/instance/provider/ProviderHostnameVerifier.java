@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Yahoo Holdings, Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,16 +40,10 @@ public class ProviderHostnameVerifier implements HostnameVerifier {
             certs = session.getPeerCertificates();
         } catch (SSLPeerUnverifiedException ignored) {
         }
-        if (certs == null) {
+        if (certs == null || certs.length == 0) {
             return false;
         }
-        
-        for (Certificate cert : certs) {
-            final X509Certificate x509Cert = (X509Certificate) cert;
-            if (serviceName.equals(Crypto.extractX509CertCommonName(x509Cert))) {
-                return true;
-            }
-        }
-        return false;
+
+        return serviceName.equals(Crypto.extractX509CertCommonName((X509Certificate) certs[0]));
     }
 }

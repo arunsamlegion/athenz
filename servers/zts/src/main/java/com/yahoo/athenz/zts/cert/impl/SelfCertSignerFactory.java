@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package com.yahoo.athenz.zts.cert.impl;
 
+import org.eclipse.jetty.util.StringUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,6 +25,7 @@ import com.yahoo.athenz.common.server.cert.CertSignerFactory;
 import com.yahoo.athenz.zts.ZTSConsts;
 
 import java.io.File;
+import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
 
@@ -32,7 +34,6 @@ import org.bouncycastle.operator.OperatorCreationException;
 import org.bouncycastle.pkcs.PKCS10CertificationRequest;
 
 import java.io.IOException;
-import javax.security.auth.x500.X500Principal;
 
 public class SelfCertSignerFactory implements CertSignerFactory {
 
@@ -46,9 +47,10 @@ public class SelfCertSignerFactory implements CertSignerFactory {
         final String pKeyFileName = System.getProperty(ZTSConsts.ZTS_PROP_SELF_SIGNER_PRIVATE_KEY_FNAME);
         final String pKeyPassword = System.getProperty(ZTSConsts.ZTS_PROP_SELF_SIGNER_PRIVATE_KEY_PASSWORD);
         final String csrDn = System.getProperty(ZTSConsts.ZTS_PROP_SELF_SIGNER_CERT_DN,
-                "cn=Self Signed Athenz CA,o=Athenz,c=US");
+                "CN=Self Signed Athenz CA, O=Athenz, C=US");
+        final int maxCertExpiryTimeMins = Integer.parseInt(System.getProperty(ZTSConsts.ZTS_PROP_CERTSIGN_MAX_EXPIRY_TIME, "43200"));
 
-        if (pKeyFileName == null) {
+        if (StringUtil.isEmpty(pKeyFileName)) {
             LOGGER.error("No private key path available for Self Cert Signer Factory");
             return null;
         }
@@ -61,19 +63,18 @@ public class SelfCertSignerFactory implements CertSignerFactory {
         String csr;
         try {
             csr = Crypto.generateX509CSR(caPrivateKey, csrDn, null);
-        } catch (IllegalArgumentException | OperatorCreationException | IOException ex) {
+        } catch (IllegalArgumentException | OperatorCreationException | IOException | NoSuchAlgorithmException ex) {
             LOGGER.error("Unable to generate X509 CSR for dn: {}, error: {}", csrDn, ex.getMessage());
             return null;
         }
         
-        // generate our self signed certificate
-        
-        X500Principal subject = new X500Principal(csrDn);
-        X500Name issuer = X500Name.getInstance(subject.getEncoded());
+        // generate our self-signed certificate
+
+        X500Name issuer = Crypto.utf8DEREncodedIssuer(csrDn);
         PKCS10CertificationRequest certReq = Crypto.getPKCS10CertRequest(csr);
         X509Certificate caCertificate = Crypto.generateX509Certificate(certReq,
-                caPrivateKey, issuer, 30 * 24 * 60, true);
+                caPrivateKey, issuer, 365 * 24 * 60, true);
 
-        return new SelfCertSigner(caPrivateKey, caCertificate);
+        return new KeyStoreCertSigner(caCertificate, caPrivateKey, maxCertExpiryTimeMins);
     }
 }

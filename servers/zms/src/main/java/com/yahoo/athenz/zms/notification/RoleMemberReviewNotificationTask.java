@@ -1,5 +1,5 @@
 /*
- *  Copyright 2020 Verizon Media
+ *  Copyright The Athenz Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -17,17 +17,12 @@
 package com.yahoo.athenz.zms.notification;
 
 import com.yahoo.athenz.common.server.notification.*;
-import com.yahoo.athenz.zms.DBService;
-import com.yahoo.athenz.zms.DomainRoleMember;
-import com.yahoo.athenz.zms.MemberRole;
+import com.yahoo.athenz.zms.*;
 import com.yahoo.rdl.Timestamp;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 import static com.yahoo.athenz.common.server.notification.NotificationServiceConstants.*;
 import static com.yahoo.athenz.common.server.notification.impl.MetricNotificationService.*;
@@ -42,11 +37,18 @@ public class RoleMemberReviewNotificationTask implements NotificationTask {
     private final RoleReviewPrincipalNotificationToMetricConverter roleReviewPrincipalNotificationToMetricConverter;
     private final RoleReviewDomainNotificationToMetricConverter roleReviewDomainNotificationToMetricConverter;
 
-    public RoleMemberReviewNotificationTask(DBService dbService, String userDomainPrefix) {
+    private final static String[] TEMPLATE_COLUMN_NAMES = { "DOMAIN", "ROLE", "MEMBER", "REVIEW" };
+
+    public RoleMemberReviewNotificationTask(DBService dbService, String userDomainPrefix,
+            NotificationToEmailConverterCommon notificationToEmailConverterCommon, boolean consolidateNotifications) {
+
         this.dbService = dbService;
-        this.roleMemberNotificationCommon = new RoleMemberNotificationCommon(dbService, userDomainPrefix);
-        this.roleReviewDomainNotificationToEmailConverter = new RoleReviewDomainNotificationToEmailConverter();
-        this.roleReviewPrincipalNotificationToEmailConverter = new RoleReviewPrincipalNotificationToEmailConverter();
+        this.roleMemberNotificationCommon = new RoleMemberNotificationCommon(dbService, userDomainPrefix,
+                consolidateNotifications);
+        this.roleReviewDomainNotificationToEmailConverter =
+                new RoleReviewDomainNotificationToEmailConverter(notificationToEmailConverterCommon);
+        this.roleReviewPrincipalNotificationToEmailConverter =
+                new RoleReviewPrincipalNotificationToEmailConverter(notificationToEmailConverterCommon);
         this.roleReviewDomainNotificationToMetricConverter = new RoleReviewDomainNotificationToMetricConverter();
         this.roleReviewPrincipalNotificationToMetricConverter = new RoleReviewPrincipalNotificationToMetricConverter();
     }
@@ -61,13 +63,16 @@ public class RoleMemberReviewNotificationTask implements NotificationTask {
             return new ArrayList<>();
         }
 
-        return roleMemberNotificationCommon.getNotificationDetails(
+        List<Notification> notificationDetails = roleMemberNotificationCommon.getNotificationDetails(
+                Notification.Type.ROLE_MEMBER_REVIEW,
                 reviewMembers,
                 roleReviewPrincipalNotificationToEmailConverter,
                 roleReviewDomainNotificationToEmailConverter,
                 new ReviewRoleMemberDetailStringer(),
                 roleReviewPrincipalNotificationToMetricConverter,
-                roleReviewDomainNotificationToMetricConverter);
+                roleReviewDomainNotificationToMetricConverter,
+                new ReviewDisableRoleMemberNotificationFilter());
+        return roleMemberNotificationCommon.printNotificationDetailsToLog(notificationDetails, DESCRIPTION);
     }
 
     static class ReviewRoleMemberDetailStringer implements RoleMemberNotificationCommon.RoleMemberDetailStringer {
@@ -75,9 +80,35 @@ public class RoleMemberReviewNotificationTask implements NotificationTask {
         @Override
         public StringBuilder getDetailString(MemberRole memberRole) {
             StringBuilder detailsRow = new StringBuilder(256);
+            detailsRow.append(memberRole.getDomainName()).append(';');
             detailsRow.append(memberRole.getRoleName()).append(';');
+            detailsRow.append(memberRole.getMemberName()).append(';');
             detailsRow.append(memberRole.getReviewReminder());
             return detailsRow;
+        }
+
+        @Override
+        public Timestamp getNotificationTimestamp(MemberRole memberRole) {
+            return memberRole.getReviewReminder();
+        }
+    }
+
+    class ReviewDisableRoleMemberNotificationFilter implements RoleMemberNotificationCommon.DisableRoleMemberNotificationFilter {
+
+        @Override
+        public EnumSet<DisableNotificationEnum> getDisabledNotificationState(MemberRole memberRole) {
+            Role role = dbService.getRole(memberRole.getDomainName(), memberRole.getRoleName(), false, false, false);
+
+            try {
+                return DisableNotificationEnum.getDisabledNotificationState(role, Role::getTags,
+                        ZMSConsts.DISABLE_REMINDER_NOTIFICATIONS_TAG);
+            } catch (NumberFormatException ex) {
+                LOGGER.warn("Invalid mask value for zms.DisableReminderNotifications in domain {}, role {}",
+                        memberRole.getDomainName(),
+                        memberRole.getRoleName());
+            }
+
+            return DisableNotificationEnum.getEnumSet(0);
         }
     }
 
@@ -91,10 +122,10 @@ public class RoleMemberReviewNotificationTask implements NotificationTask {
         private static final String PRINCIPAL_REVIEW_SUBJECT = "athenz.notification.email.role_member.review.subject";
 
         private final NotificationToEmailConverterCommon notificationToEmailConverterCommon;
-        private String emailPrincipalReviewBody;
+        private final String emailPrincipalReviewBody;
 
-        public RoleReviewPrincipalNotificationToEmailConverter() {
-            notificationToEmailConverterCommon = new NotificationToEmailConverterCommon();
+        public RoleReviewPrincipalNotificationToEmailConverter(NotificationToEmailConverterCommon notificationToEmailConverterCommon) {
+            this.notificationToEmailConverterCommon = notificationToEmailConverterCommon;
             emailPrincipalReviewBody =  notificationToEmailConverterCommon.readContentFromFile(
                     getClass().getClassLoader(),
                     EMAIL_TEMPLATE_PRINCIPAL_REVIEW);
@@ -110,14 +141,15 @@ public class RoleMemberReviewNotificationTask implements NotificationTask {
                     emailPrincipalReviewBody,
                     NOTIFICATION_DETAILS_MEMBER,
                     NOTIFICATION_DETAILS_ROLES_LIST,
-                    3);
+                    TEMPLATE_COLUMN_NAMES.length, TEMPLATE_COLUMN_NAMES);
         }
 
         @Override
         public NotificationEmail getNotificationAsEmail(Notification notification) {
             String subject = notificationToEmailConverterCommon.getSubject(PRINCIPAL_REVIEW_SUBJECT);
             String body = getPrincipalReviewBody(notification.getDetails());
-            Set<String> fullyQualifiedEmailAddresses = notificationToEmailConverterCommon.getFullyQualifiedEmailAddresses(notification.getRecipients());
+            Set<String> fullyQualifiedEmailAddresses =
+                    notificationToEmailConverterCommon.getFullyQualifiedEmailAddresses(notification.getRecipients());
             return new NotificationEmail(subject, body, fullyQualifiedEmailAddresses);
         }
     }
@@ -127,10 +159,10 @@ public class RoleMemberReviewNotificationTask implements NotificationTask {
         private static final String DOMAIN_MEMBER_REVIEW_SUBJECT = "athenz.notification.email.domain.role_member.review.subject";
 
         private final NotificationToEmailConverterCommon notificationToEmailConverterCommon;
-        private String emailDomainMemberReviewBody;
+        private final String emailDomainMemberReviewBody;
 
-        public RoleReviewDomainNotificationToEmailConverter() {
-            notificationToEmailConverterCommon = new NotificationToEmailConverterCommon();
+        public RoleReviewDomainNotificationToEmailConverter(NotificationToEmailConverterCommon notificationToEmailConverterCommon) {
+            this.notificationToEmailConverterCommon = notificationToEmailConverterCommon;
             emailDomainMemberReviewBody = notificationToEmailConverterCommon.readContentFromFile(
                     getClass().getClassLoader(),
                     EMAIL_TEMPLATE_DOMAIN_MEMBER_REVIEW);
@@ -146,80 +178,44 @@ public class RoleMemberReviewNotificationTask implements NotificationTask {
                     emailDomainMemberReviewBody,
                     NOTIFICATION_DETAILS_DOMAIN,
                     NOTIFICATION_DETAILS_MEMBERS_LIST,
-                    3);
+                    TEMPLATE_COLUMN_NAMES.length, TEMPLATE_COLUMN_NAMES);
         }
 
         @Override
         public NotificationEmail getNotificationAsEmail(Notification notification) {
             String subject = notificationToEmailConverterCommon.getSubject(DOMAIN_MEMBER_REVIEW_SUBJECT);
             String body = getDomainMemberReviewBody(notification.getDetails());
-            Set<String> fullyQualifiedEmailAddresses = notificationToEmailConverterCommon.getFullyQualifiedEmailAddresses(notification.getRecipients());
+            Set<String> fullyQualifiedEmailAddresses =
+                    notificationToEmailConverterCommon.getFullyQualifiedEmailAddresses(notification.getRecipients());
             return new NotificationEmail(subject, body, fullyQualifiedEmailAddresses);
         }
     }
 
     public static class RoleReviewPrincipalNotificationToMetricConverter implements NotificationToMetricConverter {
         private final static String NOTIFICATION_TYPE = "principal_role_membership_review";
-        private final NotificationToMetricConverterCommon notificationToMetricConverterCommon = new NotificationToMetricConverterCommon();
+        private final NotificationToMetricConverterCommon notificationToMetricConverterCommon =
+                new NotificationToMetricConverterCommon();
 
         @Override
         public NotificationMetric getNotificationAsMetrics(Notification notification, Timestamp currentTime) {
-            Map<String, String> details = notification.getDetails();
 
-            String memberName = details.get(NOTIFICATION_DETAILS_MEMBER);
-
-            List<String[]> attributes = new ArrayList<>();
-            String[] records = details.get(NOTIFICATION_DETAILS_ROLES_LIST).split("\\|");
-            for (String record: records) {
-                String[] recordAttributes = record.split(";");
-                if (recordAttributes.length != 3) {
-                    // Bad entry, skip
-                    continue;
-                }
-                String[] metricRecord = new String[] {
-                        METRIC_NOTIFICATION_TYPE_KEY, NOTIFICATION_TYPE,
-                        METRIC_NOTIFICATION_MEMBER_KEY, memberName,
-                        METRIC_NOTIFICATION_DOMAIN_KEY, recordAttributes[0],
-                        METRIC_NOTIFICATION_ROLE_KEY, recordAttributes[1],
-                        METRIC_NOTIFICATION_REVIEW_DAYS_KEY, notificationToMetricConverterCommon.getNumberOfDaysBetweenTimestamps(currentTime.toString(), recordAttributes[2])
-                };
-
-                attributes.add(metricRecord);
-            }
-
-            return new NotificationMetric(attributes);
+            return NotificationUtils.getNotificationAsMetrics(notification, currentTime, NOTIFICATION_TYPE,
+                    NOTIFICATION_DETAILS_ROLES_LIST, METRIC_NOTIFICATION_ROLE_KEY, METRIC_NOTIFICATION_REVIEW_DAYS_KEY,
+                    notificationToMetricConverterCommon);
         }
     }
 
     public static class RoleReviewDomainNotificationToMetricConverter implements NotificationToMetricConverter {
         private final static String NOTIFICATION_TYPE = "domain_role_membership_review";
-        private final NotificationToMetricConverterCommon notificationToMetricConverterCommon = new NotificationToMetricConverterCommon();
+        private final NotificationToMetricConverterCommon notificationToMetricConverterCommon =
+                new NotificationToMetricConverterCommon();
 
         @Override
         public NotificationMetric getNotificationAsMetrics(Notification notification, Timestamp currentTime) {
-            Map<String, String> details = notification.getDetails();
-            String domain = details.get(NOTIFICATION_DETAILS_DOMAIN);
-            List<String[]> attributes = new ArrayList<>();
-            String[] records = details.get(NOTIFICATION_DETAILS_MEMBERS_LIST).split("\\|");
-            for (String record: records) {
-                String[] recordAttributes = record.split(";");
-                if (recordAttributes.length != 3) {
-                    // Bad entry, skip
-                    continue;
-                }
-                String[] metricRecord = new String[] {
-                        METRIC_NOTIFICATION_TYPE_KEY, NOTIFICATION_TYPE,
-                        METRIC_NOTIFICATION_DOMAIN_KEY, domain,
-                        METRIC_NOTIFICATION_MEMBER_KEY, recordAttributes[0],
-                        METRIC_NOTIFICATION_ROLE_KEY, recordAttributes[1],
-                        METRIC_NOTIFICATION_REVIEW_DAYS_KEY, notificationToMetricConverterCommon.getNumberOfDaysBetweenTimestamps(currentTime.toString(), recordAttributes[2])
-                };
 
-
-                attributes.add(metricRecord);
-            }
-
-            return new NotificationMetric(attributes);
+            return NotificationUtils.getNotificationAsMetrics(notification, currentTime, NOTIFICATION_TYPE,
+                    NOTIFICATION_DETAILS_MEMBERS_LIST, METRIC_NOTIFICATION_ROLE_KEY, METRIC_NOTIFICATION_REVIEW_DAYS_KEY,
+                    notificationToMetricConverterCommon);
         }
     }
 }

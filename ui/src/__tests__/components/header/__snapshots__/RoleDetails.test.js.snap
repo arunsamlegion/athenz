@@ -1,14 +1,11 @@
 // Jest Snapshot v1, https://goo.gl/fbAQLP
 
-exports[`RoleDetails should render 1`] = `
+exports[`RoleDetails should renderWithRedux 1`] = `
 .emotion-0 {
   margin: 20px 0;
 }
 
 .emotion-2 {
-  display: -webkit-box;
-  display: -webkit-flex;
-  display: -ms-flexbox;
   display: flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -69,15 +66,12 @@ exports[`RoleDetails should render 1`] = `
 </div>
 `;
 
-exports[`RoleDetails should render with mock data 1`] = `
+exports[`RoleDetails should renderWithRedux with mock data 1`] = `
 .emotion-0 {
   margin: 20px 0;
 }
 
 .emotion-2 {
-  display: -webkit-box;
-  display: -webkit-flex;
-  display: -ms-flexbox;
   display: flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;

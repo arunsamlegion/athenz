@@ -1,5 +1,5 @@
 /**
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,7 @@
 package com.yahoo.athenz.zms;
 
 import com.yahoo.rdl.Schema;
-import com.yahoo.rdl.Struct;
 import com.yahoo.rdl.Timestamp;
-import com.yahoo.rdl.UUID;
 import com.yahoo.rdl.Validator;
 import com.yahoo.rdl.Validator.Result;
 
@@ -39,10 +37,9 @@ public class GroupTest {
         GroupAuditLog ral = new GroupAuditLog().setMember("user.test").setAdmin("user.admin")
                 .setCreated(Timestamp.fromMillis(123456789123L)).setAction("add").setAuditRef("zmstest");
 
-        List<GroupAuditLog> rall = Arrays.asList(ral);
+        List<GroupAuditLog> rall = Collections.singletonList(ral);
 
         // Group test
-        List<String> members = Arrays.asList("user.boynton");
         List<GroupMember> groupMembers = new ArrayList<>();
         groupMembers.add(new GroupMember().setMemberName("member1"));
 
@@ -59,24 +56,14 @@ public class GroupTest {
                 .setUserAuthorityExpiration("attr1")
                 .setUserAuthorityFilter("attr2,attr3")
                 .setMemberExpiryDays(10)
-                .setServiceExpiryDays(20);
-
-        Result result = validator.validate(r, "Group");
-        assertTrue(result.valid);
-
-        assertEquals(r.getName(), "sys.auth:group.admin");
-        assertEquals(r.getModified(), Timestamp.fromMillis(123456789123L));
-        assertEquals(r.getAuditLog(), rall);
-        assertEquals(r.getGroupMembers(), groupMembers);
-        assertTrue(r.getAuditEnabled());
-        assertFalse(r.getSelfServe());
-        assertFalse(r.getReviewEnabled());
-        assertEquals(r.getLastReviewedDate(), Timestamp.fromMillis(123456789123L));
-        assertEquals(r.getNotifyRoles(), "role1,domain:role.role2");
-        assertEquals(r.getUserAuthorityExpiration(), "attr1");
-        assertEquals(r.getUserAuthorityFilter(), "attr2,attr3");
-        assertEquals(r.getMemberExpiryDays().intValue(), 10);
-        assertEquals(r.getServiceExpiryDays().intValue(), 20);
+                .setServiceExpiryDays(20)
+                .setDeleteProtection(false)
+                .setTags(Collections.singletonMap("tagKey", new TagValueList().setList(Collections.singletonList("tagValue"))))
+                .setSelfRenew(true)
+                .setSelfRenewMins(180)
+                .setMaxMembers(5)
+                .setResourceOwnership(new ResourceGroupOwnership().setMetaOwner("TF"))
+                .setPrincipalDomainFilter("user,+unix.test,-home");
 
         Group r2 = new Group()
                 .setName("sys.auth:group.admin")
@@ -91,89 +78,167 @@ public class GroupTest {
                 .setUserAuthorityExpiration("attr1")
                 .setUserAuthorityFilter("attr2,attr3")
                 .setMemberExpiryDays(10)
-                .setServiceExpiryDays(20);
+                .setServiceExpiryDays(20)
+                .setDeleteProtection(false)
+                .setTags(Collections.singletonMap("tagKey", new TagValueList().setList(Collections.singletonList("tagValue"))))
+                .setSelfRenew(true)
+                .setSelfRenewMins(180)
+                .setMaxMembers(5)
+                .setResourceOwnership(new ResourceGroupOwnership().setMetaOwner("TF"))
+                .setPrincipalDomainFilter("user,+unix.test,-home");
 
-        assertTrue(r2.equals(r));
-        assertTrue(r.equals(r));
+        assertEquals(r, r2);
+        assertEquals(r, r);
+
+        assertEquals(r.getName(), "sys.auth:group.admin");
+        assertEquals(r.getModified(), Timestamp.fromMillis(123456789123L));
+        assertEquals(r.getAuditLog(), rall);
+        assertEquals(r.getGroupMembers(), groupMembers);
+        assertTrue(r.getAuditEnabled());
+        assertFalse(r.getSelfServe());
+        assertFalse(r.getReviewEnabled());
+        assertEquals(r.getLastReviewedDate(), Timestamp.fromMillis(123456789123L));
+        assertEquals(r.getNotifyRoles(), "role1,domain:role.role2");
+        assertEquals(r.getUserAuthorityExpiration(), "attr1");
+        assertEquals(r.getUserAuthorityFilter(), "attr2,attr3");
+        assertEquals(r.getMemberExpiryDays().intValue(), 10);
+        assertEquals(r.getServiceExpiryDays().intValue(), 20);
+        assertFalse(r.getDeleteProtection());
+        assertEquals(r.getTags().get("tagKey").getList().get(0), "tagValue");
+        assertEquals(r.getSelfRenewMins(), 180);
+        assertEquals(r.getSelfRenew(), Boolean.TRUE);
+        assertEquals(r.getMaxMembers(), 5);
+        assertEquals(r.getResourceOwnership(), new ResourceGroupOwnership().setMetaOwner("TF"));
+        assertEquals(r.getPrincipalDomainFilter(), "user,+unix.test,-home");
 
         r2.setLastReviewedDate(Timestamp.fromMillis(123456789124L));
-        assertFalse(r2.equals(r));
+        assertNotEquals(r, r2);
         r2.setLastReviewedDate(null);
-        assertFalse(r2.equals(r));
+        assertNotEquals(r, r2);
         r2.setLastReviewedDate(Timestamp.fromMillis(123456789123L));
-        assertTrue(r2.equals(r));
+        assertEquals(r, r2);
+
+        r2.setMaxMembers(15);
+        assertNotEquals(r, r2);
+        r2.setMaxMembers(null);
+        assertNotEquals(r, r2);
+        r2.setMaxMembers(5);
+        assertEquals(r, r2);
 
         r2.setNotifyRoles("group1");
-        assertFalse(r2.equals(r));
+        assertNotEquals(r, r2);
         r2.setNotifyRoles(null);
-        assertFalse(r2.equals(r));
+        assertNotEquals(r, r2);
         r2.setNotifyRoles("role1,domain:role.role2");
-        assertTrue(r2.equals(r));
+        assertEquals(r, r2);
 
         r2.setReviewEnabled(true);
-        assertFalse(r2.equals(r));
+        assertNotEquals(r, r2);
         r2.setReviewEnabled(null);
-        assertFalse(r2.equals(r));
+        assertNotEquals(r, r2);
         r2.setReviewEnabled(false);
-        assertTrue(r2.equals(r));
+        assertEquals(r, r2);
+
+        r2.setSelfRenew(false);
+        assertNotEquals(r, r2);
+        r2.setSelfRenew(null);
+        assertNotEquals(r, r2);
+        r2.setSelfRenew(true);
+        assertEquals(r, r2);
+
+        r2.setSelfRenewMins(15);
+        assertNotEquals(r, r2);
+        r2.setSelfRenewMins(null);
+        assertNotEquals(r, r2);
+        r2.setSelfRenewMins(180);
+        assertEquals(r, r2);
 
         r2.setAuditEnabled(false);
-        assertFalse(r2.equals(r));
+        assertNotEquals(r, r2);
         r2.setAuditEnabled(null);
-        assertFalse(r2.equals(r));
+        assertNotEquals(r, r2);
         r2.setAuditEnabled(true);
-        assertTrue(r2.equals(r));
+        assertEquals(r, r2);
 
         r2.setSelfServe(true);
-        assertFalse(r2.equals(r));
+        assertNotEquals(r, r2);
         r2.setSelfServe(null);
-        assertFalse(r2.equals(r));
+        assertNotEquals(r, r2);
         r2.setSelfServe(false);
-        assertTrue(r2.equals(r));
+        assertEquals(r, r2);
+
+        r2.setDeleteProtection(true);
+        assertNotEquals(r, r2);
+        r2.setDeleteProtection(null);
+        assertNotEquals(r, r2);
+        r2.setDeleteProtection(false);
+        assertEquals(r, r2);
 
         r2.setUserAuthorityExpiration("attr11");
-        assertFalse(r2.equals(r));
+        assertNotEquals(r, r2);
         r2.setUserAuthorityExpiration(null);
-        assertFalse(r2.equals(r));
+        assertNotEquals(r, r2);
         r2.setUserAuthorityExpiration("attr1");
-        assertTrue(r2.equals(r));
+        assertEquals(r, r2);
 
         r2.setUserAuthorityFilter("attr2");
-        assertFalse(r2.equals(r));
+        assertNotEquals(r, r2);
         r2.setUserAuthorityFilter(null);
-        assertFalse(r2.equals(r));
+        assertNotEquals(r, r2);
         r2.setUserAuthorityFilter("attr2,attr3");
-        assertTrue(r2.equals(r));
+        assertEquals(r, r2);
 
         r2.setMemberExpiryDays(15);
-        assertFalse(r2.equals(r));
+        assertNotEquals(r, r2);
         r2.setMemberExpiryDays(null);
-        assertFalse(r2.equals(r));
+        assertNotEquals(r, r2);
         r2.setMemberExpiryDays(10);
-        assertTrue(r2.equals(r));
+        assertEquals(r, r2);
 
         r2.setServiceExpiryDays(15);
-        assertFalse(r2.equals(r));
+        assertNotEquals(r, r2);
         r2.setServiceExpiryDays(null);
-        assertFalse(r2.equals(r));
+        assertNotEquals(r, r2);
         r2.setServiceExpiryDays(20);
-        assertTrue(r2.equals(r));
+        assertEquals(r, r2);
+
+        r2.setResourceOwnership(new ResourceGroupOwnership().setMetaOwner("TF2"));
+        assertNotEquals(r, r2);
+        r2.setResourceOwnership(null);
+        assertNotEquals(r, r2);
+        r2.setResourceOwnership(new ResourceGroupOwnership().setMetaOwner("TF"));
+        assertEquals(r, r2);
+
+        r2.setPrincipalDomainFilter("user");
+        assertNotEquals(r, r2);
+        r2.setPrincipalDomainFilter(null);
+        assertNotEquals(r, r2);
+        r2.setPrincipalDomainFilter("user,+unix.test,-home");
+        assertEquals(r, r2);
 
         r2.setAuditLog(null);
-        assertFalse(r2.equals(r));
+        assertNotEquals(r, r2);
         r2.setGroupMembers(null);
-        assertFalse(r2.equals(r));
+        assertNotEquals(r, r2);
         r2.setModified(null);
-        assertFalse(r2.equals(r));
+        assertNotEquals(r, r2);
         r2.setName(null);
-        assertFalse(r2.equals(r));
-        assertFalse(r.equals(new String()));
+        assertNotEquals(r, r2);
+        assertNotEquals("group", r);
 
-        List<Group> rl = Arrays.asList(r);
+        r2.setTags(Collections.singletonMap("tagKey", new TagValueList().setList(Collections.singletonList("tagValue1"))));
+        assertNotEquals(r, r2);
+        r2.setTags(null);
+        assertNotEquals(r, r2);
+
+        Result result = validator.validate(r, "Group");
+        assertTrue(result.valid);
+
+        List<Group> rl = List.of(r);
 
         // Groups test
         Groups rs1 = new Groups().setList(rl);
-        assertTrue(rs1.equals(rs1));
+        assertEquals(rs1, rs1);
 
         result = validator.validate(rs1, "Groups");
         assertTrue(result.valid);
@@ -181,13 +246,13 @@ public class GroupTest {
         assertEquals(rs1.getList(), rl);
 
         Groups rs2 = new Groups().setList(rl);
-        assertTrue(rs2.equals(rs1));
+        assertEquals(rs1, rs2);
 
         rs2.setList(null);
-        assertFalse(rs2.equals(rs1));
+        assertNotEquals(rs1, rs2);
 
-        assertFalse(rs1.equals(null));
-        assertFalse(rs1.equals(new String()));
+        assertNotEquals(rs1, null);
+        assertNotEquals("group", rs1);
     }
 
     @Test
@@ -209,9 +274,13 @@ public class GroupTest {
                 .setRequestPrincipal("user.admin")
                 .setReviewLastNotifiedTime(Timestamp.fromMillis(123456789127L))
                 .setSystemDisabled(1)
-                .setPrincipalType(1);
+                .setPrincipalType(1)
+                .setPendingState("ADD")
+                .setNotifyRoles("role1,role2");
 
-        assertTrue(rm.equals(rm));
+        assertEquals(rm, rm);
+        assertNotEquals("data", rm);
+        assertNotEquals(null, rm);
 
         Result result = validator.validate(rm, "GroupMember");
         assertTrue(result.valid);
@@ -229,6 +298,8 @@ public class GroupTest {
         assertEquals(rm.getReviewLastNotifiedTime().millis(), 123456789127L);
         assertEquals(rm.getSystemDisabled(), Integer.valueOf(1));
         assertEquals(rm.getPrincipalType(), Integer.valueOf(1));
+        assertEquals(rm.getPendingState(), "ADD");
+        assertEquals(rm.getNotifyRoles(), "role1,role2");
 
         GroupMember rm2 = new GroupMember()
                 .setGroupName("group1")
@@ -243,101 +314,117 @@ public class GroupTest {
                 .setRequestPrincipal("user.admin")
                 .setReviewLastNotifiedTime(Timestamp.fromMillis(123456789127L))
                 .setSystemDisabled(1)
-                .setPrincipalType(1);
-        assertTrue(rm2.equals(rm));
+                .setPrincipalType(1)
+                .setPendingState("ADD")
+                .setNotifyRoles("role1,role2");
+        assertEquals(rm, rm2);
 
         rm2.setRequestPrincipal("user.test2");
-        assertFalse(rm2.equals(rm));
+        assertNotEquals(rm, rm2);
         rm2.setRequestPrincipal(null);
-        assertFalse(rm2.equals(rm));
+        assertNotEquals(rm, rm2);
         rm2.setRequestPrincipal("user.admin");
-        assertTrue(rm2.equals(rm));
+        assertEquals(rm, rm2);
 
         rm2.setDomainName("domain2");
-        assertFalse(rm2.equals(rm));
+        assertNotEquals(rm, rm2);
         rm2.setDomainName(null);
-        assertFalse(rm2.equals(rm));
+        assertNotEquals(rm, rm2);
         rm2.setDomainName("domain1");
-        assertTrue(rm2.equals(rm));
+        assertEquals(rm, rm2);
 
         rm2.setGroupName("group2");
-        assertFalse(rm2.equals(rm));
+        assertNotEquals(rm, rm2);
         rm2.setGroupName(null);
-        assertFalse(rm2.equals(rm));
+        assertNotEquals(rm, rm2);
         rm2.setGroupName("group1");
-        assertTrue(rm2.equals(rm));
+        assertEquals(rm, rm2);
 
         rm2.setMemberName("user.test2");
-        assertFalse(rm2.equals(rm));
+        assertNotEquals(rm, rm2);
         rm2.setMemberName(null);
-        assertFalse(rm2.equals(rm));
+        assertNotEquals(rm, rm2);
         rm2.setMemberName("user.test1");
-        assertTrue(rm2.equals(rm));
+        assertEquals(rm, rm2);
 
         rm2.setExpiration(Timestamp.fromMillis(123456789124L));
-        assertFalse(rm2.equals(rm));
+        assertNotEquals(rm, rm2);
         rm2.setExpiration(null);
-        assertFalse(rm2.equals(rm));
+        assertNotEquals(rm, rm2);
         rm2.setExpiration(Timestamp.fromMillis(123456789123L));
-        assertTrue(rm2.equals(rm));
+        assertEquals(rm, rm2);
 
         rm2.setRequestTime(Timestamp.fromMillis(123456789125L));
-        assertFalse(rm2.equals(rm));
+        assertNotEquals(rm, rm2);
         rm2.setRequestTime(null);
-        assertFalse(rm2.equals(rm));
+        assertNotEquals(rm, rm2);
         rm2.setRequestTime(Timestamp.fromMillis(123456789124L));
-        assertTrue(rm2.equals(rm));
+        assertEquals(rm, rm2);
 
         rm2.setLastNotifiedTime(Timestamp.fromMillis(123456789128L));
-        assertFalse(rm2.equals(rm));
+        assertNotEquals(rm, rm2);
         rm2.setLastNotifiedTime(null);
-        assertFalse(rm2.equals(rm));
+        assertNotEquals(rm, rm2);
         rm2.setLastNotifiedTime(Timestamp.fromMillis(123456789125L));
-        assertTrue(rm2.equals(rm));
+        assertEquals(rm, rm2);
 
         rm2.setAuditRef("audit2-ref");
-        assertFalse(rm2.equals(rm));
+        assertNotEquals(rm, rm2);
         rm2.setAuditRef(null);
-        assertFalse(rm2.equals(rm));
+        assertNotEquals(rm, rm2);
         rm2.setAuditRef("audit-ref");
-        assertTrue(rm2.equals(rm));
+        assertEquals(rm, rm2);
 
         rm2.setActive(true);
-        assertFalse(rm2.equals(rm));
+        assertNotEquals(rm, rm2);
         rm2.setActive(null);
-        assertFalse(rm2.equals(rm));
+        assertNotEquals(rm, rm2);
         rm2.setActive(false);
-        assertTrue(rm2.equals(rm));
+        assertEquals(rm, rm2);
 
         rm2.setApproved(false);
-        assertFalse(rm2.equals(rm));
+        assertNotEquals(rm, rm2);
         rm2.setApproved(null);
-        assertFalse(rm2.equals(rm));
+        assertNotEquals(rm, rm2);
         rm2.setApproved(true);
-        assertTrue(rm2.equals(rm));
+        assertEquals(rm, rm2);
 
         rm2.setReviewLastNotifiedTime(Timestamp.fromMillis(123456789124L));
-        assertFalse(rm2.equals(rm));
+        assertNotEquals(rm, rm2);
         rm2.setReviewLastNotifiedTime(null);
-        assertFalse(rm2.equals(rm));
+        assertNotEquals(rm, rm2);
         rm2.setReviewLastNotifiedTime(Timestamp.fromMillis(123456789127L));
-        assertTrue(rm2.equals(rm));
+        assertEquals(rm, rm2);
 
         rm2.setSystemDisabled(2);
-        assertFalse(rm2.equals(rm));
+        assertNotEquals(rm, rm2);
         rm2.setSystemDisabled(null);
-        assertFalse(rm2.equals(rm));
+        assertNotEquals(rm, rm2);
         rm2.setSystemDisabled(1);
-        assertTrue(rm2.equals(rm));
+        assertEquals(rm, rm2);
+
+        rm2.setPendingState("DELETE");
+        assertNotEquals(rm, rm2);
+        rm2.setPendingState(null);
+        assertNotEquals(rm, rm2);
+        rm2.setPendingState("ADD");
+        assertEquals(rm, rm2);
 
         rm2.setPrincipalType(2);
-        assertFalse(rm2.equals(rm));
+        assertNotEquals(rm, rm2);
         rm2.setPrincipalType(null);
-        assertFalse(rm2.equals(rm));
+        assertNotEquals(rm, rm2);
         rm2.setPrincipalType(1);
-        assertTrue(rm2.equals(rm));
+        assertEquals(rm, rm2);
 
-        assertFalse(rm2.equals(null));
+        rm2.setNotifyRoles("role2,role3");
+        assertNotEquals(rm, rm2);
+        rm2.setNotifyRoles(null);
+        assertNotEquals(rm, rm2);
+        rm2.setNotifyRoles("role1,role2");
+        assertEquals(rm, rm2);
+
+        assertNotEquals(rm2, null);
 
         GroupMember rm3 = new GroupMember();
         rm3.init();
@@ -366,23 +453,24 @@ public class GroupTest {
         assertEquals("mbr1", mbr1.getMemberName());
         assertEquals(list1, mbr1.getMemberGroups());
 
-        assertTrue(mbr1.equals(mbr1));
-        assertFalse(mbr1.equals(null));
+        assertEquals(mbr1, mbr1);
+        assertNotEquals(null, mbr1);
+        assertNotEquals("data", mbr1);
 
         DomainGroupMember mbr2 = new DomainGroupMember();
-        assertFalse(mbr2.equals(mbr1));
+        assertNotEquals(mbr1, mbr2);
 
         mbr2.setMemberName("mbr2");
-        assertFalse(mbr2.equals(mbr1));
+        assertNotEquals(mbr1, mbr2);
 
         mbr2.setMemberName("mbr1");
-        assertFalse(mbr2.equals(mbr1));
+        assertNotEquals(mbr1, mbr2);
 
         mbr2.setMemberGroups(list2);
-        assertFalse(mbr2.equals(mbr1));
+        assertNotEquals(mbr1, mbr2);
 
         list2.add(new GroupMember().setGroupName("group1"));
-        assertTrue(mbr2.equals(mbr1));
+        assertEquals(mbr1, mbr2);
 
         GroupMember mbr3 = new GroupMember();
         mbr3.init();
@@ -408,23 +496,24 @@ public class GroupTest {
         assertEquals("dom1", mbr1.getDomainName());
         assertEquals(list1, mbr1.getMembers());
 
-        assertTrue(mbr1.equals(mbr1));
-        assertFalse(mbr1.equals(null));
+        assertEquals(mbr1, mbr1);
+        assertNotEquals(null, mbr1);
+        assertNotEquals("data", mbr1);
 
         DomainGroupMembers mbr2 = new DomainGroupMembers();
-        assertFalse(mbr2.equals(mbr1));
+        assertNotEquals(mbr1, mbr2);
 
         mbr2.setDomainName("dom2");
-        assertFalse(mbr2.equals(mbr1));
+        assertNotEquals(mbr1, mbr2);
 
         mbr2.setDomainName("dom1");
-        assertFalse(mbr2.equals(mbr1));
+        assertNotEquals(mbr1, mbr2);
 
         mbr2.setMembers(list2);
-        assertFalse(mbr2.equals(mbr1));
+        assertNotEquals(mbr1, mbr2);
 
         list2.add(new DomainGroupMember().setMemberName("mbr1"));
-        assertTrue(mbr2.equals(mbr1));
+        assertEquals(mbr1, mbr2);
     }
 
     @Test
@@ -440,104 +529,194 @@ public class GroupTest {
         assertFalse(rsm.getAuditEnabled());
 
         GroupSystemMeta rsm2 = new GroupSystemMeta();
-        assertFalse(rsm2.equals(rsm));
+        assertNotEquals(rsm, rsm2);
         rsm2.setAuditEnabled(false);
-        assertTrue(rsm2.equals(rsm));
-        assertTrue(rsm.equals(rsm));
+        assertEquals(rsm, rsm2);
+        assertEquals(rsm, rsm);
 
         rsm2.setAuditEnabled(null);
-        assertFalse(rsm2.equals(rsm));
+        assertNotEquals(rsm, rsm2);
 
-        assertFalse(rsm2.equals(null));
-        assertFalse(rsm.equals(new String()));
+        assertNotEquals(rsm2, null);
+        assertNotEquals("group-meta", rsm);
     }
 
     @Test
     public void testGroupMetaMethod() {
 
-        GroupMeta rm = new GroupMeta()
+        GroupMeta gm1 = new GroupMeta()
                 .setSelfServe(false)
                 .setNotifyRoles("role1,domain:role.role2")
                 .setReviewEnabled(false)
+                .setAuditEnabled(false)
                 .setUserAuthorityExpiration("attr1")
                 .setUserAuthorityFilter("attr2,attr3")
                 .setMemberExpiryDays(10)
-                .setServiceExpiryDays(20);
-        assertTrue(rm.equals(rm));
+                .setServiceExpiryDays(20)
+                .setDeleteProtection(false)
+                .setTags(Collections.singletonMap("tagKey", new TagValueList().setList(Collections.singletonList("tagValue"))))
+                .setLastReviewedDate(Timestamp.fromMillis(100))
+                .setSelfRenew(true)
+                .setSelfRenewMins(180)
+                .setMaxMembers(5)
+                .setResourceOwnership(new ResourceGroupOwnership().setMetaOwner("TF"))
+                .setPrincipalDomainFilter("user,+unix.test,-home");
 
-        assertFalse(rm.getSelfServe());
-        assertEquals(rm.getNotifyRoles(), "role1,domain:role.role2");
-        assertFalse(rm.getReviewEnabled());
-        assertEquals(rm.getUserAuthorityExpiration(), "attr1");
-        assertEquals(rm.getUserAuthorityFilter(), "attr2,attr3");
-        assertEquals(rm.getMemberExpiryDays().intValue(), 10);
-        assertEquals(rm.getServiceExpiryDays().intValue(), 20);
+        assertFalse(gm1.getSelfServe());
+        assertEquals(gm1.getNotifyRoles(), "role1,domain:role.role2");
+        assertFalse(gm1.getReviewEnabled());
+        assertFalse(gm1.getAuditEnabled());
+        assertFalse(gm1.getDeleteProtection());
+        assertEquals(gm1.getUserAuthorityExpiration(), "attr1");
+        assertEquals(gm1.getUserAuthorityFilter(), "attr2,attr3");
+        assertEquals(gm1.getMemberExpiryDays().intValue(), 10);
+        assertEquals(gm1.getServiceExpiryDays().intValue(), 20);
+        assertEquals(gm1.getTags().get("tagKey").getList().get(0), "tagValue");
+        assertEquals(gm1.getLastReviewedDate(), Timestamp.fromMillis(100));
+        assertEquals(gm1.getSelfRenewMins(), 180);
+        assertEquals(gm1.getSelfRenew(), Boolean.TRUE);
+        assertEquals(gm1.getMaxMembers(), 5);
+        assertEquals(gm1.getResourceOwnership(), new ResourceGroupOwnership().setMetaOwner("TF"));
+        assertEquals(gm1.getPrincipalDomainFilter(), "user,+unix.test,-home");
 
-        GroupMeta rm2 = new GroupMeta()
+        GroupMeta gm2 = new GroupMeta()
                 .setSelfServe(false)
                 .setNotifyRoles("role1,domain:role.role2")
                 .setReviewEnabled(false)
+                .setAuditEnabled(false)
                 .setUserAuthorityExpiration("attr1")
                 .setUserAuthorityFilter("attr2,attr3")
                 .setMemberExpiryDays(10)
-                .setServiceExpiryDays(20);
-        assertTrue(rm2.equals(rm));
+                .setServiceExpiryDays(20)
+                .setDeleteProtection(false)
+                .setTags(Collections.singletonMap("tagKey", new TagValueList().setList(Collections.singletonList("tagValue"))))
+                .setLastReviewedDate(Timestamp.fromMillis(100))
+                .setSelfRenew(true)
+                .setSelfRenewMins(180)
+                .setMaxMembers(5)
+                .setResourceOwnership(new ResourceGroupOwnership().setMetaOwner("TF"))
+                .setPrincipalDomainFilter("user,+unix.test,-home");
 
-        rm2.setNotifyRoles("role1");
-        assertFalse(rm2.equals(rm));
-        rm2.setNotifyRoles(null);
-        assertFalse(rm2.equals(rm));
-        rm2.setNotifyRoles("role1,domain:role.role2");
-        assertTrue(rm2.equals(rm));
+        assertEquals(gm1, gm2);
+        assertEquals(gm1, gm1);
+        assertNotEquals(null, gm1);
+        assertNotEquals("group-meta", gm1);
 
-        rm2.setReviewEnabled(true);
-        assertFalse(rm2.equals(rm));
-        rm2.setReviewEnabled(null);
-        assertFalse(rm2.equals(rm));
-        rm2.setReviewEnabled(false);
-        assertTrue(rm2.equals(rm));
+        gm2.setMaxMembers(15);
+        assertNotEquals(gm1, gm2);
+        gm2.setMaxMembers(null);
+        assertNotEquals(gm1, gm2);
+        gm2.setMaxMembers(5);
+        assertEquals(gm1, gm2);
 
-        rm2.setSelfServe(true);
-        assertFalse(rm2.equals(rm));
-        rm2.setSelfServe(null);
-        assertFalse(rm2.equals(rm));
-        rm2.setSelfServe(false);
-        assertTrue(rm2.equals(rm));
+        gm2.setNotifyRoles("role1");
+        assertNotEquals(gm2, gm1);
+        gm2.setNotifyRoles(null);
+        assertNotEquals(gm2, gm1);
+        gm2.setNotifyRoles("role1,domain:role.role2");
+        assertEquals(gm2, gm1);
 
-        rm2.setUserAuthorityExpiration("attr11");
-        assertFalse(rm2.equals(rm));
-        rm2.setUserAuthorityExpiration(null);
-        assertFalse(rm2.equals(rm));
-        rm2.setUserAuthorityExpiration("attr1");
-        assertTrue(rm2.equals(rm));
+        gm2.setReviewEnabled(true);
+        assertNotEquals(gm2, gm1);
+        gm2.setReviewEnabled(null);
+        assertNotEquals(gm2, gm1);
+        gm2.setReviewEnabled(false);
+        assertEquals(gm2, gm1);
 
-        rm2.setUserAuthorityFilter("attr2");
-        assertFalse(rm2.equals(rm));
-        rm2.setUserAuthorityFilter(null);
-        assertFalse(rm2.equals(rm));
-        rm2.setUserAuthorityFilter("attr2,attr3");
-        assertTrue(rm2.equals(rm));
+        gm2.setSelfRenew(false);
+        assertNotEquals(gm1, gm2);
+        gm2.setSelfRenew(null);
+        assertNotEquals(gm1, gm2);
+        gm2.setSelfRenew(true);
+        assertEquals(gm1, gm2);
 
-        rm2.setMemberExpiryDays(15);
-        assertFalse(rm2.equals(rm));
-        rm2.setMemberExpiryDays(null);
-        assertFalse(rm2.equals(rm));
-        rm2.setMemberExpiryDays(10);
-        assertTrue(rm2.equals(rm));
+        gm2.setSelfRenewMins(15);
+        assertNotEquals(gm1, gm2);
+        gm2.setSelfRenewMins(null);
+        assertNotEquals(gm1, gm2);
+        gm2.setSelfRenewMins(180);
+        assertEquals(gm1, gm2);
 
-        rm2.setServiceExpiryDays(15);
-        assertFalse(rm2.equals(rm));
-        rm2.setServiceExpiryDays(null);
-        assertFalse(rm2.equals(rm));
-        rm2.setServiceExpiryDays(20);
-        assertTrue(rm2.equals(rm));
+        gm2.setAuditEnabled(true);
+        assertNotEquals(gm2, gm1);
+        gm2.setAuditEnabled(null);
+        assertNotEquals(gm2, gm1);
+        gm2.setAuditEnabled(false);
+        assertEquals(gm2, gm1);
 
-        assertFalse(rm2.equals(null));
-        assertFalse(rm.equals(new String()));
+        gm2.setSelfServe(true);
+        assertNotEquals(gm2, gm1);
+        gm2.setSelfServe(null);
+        assertNotEquals(gm2, gm1);
+        gm2.setSelfServe(false);
+        assertEquals(gm2, gm1);
+
+        gm2.setDeleteProtection(true);
+        assertNotEquals(gm2, gm1);
+        gm2.setDeleteProtection(null);
+        assertNotEquals(gm2, gm1);
+        gm2.setDeleteProtection(false);
+        assertEquals(gm2, gm1);
+
+        gm2.setUserAuthorityExpiration("attr11");
+        assertNotEquals(gm2, gm1);
+        gm2.setUserAuthorityExpiration(null);
+        assertNotEquals(gm2, gm1);
+        gm2.setUserAuthorityExpiration("attr1");
+        assertEquals(gm2, gm1);
+
+        gm2.setUserAuthorityFilter("attr2");
+        assertNotEquals(gm2, gm1);
+        gm2.setUserAuthorityFilter(null);
+        assertNotEquals(gm2, gm1);
+        gm2.setUserAuthorityFilter("attr2,attr3");
+        assertEquals(gm2, gm1);
+
+        gm2.setMemberExpiryDays(15);
+        assertNotEquals(gm2, gm1);
+        gm2.setMemberExpiryDays(null);
+        assertNotEquals(gm2, gm1);
+        gm2.setMemberExpiryDays(10);
+        assertEquals(gm2, gm1);
+
+        gm2.setServiceExpiryDays(15);
+        assertNotEquals(gm2, gm1);
+        gm2.setServiceExpiryDays(null);
+        assertNotEquals(gm2, gm1);
+        gm2.setServiceExpiryDays(20);
+        assertEquals(gm2, gm1);
+
+        gm2.setTags(Collections.singletonMap("tagKey", new TagValueList().setList(Collections.singletonList("tagValue1"))));
+        assertNotEquals(gm2, gm1);
+        gm2.setTags(null);
+        assertNotEquals(gm2, gm1);
+        gm2.setTags(Collections.singletonMap("tagKey", new TagValueList().setList(Collections.singletonList("tagValue"))));
+        assertEquals(gm2, gm1);
+
+        gm2.setLastReviewedDate(Timestamp.fromMillis(200));
+        assertNotEquals(gm2, gm1);
+        gm2.setLastReviewedDate(null);
+        assertNotEquals(gm2, gm1);
+        gm2.setLastReviewedDate(Timestamp.fromMillis(100));
+        assertEquals(gm2, gm1);
+
+        gm2.setResourceOwnership(new ResourceGroupOwnership().setMetaOwner("TF2"));
+        assertNotEquals(gm2, gm1);
+        gm2.setResourceOwnership(null);
+        assertNotEquals(gm2, gm1);
+        gm2.setResourceOwnership(new ResourceGroupOwnership().setMetaOwner("TF"));
+        assertEquals(gm2, gm1);
+
+        gm2.setPrincipalDomainFilter("user");
+        assertNotEquals(gm2, gm1);
+        gm2.setPrincipalDomainFilter(null);
+        assertNotEquals(gm2, gm1);
+        gm2.setPrincipalDomainFilter("user,+unix.test,-home");
+        assertEquals(gm2, gm1);
 
         Schema schema = ZMSSchema.instance();
         Validator validator = new Validator(schema);
-        Result result = validator.validate(rm, "GroupMeta");
+        Result result = validator.validate(gm1, "GroupMeta");
         assertTrue(result.valid);
     }
 
@@ -554,7 +733,7 @@ public class GroupTest {
         ms.setMemberName("test.member").setIsMember(false).setGroupName("group1")
                 .setExpiration(Timestamp.fromMillis(100)).setAuditRef("audit-ref")
                 .setActive(true).setApproved(false).setRequestPrincipal("user.admin")
-                .setSystemDisabled(1);
+                .setSystemDisabled(1).setPendingState("ADD");
 
         // init second time does not change state
         ms.init();
@@ -574,68 +753,76 @@ public class GroupTest {
         assertEquals(ms.getAuditRef(), "audit-ref");
         assertEquals(ms.getRequestPrincipal(), "user.admin");
         assertEquals(ms.getSystemDisabled(), Integer.valueOf(1));
+        assertEquals(ms.getPendingState(), "ADD");
 
         GroupMembership ms2 = new GroupMembership().setMemberName("test.member").setIsMember(false)
                 .setExpiration(Timestamp.fromMillis(100)).setGroupName("group1")
                 .setActive(true).setAuditRef("audit-ref").setApproved(false)
-                .setRequestPrincipal("user.admin").setSystemDisabled(1);
+                .setRequestPrincipal("user.admin").setSystemDisabled(1).setPendingState("ADD");
 
-        assertTrue(ms2.equals(ms));
-        assertTrue(ms.equals(ms));
+        assertEquals(ms, ms2);
+        assertEquals(ms, ms);
 
         ms2.setRequestPrincipal("user.test2");
-        assertFalse(ms2.equals(ms));
+        assertNotEquals(ms, ms2);
         ms2.setRequestPrincipal(null);
-        assertFalse(ms2.equals(ms));
+        assertNotEquals(ms, ms2);
         ms2.setRequestPrincipal("user.admin");
-        assertTrue(ms2.equals(ms));
+        assertEquals(ms, ms2);
 
         ms2.setExpiration(null);
-        assertFalse(ms2.equals(ms));
+        assertNotEquals(ms, ms2);
         ms2.setExpiration(Timestamp.fromMillis(100));
-        assertTrue(ms2.equals(ms));
+        assertEquals(ms, ms2);
 
         ms2.setGroupName(null);
-        assertFalse(ms2.equals(ms));
+        assertNotEquals(ms, ms2);
         ms2.setGroupName("group1");
-        assertTrue(ms2.equals(ms));
+        assertEquals(ms, ms2);
 
         ms2.setIsMember(null);
-        assertFalse(ms2.equals(ms));
+        assertNotEquals(ms, ms2);
         ms2.setIsMember(false);
-        assertTrue(ms2.equals(ms));
+        assertEquals(ms, ms2);
 
         ms2.setMemberName(null);
-        assertFalse(ms2.equals(ms));
+        assertNotEquals(ms, ms2);
         ms2.setMemberName("test.member");
-        assertTrue(ms2.equals(ms));
+        assertEquals(ms, ms2);
 
         ms2.setAuditRef(null);
-        assertFalse(ms2.equals(ms));
+        assertNotEquals(ms, ms2);
         ms2.setAuditRef("audit-ref");
-        assertTrue(ms2.equals(ms));
+        assertEquals(ms, ms2);
 
         ms2.setActive(null);
-        assertFalse(ms2.equals(ms));
+        assertNotEquals(ms, ms2);
         ms2.setActive(true);
-        assertTrue(ms2.equals(ms));
+        assertEquals(ms, ms2);
 
         ms2.setApproved(null);
-        assertFalse(ms2.equals(ms));
+        assertNotEquals(ms, ms2);
         ms2.setApproved(true);
-        assertFalse(ms2.equals(ms));
+        assertNotEquals(ms, ms2);
         ms2.setApproved(false);
-        assertTrue(ms2.equals(ms));
+        assertEquals(ms, ms2);
 
         ms2.setSystemDisabled(2);
-        assertFalse(ms2.equals(ms));
+        assertNotEquals(ms, ms2);
         ms2.setSystemDisabled(null);
-        assertFalse(ms2.equals(ms));
+        assertNotEquals(ms, ms2);
         ms2.setSystemDisabled(1);
-        assertTrue(ms2.equals(ms));
+        assertEquals(ms, ms2);
 
-        assertFalse(ms2.equals(null));
-        assertFalse(ms.equals(new String()));
+        ms2.setPendingState("DELETE");
+        assertNotEquals(ms, ms2);
+        ms2.setPendingState(null);
+        assertNotEquals(ms, ms2);
+        ms2.setPendingState("ADD");
+        assertEquals(ms, ms2);
+
+        assertNotEquals(ms2, null);
+        assertNotEquals("data", ms);
     }
 
     @Test
@@ -659,20 +846,20 @@ public class GroupTest {
         GroupAuditLog ral2 = new GroupAuditLog().setMember("user.test").setAdmin("user.admin")
                 .setCreated(Timestamp.fromMillis(123456789123L)).setAction("add").setAuditRef("zmstest");
 
-        assertTrue(ral2.equals(ral));
-        assertTrue(ral.equals(ral));
+        assertEquals(ral, ral2);
+        assertEquals(ral, ral);
 
         ral2.setAuditRef(null);
-        assertFalse(ral2.equals(ral));
+        assertNotEquals(ral, ral2);
         ral2.setAction(null);
-        assertFalse(ral2.equals(ral));
+        assertNotEquals(ral, ral2);
         ral2.setCreated(null);
-        assertFalse(ral2.equals(ral));
+        assertNotEquals(ral, ral2);
         ral2.setAdmin(null);
-        assertFalse(ral2.equals(ral));
+        assertNotEquals(ral, ral2);
         ral2.setMember(null);
-        assertFalse(ral2.equals(ral));
-        assertFalse(ral2.equals(new String()));
+        assertNotEquals(ral, ral2);
+        assertNotEquals("data", ral2);
     }
 
     @Test
@@ -696,17 +883,17 @@ public class GroupTest {
 
         DomainGroupMembership groupMembership2 = new DomainGroupMembership().setDomainGroupMembersList(list2);
 
-        assertTrue(groupMembership2.equals(groupMembership1));
-        assertTrue(groupMembership1.equals(groupMembership1));
-        assertFalse(groupMembership1.equals(null));
-        assertFalse(groupMembership1.equals(new String()));
+        assertEquals(groupMembership1, groupMembership2);
+        assertEquals(groupMembership1, groupMembership1);
+        assertNotEquals(groupMembership1, null);
+        assertNotEquals("data", groupMembership1);
 
         List<DomainGroupMembers> list3 = Collections.emptyList();
 
         groupMembership2.setDomainGroupMembersList(list3);
-        assertFalse(groupMembership2.equals(groupMembership1));
+        assertNotEquals(groupMembership1, groupMembership2);
         groupMembership2.setDomainGroupMembersList(null);
-        assertFalse(groupMembership2.equals(groupMembership1));
+        assertNotEquals(groupMembership1, groupMembership2);
         groupMembership2.setDomainGroupMembersList(list2);
     }
 }

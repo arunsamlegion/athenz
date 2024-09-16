@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Oath, Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,6 @@ import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
 import java.io.IOException;
-import java.net.UnknownHostException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -62,7 +61,7 @@ public class InstanceZTSProviderTest {
     public void testInitializeDefaults() {
         InstanceZTSProvider provider = new InstanceZTSProvider();
         provider.initialize("provider", "com.yahoo.athenz.instance.provider.impl.InstanceZTSProvider", null, null);
-        assertEquals("zts.athenz.cloud", provider.dnsSuffix);
+        assertTrue(provider.dnsSuffixes.contains("zts.athenz.cloud"));
         assertEquals(InstanceProvider.Scheme.CLASS, provider.getProviderScheme());
         assertNull(provider.keyStore);
         assertNull(provider.principals);
@@ -77,7 +76,7 @@ public class InstanceZTSProviderTest {
 
         InstanceZTSProvider provider = new InstanceZTSProvider();
         provider.initialize("provider", "com.yahoo.athenz.instance.provider.impl.InstanceZTSProvider", null, null);
-        assertEquals("zts.cloud", provider.dnsSuffix);
+        assertTrue(provider.dnsSuffixes.contains("zts.cloud"));
         assertNull(provider.keyStore);
         assertEquals(provider.principals.size(), 2);
         assertTrue(provider.principals.contains("athenz.api"));
@@ -89,7 +88,7 @@ public class InstanceZTSProviderTest {
 
         provider = new InstanceZTSProvider();
         provider.initialize("provider", "com.yahoo.athenz.instance.provider.impl.InstanceZTSProvider", null, null);
-        assertEquals("zts.athenz.cloud", provider.dnsSuffix);
+        assertTrue(provider.dnsSuffixes.contains("zts.athenz.cloud"));
         assertNull(provider.keyStore);
         assertNull(provider.principals);
         provider.close();
@@ -480,7 +479,7 @@ public class InstanceZTSProviderTest {
     }
 
     @Test
-    public void testConfirmInstanceInvalidHostnameUri() throws UnknownHostException {
+    public void testConfirmInstanceInvalidHostnameUri() {
 
         KeyStore keystore = Mockito.mock(KeyStore.class);
         Mockito.when(keystore.getPublicKey("sports", "api", "v0")).thenReturn(servicePublicKeyStringK0);

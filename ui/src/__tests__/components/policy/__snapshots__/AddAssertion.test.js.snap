@@ -16,9 +16,6 @@ exports[`AddAssertion should render 1`] = `
   -webkit-box-align: flex-start;
   -ms-flex-align: flex-start;
   align-items: flex-start;
-  display: -webkit-box;
-  display: -webkit-flex;
-  display: -ms-flexbox;
   display: flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -50,9 +47,6 @@ exports[`AddAssertion should render 1`] = `
 }
 
 .emotion-11 {
-  display: -webkit-inline-box;
-  display: -webkit-inline-flex;
-  display: -ms-inline-flexbox;
   display: inline-flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -158,11 +152,15 @@ exports[`AddAssertion should render 1`] = `
   width: 8px;
 }
 
+.emotion-14>input[type='radio']:disabled:checked+label:after {
+  color: #d5d5d5;
+  border: 2px solid #d5d5d5;
+  background-color: #d5d5d5;
+  cursor: not-allowed;
+}
+
 .emotion-23 {
   box-sizing: border-box;
-  display: -webkit-inline-box;
-  display: -webkit-inline-flex;
-  display: -ms-inline-flexbox;
   display: inline-flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -274,9 +272,6 @@ exports[`AddAssertion should render 1`] = `
 
 .emotion-36 {
   box-sizing: border-box;
-  display: -webkit-inline-box;
-  display: -webkit-inline-flex;
-  display: -ms-inline-flexbox;
   display: inline-flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -378,9 +373,6 @@ exports[`AddAssertion should render 1`] = `
   -webkit-box-align: center;
   -ms-flex-align: center;
   align-items: center;
-  display: -webkit-box;
-  display: -webkit-flex;
-  display: -ms-flexbox;
   display: flex;
   height: 36px;
   position: absolute;
@@ -393,11 +385,123 @@ exports[`AddAssertion should render 1`] = `
   vertical-align: text-bottom;
 }
 
-.emotion-48 {
+.emotion-52 {
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  box-sizing: border-box;
+  display: inline-block;
+  height: 16px;
+  line-height: 16px;
+  margin: 3px;
+  outline: 0;
+  position: relative;
+  vertical-align: middle;
+}
+
+.emotion-52>input[type='checkbox'] {
+  box-sizing: border-box;
+  cursor: pointer;
+  display: inline-block;
+  position: absolute;
+  top: 0;
+  visibility: hidden;
+}
+
+.emotion-52>input[type='checkbox']+label {
+  box-sizing: border-box;
+  cursor: pointer;
+  font-family: Helvetica,Arial,sans-serif;
+  font-size: 14px;
+  font-weight: 300;
+  height: 16px;
+  line-height: 16px;
+  padding: 0 10px 0 0;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.emotion-52>input[type='checkbox']+label:before {
+  background: #fff;
+  border: 2px solid rgba(54,151,242,0.5);
+  border-radius: 2px;
+  box-sizing: border-box;
+  content: '';
+  cursor: pointer;
+  display: inline-block;
+  height: 16px;
+  line-height: 16px;
+  margin: 0px 3px -3px 0px;
+  -webkit-transition: all 0.25s ease-in;
+  transition: all 0.25s ease-in;
+  width: 16px;
+}
+
+.emotion-52>input[type='checkbox']:hover+label:before {
+  border: 2px solid #3697f2;
+}
+
+.emotion-52>input[type='checkbox']:focus+label:before {
+  border: 2px solid rgba(54,151,242,0.5);
+}
+
+.emotion-52>input[type='checkbox'][data-partial='true']+label:before,
+.emotion-52>input[type='checkbox']:checked+label:before {
+  border: 2px solid #3697f2;
+}
+
+.emotion-52>input[type='checkbox']:disabled+label {
+  color: #d5d5d5;
+  cursor: not-allowed;
+}
+
+.emotion-52>input[type='checkbox']:disabled+label:before {
+  border: 2px solid #d5d5d5;
+}
+
+.emotion-52>input[type='checkbox']:checked:not([data-partial='true'])+label:before {
+  background: #3697f2;
+}
+
+.emotion-52>input[type='checkbox'][data-partial='true']+label:after {
+  border: solid #3697f2;
+  border-width: 2px 0 0 0;
+  box-sizing: border-box;
+  content: '';
+  cursor: pointer;
+  height: 16px;
+  line-height: 16px;
+  left: 4px;
+  opacity: 1;
+  position: absolute;
+  top: 7px;
+  width: 8px;
+}
+
+.emotion-52>input[type='checkbox']:checked:not([data-partial='true'])+label:after {
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  box-sizing: border-box;
+  content: '';
+  cursor: pointer;
+  display: block;
+  height: 9px;
+  line-height: 16px;
+  left: 6px;
+  opacity: 1;
+  position: absolute;
+  top: 3px;
+  -webkit-transform: rotate(45deg);
+  -moz-transform: rotate(45deg);
+  -ms-transform: rotate(45deg);
+  transform: rotate(45deg);
+  width: 4.5px;
+}
+
+.emotion-53 {
   margin-left: 155px;
 }
 
-.emotion-50 {
+.emotion-55 {
   border: none;
   border-radius: 2px;
   box-shadow: 0 0 0 1px transparent inset,0 0 0 0 #d5d5d5 inset;
@@ -426,17 +530,17 @@ exports[`AddAssertion should render 1`] = `
   color: #fff;
 }
 
-.emotion-50:first-of-type {
+.emotion-55:first-of-type {
   margin-left: 0;
 }
 
-.emotion-50:disabled {
+.emotion-55:disabled {
   background: rgba(48,48,48,0.1);
   color: rgba(48,48,48,0.2);
   cursor: not-allowed;
 }
 
-.emotion-50:hover:not(:disabled) {
+.emotion-55:hover:not(:disabled) {
   background: linear-gradient(
                   to right,
                   #3570f4,
@@ -444,15 +548,15 @@ exports[`AddAssertion should render 1`] = `
               );
 }
 
-.emotion-51 {
+.emotion-56 {
   min-width: 8.5em;
   min-height: 1em;
 }
 
-.emotion-53 {
+.emotion-58 {
   border: none;
   border-radius: 2px;
-  box-shadow: 0 0 0 1px transparent inset,0 0 0 0 #d5d5d5 inset;
+  box-shadow: 0 0 0 1px #3697f2 inset;
   box-sizing: border-box;
   cursor: pointer;
   display: inline-block;
@@ -471,25 +575,24 @@ exports[`AddAssertion should render 1`] = `
   vertical-align: baseline;
   white-space: nowrap;
   background: transparent;
-  box-shadow: 0 0 0 1px #3697f2 inset;
   color: #3697f2;
 }
 
-.emotion-53:first-of-type {
+.emotion-58:first-of-type {
   margin-left: 0;
 }
 
-.emotion-53:disabled {
+.emotion-58:disabled {
   background: rgba(48,48,48,0.1);
   color: rgba(48,48,48,0.2);
   cursor: not-allowed;
 }
 
-.emotion-53:disabled {
+.emotion-58:disabled {
   box-shadow: 0 0 0 1px rgba(48,48,48,0.1) inset;
 }
 
-.emotion-53:hover:not(:disabled) {
+.emotion-58:hover:not(:disabled) {
   background: #d7e2fd;
 }
 
@@ -502,7 +605,6 @@ exports[`AddAssertion should render 1`] = `
     class="emotion-2 emotion-3"
     data-testid="add-rule-form"
   >
-    
     <div
       class="emotion-4 emotion-5"
     >
@@ -576,7 +678,7 @@ exports[`AddAssertion should render 1`] = `
             data-testid="input-node"
             id="rule-action"
             name="rule-action"
-            placeholder="Rule Action (Case Sensitive)"
+            placeholder="Rule Action"
             value=""
           />
           <div
@@ -625,11 +727,11 @@ exports[`AddAssertion should render 1`] = `
             <div
               class="input-icon"
             >
-              
               <svg
                 class="emotion-37"
                 data-testid="icon"
                 height="24px"
+                id=""
                 viewBox="0 0 1024 1024"
                 width="24px"
               >
@@ -670,7 +772,7 @@ exports[`AddAssertion should render 1`] = `
             data-testid="input-node"
             id="rule-resource"
             name="rule-resource"
-            placeholder="Rule Resource (Case Sensitive)"
+            placeholder="Rule Resource"
             value=""
           />
           <div
@@ -680,17 +782,41 @@ exports[`AddAssertion should render 1`] = `
         </div>
       </div>
     </div>
+    <div
+      class="emotion-4 emotion-5"
+    >
+      <div
+        class="emotion-9 emotion-10"
+      >
+        <div
+          class="emotion-52 denali-checkbox"
+          data-testid="checkbox-wrapper"
+        >
+          <input
+            data-partial="false"
+            id="checkbox-case-sensitiveundefined-undefined"
+            name="checkbox-case-sensitiveundefined-undefined"
+            type="checkbox"
+          />
+          <label
+            for="checkbox-case-sensitiveundefined-undefined"
+          >
+            Case Sensitive Action and Resource
+          </label>
+        </div>
+      </div>
+    </div>
   </div>
   <div
-    class="emotion-48 emotion-49"
+    class="emotion-53 emotion-54"
   >
     <button
-      class="emotion-50 denali-button emotion-51 emotion-52"
+      class="emotion-55 denali-button emotion-56 emotion-57"
     >
       Submit
     </button>
     <button
-      class="emotion-53 denali-button emotion-51 emotion-52"
+      class="emotion-58 denali-button emotion-56 emotion-57"
     >
       Cancel
     </button>
@@ -714,9 +840,6 @@ exports[`AddAssertion should render failed to submit action is required 1`] = `
   -webkit-box-align: flex-start;
   -ms-flex-align: flex-start;
   align-items: flex-start;
-  display: -webkit-box;
-  display: -webkit-flex;
-  display: -ms-flexbox;
   display: flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -748,9 +871,6 @@ exports[`AddAssertion should render failed to submit action is required 1`] = `
 }
 
 .emotion-11 {
-  display: -webkit-inline-box;
-  display: -webkit-inline-flex;
-  display: -ms-inline-flexbox;
   display: inline-flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -856,11 +976,15 @@ exports[`AddAssertion should render failed to submit action is required 1`] = `
   width: 8px;
 }
 
+.emotion-14>input[type='radio']:disabled:checked+label:after {
+  color: #d5d5d5;
+  border: 2px solid #d5d5d5;
+  background-color: #d5d5d5;
+  cursor: not-allowed;
+}
+
 .emotion-23 {
   box-sizing: border-box;
-  display: -webkit-inline-box;
-  display: -webkit-inline-flex;
-  display: -ms-inline-flexbox;
   display: inline-flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -972,9 +1096,6 @@ exports[`AddAssertion should render failed to submit action is required 1`] = `
 
 .emotion-36 {
   box-sizing: border-box;
-  display: -webkit-inline-box;
-  display: -webkit-inline-flex;
-  display: -ms-inline-flexbox;
   display: inline-flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -1076,9 +1197,6 @@ exports[`AddAssertion should render failed to submit action is required 1`] = `
   -webkit-box-align: center;
   -ms-flex-align: center;
   align-items: center;
-  display: -webkit-box;
-  display: -webkit-flex;
-  display: -ms-flexbox;
   display: flex;
   height: 36px;
   position: absolute;
@@ -1091,11 +1209,123 @@ exports[`AddAssertion should render failed to submit action is required 1`] = `
   vertical-align: text-bottom;
 }
 
-.emotion-48 {
+.emotion-52 {
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  box-sizing: border-box;
+  display: inline-block;
+  height: 16px;
+  line-height: 16px;
+  margin: 3px;
+  outline: 0;
+  position: relative;
+  vertical-align: middle;
+}
+
+.emotion-52>input[type='checkbox'] {
+  box-sizing: border-box;
+  cursor: pointer;
+  display: inline-block;
+  position: absolute;
+  top: 0;
+  visibility: hidden;
+}
+
+.emotion-52>input[type='checkbox']+label {
+  box-sizing: border-box;
+  cursor: pointer;
+  font-family: Helvetica,Arial,sans-serif;
+  font-size: 14px;
+  font-weight: 300;
+  height: 16px;
+  line-height: 16px;
+  padding: 0 10px 0 0;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.emotion-52>input[type='checkbox']+label:before {
+  background: #fff;
+  border: 2px solid rgba(54,151,242,0.5);
+  border-radius: 2px;
+  box-sizing: border-box;
+  content: '';
+  cursor: pointer;
+  display: inline-block;
+  height: 16px;
+  line-height: 16px;
+  margin: 0px 3px -3px 0px;
+  -webkit-transition: all 0.25s ease-in;
+  transition: all 0.25s ease-in;
+  width: 16px;
+}
+
+.emotion-52>input[type='checkbox']:hover+label:before {
+  border: 2px solid #3697f2;
+}
+
+.emotion-52>input[type='checkbox']:focus+label:before {
+  border: 2px solid rgba(54,151,242,0.5);
+}
+
+.emotion-52>input[type='checkbox'][data-partial='true']+label:before,
+.emotion-52>input[type='checkbox']:checked+label:before {
+  border: 2px solid #3697f2;
+}
+
+.emotion-52>input[type='checkbox']:disabled+label {
+  color: #d5d5d5;
+  cursor: not-allowed;
+}
+
+.emotion-52>input[type='checkbox']:disabled+label:before {
+  border: 2px solid #d5d5d5;
+}
+
+.emotion-52>input[type='checkbox']:checked:not([data-partial='true'])+label:before {
+  background: #3697f2;
+}
+
+.emotion-52>input[type='checkbox'][data-partial='true']+label:after {
+  border: solid #3697f2;
+  border-width: 2px 0 0 0;
+  box-sizing: border-box;
+  content: '';
+  cursor: pointer;
+  height: 16px;
+  line-height: 16px;
+  left: 4px;
+  opacity: 1;
+  position: absolute;
+  top: 7px;
+  width: 8px;
+}
+
+.emotion-52>input[type='checkbox']:checked:not([data-partial='true'])+label:after {
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  box-sizing: border-box;
+  content: '';
+  cursor: pointer;
+  display: block;
+  height: 9px;
+  line-height: 16px;
+  left: 6px;
+  opacity: 1;
+  position: absolute;
+  top: 3px;
+  -webkit-transform: rotate(45deg);
+  -moz-transform: rotate(45deg);
+  -ms-transform: rotate(45deg);
+  transform: rotate(45deg);
+  width: 4.5px;
+}
+
+.emotion-53 {
   margin-left: 155px;
 }
 
-.emotion-50 {
+.emotion-55 {
   border: none;
   border-radius: 2px;
   box-shadow: 0 0 0 1px transparent inset,0 0 0 0 #d5d5d5 inset;
@@ -1124,17 +1354,17 @@ exports[`AddAssertion should render failed to submit action is required 1`] = `
   color: #fff;
 }
 
-.emotion-50:first-of-type {
+.emotion-55:first-of-type {
   margin-left: 0;
 }
 
-.emotion-50:disabled {
+.emotion-55:disabled {
   background: rgba(48,48,48,0.1);
   color: rgba(48,48,48,0.2);
   cursor: not-allowed;
 }
 
-.emotion-50:hover:not(:disabled) {
+.emotion-55:hover:not(:disabled) {
   background: linear-gradient(
                   to right,
                   #3570f4,
@@ -1142,15 +1372,15 @@ exports[`AddAssertion should render failed to submit action is required 1`] = `
               );
 }
 
-.emotion-51 {
+.emotion-56 {
   min-width: 8.5em;
   min-height: 1em;
 }
 
-.emotion-53 {
+.emotion-58 {
   border: none;
   border-radius: 2px;
-  box-shadow: 0 0 0 1px transparent inset,0 0 0 0 #d5d5d5 inset;
+  box-shadow: 0 0 0 1px #3697f2 inset;
   box-sizing: border-box;
   cursor: pointer;
   display: inline-block;
@@ -1169,25 +1399,24 @@ exports[`AddAssertion should render failed to submit action is required 1`] = `
   vertical-align: baseline;
   white-space: nowrap;
   background: transparent;
-  box-shadow: 0 0 0 1px #3697f2 inset;
   color: #3697f2;
 }
 
-.emotion-53:first-of-type {
+.emotion-58:first-of-type {
   margin-left: 0;
 }
 
-.emotion-53:disabled {
+.emotion-58:disabled {
   background: rgba(48,48,48,0.1);
   color: rgba(48,48,48,0.2);
   cursor: not-allowed;
 }
 
-.emotion-53:disabled {
+.emotion-58:disabled {
   box-shadow: 0 0 0 1px rgba(48,48,48,0.1) inset;
 }
 
-.emotion-53:hover:not(:disabled) {
+.emotion-58:hover:not(:disabled) {
   background: #d7e2fd;
 }
 
@@ -1200,7 +1429,6 @@ exports[`AddAssertion should render failed to submit action is required 1`] = `
     class="emotion-2 emotion-3"
     data-testid="add-rule-form"
   >
-    
     <div
       class="emotion-4 emotion-5"
     >
@@ -1274,7 +1502,7 @@ exports[`AddAssertion should render failed to submit action is required 1`] = `
             data-testid="input-node"
             id="rule-action"
             name="rule-action"
-            placeholder="Rule Action (Case Sensitive)"
+            placeholder="Rule Action"
             value=""
           />
           <div
@@ -1323,11 +1551,11 @@ exports[`AddAssertion should render failed to submit action is required 1`] = `
             <div
               class="input-icon"
             >
-              
               <svg
                 class="emotion-37"
                 data-testid="icon"
                 height="24px"
+                id=""
                 viewBox="0 0 1024 1024"
                 width="24px"
               >
@@ -1368,7 +1596,7 @@ exports[`AddAssertion should render failed to submit action is required 1`] = `
             data-testid="input-node"
             id="rule-resource"
             name="rule-resource"
-            placeholder="Rule Resource (Case Sensitive)"
+            placeholder="Rule Resource"
             value=""
           />
           <div
@@ -1378,17 +1606,41 @@ exports[`AddAssertion should render failed to submit action is required 1`] = `
         </div>
       </div>
     </div>
+    <div
+      class="emotion-4 emotion-5"
+    >
+      <div
+        class="emotion-9 emotion-10"
+      >
+        <div
+          class="emotion-52 denali-checkbox"
+          data-testid="checkbox-wrapper"
+        >
+          <input
+            data-partial="false"
+            id="checkbox-case-sensitiveundefined-undefined"
+            name="checkbox-case-sensitiveundefined-undefined"
+            type="checkbox"
+          />
+          <label
+            for="checkbox-case-sensitiveundefined-undefined"
+          >
+            Case Sensitive Action and Resource
+          </label>
+        </div>
+      </div>
+    </div>
   </div>
   <div
-    class="emotion-48 emotion-49"
+    class="emotion-53 emotion-54"
   >
     <button
-      class="emotion-50 denali-button emotion-51 emotion-52"
+      class="emotion-55 denali-button emotion-56 emotion-57"
     >
       Submit
     </button>
     <button
-      class="emotion-53 denali-button emotion-51 emotion-52"
+      class="emotion-58 denali-button emotion-56 emotion-57"
     >
       Cancel
     </button>
@@ -1412,9 +1664,6 @@ exports[`AddAssertion should render failed to submit role name is required 1`] =
   -webkit-box-align: flex-start;
   -ms-flex-align: flex-start;
   align-items: flex-start;
-  display: -webkit-box;
-  display: -webkit-flex;
-  display: -ms-flexbox;
   display: flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -1446,9 +1695,6 @@ exports[`AddAssertion should render failed to submit role name is required 1`] =
 }
 
 .emotion-11 {
-  display: -webkit-inline-box;
-  display: -webkit-inline-flex;
-  display: -ms-inline-flexbox;
   display: inline-flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -1554,11 +1800,15 @@ exports[`AddAssertion should render failed to submit role name is required 1`] =
   width: 8px;
 }
 
+.emotion-14>input[type='radio']:disabled:checked+label:after {
+  color: #d5d5d5;
+  border: 2px solid #d5d5d5;
+  background-color: #d5d5d5;
+  cursor: not-allowed;
+}
+
 .emotion-23 {
   box-sizing: border-box;
-  display: -webkit-inline-box;
-  display: -webkit-inline-flex;
-  display: -ms-inline-flexbox;
   display: inline-flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -1670,9 +1920,6 @@ exports[`AddAssertion should render failed to submit role name is required 1`] =
 
 .emotion-36 {
   box-sizing: border-box;
-  display: -webkit-inline-box;
-  display: -webkit-inline-flex;
-  display: -ms-inline-flexbox;
   display: inline-flex;
   -webkit-box-flex-flow: row nowrap;
   -webkit-flex-flow: row nowrap;
@@ -1774,9 +2021,6 @@ exports[`AddAssertion should render failed to submit role name is required 1`] =
   -webkit-box-align: center;
   -ms-flex-align: center;
   align-items: center;
-  display: -webkit-box;
-  display: -webkit-flex;
-  display: -ms-flexbox;
   display: flex;
   height: 36px;
   position: absolute;
@@ -1789,11 +2033,123 @@ exports[`AddAssertion should render failed to submit role name is required 1`] =
   vertical-align: text-bottom;
 }
 
-.emotion-48 {
+.emotion-52 {
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  box-sizing: border-box;
+  display: inline-block;
+  height: 16px;
+  line-height: 16px;
+  margin: 3px;
+  outline: 0;
+  position: relative;
+  vertical-align: middle;
+}
+
+.emotion-52>input[type='checkbox'] {
+  box-sizing: border-box;
+  cursor: pointer;
+  display: inline-block;
+  position: absolute;
+  top: 0;
+  visibility: hidden;
+}
+
+.emotion-52>input[type='checkbox']+label {
+  box-sizing: border-box;
+  cursor: pointer;
+  font-family: Helvetica,Arial,sans-serif;
+  font-size: 14px;
+  font-weight: 300;
+  height: 16px;
+  line-height: 16px;
+  padding: 0 10px 0 0;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.emotion-52>input[type='checkbox']+label:before {
+  background: #fff;
+  border: 2px solid rgba(54,151,242,0.5);
+  border-radius: 2px;
+  box-sizing: border-box;
+  content: '';
+  cursor: pointer;
+  display: inline-block;
+  height: 16px;
+  line-height: 16px;
+  margin: 0px 3px -3px 0px;
+  -webkit-transition: all 0.25s ease-in;
+  transition: all 0.25s ease-in;
+  width: 16px;
+}
+
+.emotion-52>input[type='checkbox']:hover+label:before {
+  border: 2px solid #3697f2;
+}
+
+.emotion-52>input[type='checkbox']:focus+label:before {
+  border: 2px solid rgba(54,151,242,0.5);
+}
+
+.emotion-52>input[type='checkbox'][data-partial='true']+label:before,
+.emotion-52>input[type='checkbox']:checked+label:before {
+  border: 2px solid #3697f2;
+}
+
+.emotion-52>input[type='checkbox']:disabled+label {
+  color: #d5d5d5;
+  cursor: not-allowed;
+}
+
+.emotion-52>input[type='checkbox']:disabled+label:before {
+  border: 2px solid #d5d5d5;
+}
+
+.emotion-52>input[type='checkbox']:checked:not([data-partial='true'])+label:before {
+  background: #3697f2;
+}
+
+.emotion-52>input[type='checkbox'][data-partial='true']+label:after {
+  border: solid #3697f2;
+  border-width: 2px 0 0 0;
+  box-sizing: border-box;
+  content: '';
+  cursor: pointer;
+  height: 16px;
+  line-height: 16px;
+  left: 4px;
+  opacity: 1;
+  position: absolute;
+  top: 7px;
+  width: 8px;
+}
+
+.emotion-52>input[type='checkbox']:checked:not([data-partial='true'])+label:after {
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  box-sizing: border-box;
+  content: '';
+  cursor: pointer;
+  display: block;
+  height: 9px;
+  line-height: 16px;
+  left: 6px;
+  opacity: 1;
+  position: absolute;
+  top: 3px;
+  -webkit-transform: rotate(45deg);
+  -moz-transform: rotate(45deg);
+  -ms-transform: rotate(45deg);
+  transform: rotate(45deg);
+  width: 4.5px;
+}
+
+.emotion-53 {
   margin-left: 155px;
 }
 
-.emotion-50 {
+.emotion-55 {
   border: none;
   border-radius: 2px;
   box-shadow: 0 0 0 1px transparent inset,0 0 0 0 #d5d5d5 inset;
@@ -1822,17 +2178,17 @@ exports[`AddAssertion should render failed to submit role name is required 1`] =
   color: #fff;
 }
 
-.emotion-50:first-of-type {
+.emotion-55:first-of-type {
   margin-left: 0;
 }
 
-.emotion-50:disabled {
+.emotion-55:disabled {
   background: rgba(48,48,48,0.1);
   color: rgba(48,48,48,0.2);
   cursor: not-allowed;
 }
 
-.emotion-50:hover:not(:disabled) {
+.emotion-55:hover:not(:disabled) {
   background: linear-gradient(
                   to right,
                   #3570f4,
@@ -1840,15 +2196,15 @@ exports[`AddAssertion should render failed to submit role name is required 1`] =
               );
 }
 
-.emotion-51 {
+.emotion-56 {
   min-width: 8.5em;
   min-height: 1em;
 }
 
-.emotion-53 {
+.emotion-58 {
   border: none;
   border-radius: 2px;
-  box-shadow: 0 0 0 1px transparent inset,0 0 0 0 #d5d5d5 inset;
+  box-shadow: 0 0 0 1px #3697f2 inset;
   box-sizing: border-box;
   cursor: pointer;
   display: inline-block;
@@ -1867,25 +2223,24 @@ exports[`AddAssertion should render failed to submit role name is required 1`] =
   vertical-align: baseline;
   white-space: nowrap;
   background: transparent;
-  box-shadow: 0 0 0 1px #3697f2 inset;
   color: #3697f2;
 }
 
-.emotion-53:first-of-type {
+.emotion-58:first-of-type {
   margin-left: 0;
 }
 
-.emotion-53:disabled {
+.emotion-58:disabled {
   background: rgba(48,48,48,0.1);
   color: rgba(48,48,48,0.2);
   cursor: not-allowed;
 }
 
-.emotion-53:disabled {
+.emotion-58:disabled {
   box-shadow: 0 0 0 1px rgba(48,48,48,0.1) inset;
 }
 
-.emotion-53:hover:not(:disabled) {
+.emotion-58:hover:not(:disabled) {
   background: #d7e2fd;
 }
 
@@ -1898,7 +2253,6 @@ exports[`AddAssertion should render failed to submit role name is required 1`] =
     class="emotion-2 emotion-3"
     data-testid="add-rule-form"
   >
-    
     <div
       class="emotion-4 emotion-5"
     >
@@ -1972,7 +2326,7 @@ exports[`AddAssertion should render failed to submit role name is required 1`] =
             data-testid="input-node"
             id="rule-action"
             name="rule-action"
-            placeholder="Rule Action (Case Sensitive)"
+            placeholder="Rule Action"
             value=""
           />
           <div
@@ -2021,11 +2375,11 @@ exports[`AddAssertion should render failed to submit role name is required 1`] =
             <div
               class="input-icon"
             >
-              
               <svg
                 class="emotion-37"
                 data-testid="icon"
                 height="24px"
+                id=""
                 viewBox="0 0 1024 1024"
                 width="24px"
               >
@@ -2066,7 +2420,7 @@ exports[`AddAssertion should render failed to submit role name is required 1`] =
             data-testid="input-node"
             id="rule-resource"
             name="rule-resource"
-            placeholder="Rule Resource (Case Sensitive)"
+            placeholder="Rule Resource"
             value=""
           />
           <div
@@ -2076,17 +2430,41 @@ exports[`AddAssertion should render failed to submit role name is required 1`] =
         </div>
       </div>
     </div>
+    <div
+      class="emotion-4 emotion-5"
+    >
+      <div
+        class="emotion-9 emotion-10"
+      >
+        <div
+          class="emotion-52 denali-checkbox"
+          data-testid="checkbox-wrapper"
+        >
+          <input
+            data-partial="false"
+            id="checkbox-case-sensitiveundefined-undefined"
+            name="checkbox-case-sensitiveundefined-undefined"
+            type="checkbox"
+          />
+          <label
+            for="checkbox-case-sensitiveundefined-undefined"
+          >
+            Case Sensitive Action and Resource
+          </label>
+        </div>
+      </div>
+    </div>
   </div>
   <div
-    class="emotion-48 emotion-49"
+    class="emotion-53 emotion-54"
   >
     <button
-      class="emotion-50 denali-button emotion-51 emotion-52"
+      class="emotion-55 denali-button emotion-56 emotion-57"
     >
       Submit
     </button>
     <button
-      class="emotion-53 denali-button emotion-51 emotion-52"
+      class="emotion-58 denali-button emotion-56 emotion-57"
     >
       Cancel
     </button>

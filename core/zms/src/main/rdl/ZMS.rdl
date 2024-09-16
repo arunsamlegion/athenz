@@ -1,4 +1,4 @@
-// Copyright 2016 Yahoo Inc.
+// Copyright The Athenz Authors
 // Licensed under the terms of the Apache version 2.0 license. See LICENSE file for terms.
 
 //
@@ -24,5 +24,11 @@ include "Template.rdli";
 include "User.rdli";
 include "Quota.rdli";
 include "Status.rdli";
-include "DomainRoleMembership.rdli"
-include "Authority.rdli"
+include "DomainRoleMembership.rdli";
+include "Authority.rdli";
+include "Stats.rdli";
+include "Dependency.rdli";
+include "Review.rdli";
+include "Info.rdli";
+include "PrincipalMember.rdli";
+include "Schema.rdli";

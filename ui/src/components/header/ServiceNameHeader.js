@@ -20,6 +20,8 @@ import PageUtils from '../utils/PageUtils';
 import Menu from '../denali/Menu/Menu';
 import Icon from '../denali/icons/Icon';
 import { colors } from '../denali/styles';
+import { selectDynamicServiceHeaderDetails } from '../../redux/selectors/services';
+import { connect } from 'react-redux';
 
 const StyledAnchor = styled.a`
     color: #3570f4;
@@ -49,7 +51,7 @@ export default function ServiceNameHeader(props) {
     const { domain, service, serviceHeaderDetails } = props;
 
     let link = (
-        <Link href={PageUtils.servicePage(domain)}>
+        <Link href={PageUtils.servicePage(domain)} passHref legacyBehavior>
             <StyledAnchor>{domain}</StyledAnchor>
         </Link>
     );
@@ -60,6 +62,7 @@ export default function ServiceNameHeader(props) {
         message.push(' For more information click ');
         var urlLink = (
             <StyledAnchor
+                key={Date.now()}
                 onClick={() =>
                     window.open(
                         serviceHeaderDetails.url,

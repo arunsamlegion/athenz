@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,11 +26,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
-import javax.servlet.FilterChain;
-import javax.servlet.FilterConfig;
-import javax.servlet.ServletException;
-import javax.servlet.ServletRequest;
-import javax.servlet.ServletResponse;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.FilterConfig;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletRequest;
+import jakarta.servlet.ServletResponse;
 
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
@@ -49,7 +49,7 @@ public class HealthCheckFilterTest {
             .thenReturn("/tmp/var/athenz_test");
     }
     
-    private class HealthcheckFilterChain implements FilterChain {
+    private static class HealthcheckFilterChain implements FilterChain {
 
         @Override
         public void doFilter(ServletRequest arg0, ServletResponse arg1) {
@@ -63,13 +63,9 @@ public class HealthCheckFilterTest {
         assertNotNull(filter);
         
         System.setProperty(AthenzConsts.ATHENZ_PROP_HEALTH_CHECK_URI_LIST, "/status.html");
-        
-        try {
-            filter.init(filterConfig);
-        } catch (ServletException e1) {
-            fail();
-        }
-        
+
+        filter.init(filterConfig);
+
         createFile("/tmp/var/athenz_test/status.html");
         
         MockHttpServletRequest request =  new MockHttpServletRequest();
@@ -98,13 +94,9 @@ public class HealthCheckFilterTest {
         assertNotNull(filter);
         
         System.setProperty(AthenzConsts.ATHENZ_PROP_HEALTH_CHECK_URI_LIST, "/status.html,/status");
-        
-        try {
-            filter.init(filterConfig);
-        } catch (ServletException e1) {
-            fail();
-        }
-        
+
+        filter.init(filterConfig);
+
         createFile("/tmp/var/athenz_test/status");
         
         MockHttpServletRequest request =  new MockHttpServletRequest();
@@ -133,13 +125,9 @@ public class HealthCheckFilterTest {
         assertNotNull(filter);
         
         System.setProperty(AthenzConsts.ATHENZ_PROP_HEALTH_CHECK_URI_LIST, "/status.html");
-        
-        try {
-            filter.init(filterConfig);
-        } catch (ServletException e1) {
-            fail();
-        }
-        
+
+        filter.init(filterConfig);
+
         deleteFile("/tmp/var/athenz_test/status.html");
         
         MockHttpServletRequest request =  new MockHttpServletRequest();

@@ -51,7 +51,7 @@ exports[`PolicyRuleTable should render 1`] = `
   border-bottom: 2px solid #d5d5d5;
   color: #9a9a9a;
   font-weight: 600;
-  font-size: 0.7rem;
+  font-size: 1.2rem;
   padding-bottom: 5px;
   vertical-align: top;
   text-transform: uppercase;
@@ -64,7 +64,6 @@ exports[`PolicyRuleTable should render 1`] = `
   border-bottom: 2px solid #d5d5d5;
   color: #9a9a9a;
   font-weight: 600;
-  font-size: 0.8rem;
   padding-bottom: 5px;
   vertical-align: top;
   text-transform: uppercase;
@@ -99,7 +98,7 @@ exports[`PolicyRuleTable should render 1`] = `
 
 <td
   class="emotion-0 emotion-1"
-  colspan="4"
+  colspan="7"
   data-testid="ruletable"
 >
   <table
@@ -129,12 +128,12 @@ exports[`PolicyRuleTable should render 1`] = `
       </tr>
       <tr>
         <td
-          colspan="4"
+          colspan="7"
         />
       </tr>
       <tr>
         <td
-          colspan="4"
+          colspan="7"
         >
           <div
             class="emotion-10 emotion-11"
@@ -200,6 +199,7 @@ exports[`PolicyRuleTable should render 1`] = `
                       class="emotion-36"
                       data-testid="icon"
                       height="1.25em"
+                      id=""
                       viewBox="0 0 1024 1024"
                       width="1.25em"
                     >
@@ -276,7 +276,7 @@ exports[`PolicyRuleTable should render 2`] = `
   border-bottom: 2px solid #d5d5d5;
   color: #9a9a9a;
   font-weight: 600;
-  font-size: 0.7rem;
+  font-size: 1.2rem;
   padding-bottom: 5px;
   vertical-align: top;
   text-transform: uppercase;
@@ -289,7 +289,6 @@ exports[`PolicyRuleTable should render 2`] = `
   border-bottom: 2px solid #d5d5d5;
   color: #9a9a9a;
   font-weight: 600;
-  font-size: 0.8rem;
   padding-bottom: 5px;
   vertical-align: top;
   text-transform: uppercase;
@@ -324,7 +323,7 @@ exports[`PolicyRuleTable should render 2`] = `
 
 <td
   class="emotion-0 emotion-1"
-  colspan="4"
+  colspan="7"
   data-testid="ruletable"
 >
   <table
@@ -354,12 +353,12 @@ exports[`PolicyRuleTable should render 2`] = `
       </tr>
       <tr>
         <td
-          colspan="4"
+          colspan="7"
         />
       </tr>
       <tr>
         <td
-          colspan="4"
+          colspan="7"
         >
           <div
             class="emotion-10 emotion-11"
@@ -425,6 +424,7 @@ exports[`PolicyRuleTable should render 2`] = `
                       class="emotion-36"
                       data-testid="icon"
                       height="1.25em"
+                      id=""
                       viewBox="0 0 1024 1024"
                       width="1.25em"
                     >

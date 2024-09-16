@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
 ZMS_STOP_TIMEOUT=${ZMS_STOP_TIMEOUT:-30}
 ZMS_CLASSPATH="${CLASSPATH}:${USER_CLASSPATH}"

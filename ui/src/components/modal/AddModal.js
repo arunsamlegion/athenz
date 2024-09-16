@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,13 +18,14 @@ import styled from '@emotion/styled';
 import Button from '../denali/Button';
 import Modal from '../denali/Modal';
 import Color from '../denali/Color';
+import Loader from '../denali/Loader';
 
 const MessageDiv = styled.div`
     text-align: left;
     font: 300 14px HelveticaNeue-Reg, Helvetica, Arial, sans-serif;
     padding-bottom: 15px;
     max-height: ${(props) => props.height};
-    overflow-y: scroll;
+    overflow-y: ${(props) => props.overflowY};
 `;
 
 const ButtonDiv = styled.div`
@@ -41,10 +42,15 @@ const StyledAddModal = styled(Modal)`
     height: ${(props) => props.height};
 `;
 
+const StyledLoaderSpan = styled.span`
+    margin-left: 10px;
+`;
+
 export default class AddModal extends React.Component {
     render() {
         let width = '805px';
         let height = 'auto';
+        let overflowY = 'scroll';
         let modalHeight = this.props.modalHeight
             ? this.props.modalHeight
             : 'auto';
@@ -53,6 +59,9 @@ export default class AddModal extends React.Component {
         }
         if (this.props.bodyMaxHeight) {
             height = this.props.bodyMaxHeight;
+        }
+        if (this.props.overflowY) {
+            overflowY = this.props.overflowY;
         }
         return (
             <StyledAddModal
@@ -64,20 +73,35 @@ export default class AddModal extends React.Component {
                 height={modalHeight}
             >
                 {this.props.header != null && this.props.header && (
-                    <MessageDiv data-testid='add-modal-message'>
+                    <MessageDiv
+                        data-testid='add-modal-message'
+                        overflowY={overflowY}
+                    >
                         This update requires you to enter the following
                         parameters
                     </MessageDiv>
                 )}
-                <MessageDiv data-testid='add-modal-message' height={height}>
+                <MessageDiv
+                    data-testid='add-modal-message'
+                    height={height}
+                    overflowY={overflowY}
+                >
                     {this.props.sections}
                 </MessageDiv>
                 {this.props.errorMessage && (
                     <Color name={'red600'}>{this.props.errorMessage}</Color>
                 )}
                 <ButtonDiv>
-                    <ModifiedButton onClick={this.props.submit}>
+                    <ModifiedButton
+                        onClick={this.props.submit}
+                        disabled={this.props.saving === 'saving'}
+                    >
                         Submit
+                        <StyledLoaderSpan>
+                            {this.props.saving === 'saving' && (
+                                <Loader size={'15px'} color={'#ffffff'} />
+                            )}
+                        </StyledLoaderSpan>
                     </ModifiedButton>
                     <ModifiedButton secondary onClick={this.props.cancel}>
                         Cancel

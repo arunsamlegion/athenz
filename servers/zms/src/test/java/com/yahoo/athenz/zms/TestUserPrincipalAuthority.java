@@ -1,6 +1,5 @@
 package com.yahoo.athenz.zms;
 
-import com.yahoo.athenz.auth.Authority;
 import com.yahoo.athenz.auth.impl.PrincipalAuthority;
 
 class TestUserPrincipalAuthority extends PrincipalAuthority {
@@ -32,6 +31,17 @@ class TestUserPrincipalAuthority extends PrincipalAuthority {
             return user.equals("user.joe") || user.equals("user.jane") || user.equals("user.jack");
         } else {
             return false;
+        }
+    }
+
+    @Override
+    public String getUserManager(String userName) {
+        if (userName.equals("user.joe")) {
+            return "user.jane";
+        } else if (userName.equals("user.jane")) {
+            return "user.jack";
+        } else {
+            return null;
         }
     }
 }

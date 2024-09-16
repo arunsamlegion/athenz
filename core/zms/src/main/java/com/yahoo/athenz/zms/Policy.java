@@ -6,6 +6,7 @@ package com.yahoo.athenz.zms;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.List;
+import java.util.Map;
 import com.yahoo.rdl.*;
 
 //
@@ -21,6 +22,21 @@ public class Policy {
     @RdlOptional
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public Boolean caseSensitive;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public String version;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public Boolean active;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public String description;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public Map<String, TagValueList> tags;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public ResourcePolicyOwnership resourceOwnership;
 
     public Policy setName(String name) {
         this.name = name;
@@ -50,6 +66,41 @@ public class Policy {
     public Boolean getCaseSensitive() {
         return caseSensitive;
     }
+    public Policy setVersion(String version) {
+        this.version = version;
+        return this;
+    }
+    public String getVersion() {
+        return version;
+    }
+    public Policy setActive(Boolean active) {
+        this.active = active;
+        return this;
+    }
+    public Boolean getActive() {
+        return active;
+    }
+    public Policy setDescription(String description) {
+        this.description = description;
+        return this;
+    }
+    public String getDescription() {
+        return description;
+    }
+    public Policy setTags(Map<String, TagValueList> tags) {
+        this.tags = tags;
+        return this;
+    }
+    public Map<String, TagValueList> getTags() {
+        return tags;
+    }
+    public Policy setResourceOwnership(ResourcePolicyOwnership resourceOwnership) {
+        this.resourceOwnership = resourceOwnership;
+        return this;
+    }
+    public ResourcePolicyOwnership getResourceOwnership() {
+        return resourceOwnership;
+    }
 
     @Override
     public boolean equals(Object another) {
@@ -68,6 +119,21 @@ public class Policy {
                 return false;
             }
             if (caseSensitive == null ? a.caseSensitive != null : !caseSensitive.equals(a.caseSensitive)) {
+                return false;
+            }
+            if (version == null ? a.version != null : !version.equals(a.version)) {
+                return false;
+            }
+            if (active == null ? a.active != null : !active.equals(a.active)) {
+                return false;
+            }
+            if (description == null ? a.description != null : !description.equals(a.description)) {
+                return false;
+            }
+            if (tags == null ? a.tags != null : !tags.equals(a.tags)) {
+                return false;
+            }
+            if (resourceOwnership == null ? a.resourceOwnership != null : !resourceOwnership.equals(a.resourceOwnership)) {
                 return false;
             }
         }

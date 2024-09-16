@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -92,6 +92,16 @@ public interface Metric {
      * @param attributes a sorted array of tag key-value pairs in a flattened array
      */
     default void increment(String metric, final String... attributes) {
+        // No op
+    }
+
+    /**
+     * Increment the counter for the specified metric with the specified attributes
+     * @param metric Name of the counter
+     * @param attributes a sorted array of tag key-value pairs in a flattened array
+     * @param change value by which to increment the counter
+     */
+    default void increment(String metric, long change, final String... attributes) {
         // No op
     }
 
@@ -199,7 +209,7 @@ public interface Metric {
      * Flush any buffered metrics to destination.
      */
     void flush();
-    
+
     /**
      * Flush buffers and shutdown any tasks.
      */

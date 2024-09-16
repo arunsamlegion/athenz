@@ -40,6 +40,15 @@ public class MemberRole {
     @RdlOptional
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public Integer systemDisabled;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public String pendingState;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public String trustRoleName;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public String notifyRoles;
 
     public MemberRole setRoleName(String roleName) {
         this.roleName = roleName;
@@ -111,6 +120,27 @@ public class MemberRole {
     public Integer getSystemDisabled() {
         return systemDisabled;
     }
+    public MemberRole setPendingState(String pendingState) {
+        this.pendingState = pendingState;
+        return this;
+    }
+    public String getPendingState() {
+        return pendingState;
+    }
+    public MemberRole setTrustRoleName(String trustRoleName) {
+        this.trustRoleName = trustRoleName;
+        return this;
+    }
+    public String getTrustRoleName() {
+        return trustRoleName;
+    }
+    public MemberRole setNotifyRoles(String notifyRoles) {
+        this.notifyRoles = notifyRoles;
+        return this;
+    }
+    public String getNotifyRoles() {
+        return notifyRoles;
+    }
 
     @Override
     public boolean equals(Object another) {
@@ -147,6 +177,15 @@ public class MemberRole {
                 return false;
             }
             if (systemDisabled == null ? a.systemDisabled != null : !systemDisabled.equals(a.systemDisabled)) {
+                return false;
+            }
+            if (pendingState == null ? a.pendingState != null : !pendingState.equals(a.pendingState)) {
+                return false;
+            }
+            if (trustRoleName == null ? a.trustRoleName != null : !trustRoleName.equals(a.trustRoleName)) {
+                return false;
+            }
+            if (notifyRoles == null ? a.notifyRoles != null : !notifyRoles.equals(a.notifyRoles)) {
                 return false;
             }
         }

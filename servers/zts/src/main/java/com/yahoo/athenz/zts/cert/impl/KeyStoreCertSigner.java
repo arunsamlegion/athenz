@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ package com.yahoo.athenz.zts.cert.impl;
 
 import com.yahoo.athenz.auth.util.Crypto;
 import com.yahoo.athenz.common.server.cert.CertSigner;
+import com.yahoo.athenz.common.server.cert.Priority;
 import org.bouncycastle.pkcs.PKCS10CertificationRequest;
 
 import java.security.PrivateKey;
@@ -24,9 +25,9 @@ import java.security.cert.X509Certificate;
 
 public class KeyStoreCertSigner implements CertSigner, AutoCloseable {
 
-    private X509Certificate caCertificate;
-    private PrivateKey caPrivateKey;
-    private int maxCertExpiryTimeMins;
+    private final X509Certificate caCertificate;
+    private final PrivateKey caPrivateKey;
+    private final int maxCertExpiryTimeMins;
 
     public KeyStoreCertSigner(X509Certificate caCertificate, PrivateKey caPrivateKey, int maxCertExpiryTimeMins) {
         this.caCertificate = caCertificate;
@@ -36,17 +37,33 @@ public class KeyStoreCertSigner implements CertSigner, AutoCloseable {
 
     @Override
     public String generateX509Certificate(String provider, String certIssuer, String csr, String keyUsage, int certExpiryMins) {
+        return generateX509Certificate(provider, certIssuer, csr, keyUsage, certExpiryMins, Priority.Unspecified_priority);
+    }
+
+    @Override
+    public String generateX509Certificate(String provider, String certIssuer, String csr, String keyUsage,
+            int certExpiryMins, Priority priority) {
+        return generateX509Certificate(provider, certIssuer, csr, keyUsage, certExpiryMins, priority, null);
+    }
+
+    @Override
+    public String generateX509Certificate(String provider, String certIssuer, String csr, String keyUsage,
+            int certExpiryMins, Priority priority, String signerKeyId) {
+
         int certExpiryTime = (certExpiryMins == 0) ? this.maxCertExpiryTimeMins : certExpiryMins;
 
         PKCS10CertificationRequest certReq = Crypto.getPKCS10CertRequest(csr);
-        // keyUsage is ignored
-        X509Certificate cert = Crypto.generateX509Certificate(certReq, caPrivateKey, caCertificate, certExpiryTime, false);
-
-        return Crypto.convertToPEMFormat(cert);
+        return Crypto.convertToPEMFormat(Crypto.generateX509Certificate(certReq, caPrivateKey,
+                caCertificate, certExpiryTime, false));
     }
 
     @Override
     public String getCACertificate(String provider) {
+        return getCACertificate(provider, null);
+    }
+
+    @Override
+    public String getCACertificate(String provider, String signerKeyId) {
         return Crypto.convertToPEMFormat(caCertificate);
     }
 

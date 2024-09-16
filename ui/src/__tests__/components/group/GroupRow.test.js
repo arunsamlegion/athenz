@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,20 +14,22 @@
  * limitations under the License.
  */
 import React from 'react';
-import { render } from '@testing-library/react';
 import GroupRow from '../../../components/group/GroupRow';
 import { colors } from '../../../components/denali/styles';
+import { renderWithRedux } from '../../../tests_utils/ComponentsTestUtils';
 
 describe('GroupRow', () => {
     it('should render', () => {
-        let details = {
+        const details = {
             name: 'athens:group.testui',
             modified: '2017-08-03T18:44:41.867Z',
         };
-        let domain = 'domain';
-        let color = colors.row;
-        let idx = '50';
-        const { getByTestId } = render(
+        const domain = 'domain';
+        const color = colors.row;
+        const idx = '50';
+        const timeZone = 'UTC';
+
+        const { getByTestId } = renderWithRedux(
             <table>
                 <tbody>
                     <GroupRow
@@ -35,6 +37,7 @@ describe('GroupRow', () => {
                         domain={domain}
                         color={color}
                         idx={idx}
+                        timeZone={timeZone}
                     />
                 </tbody>
             </table>

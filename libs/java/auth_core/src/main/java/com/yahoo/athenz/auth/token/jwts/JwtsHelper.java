@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Oath Holdings Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,9 +26,8 @@ import javax.net.ssl.SSLSocketFactory;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.net.URLConnection;
+import java.net.*;
+
 
 public class JwtsHelper {
 
@@ -42,8 +41,12 @@ public class JwtsHelper {
     }
 
     public String extractJwksUri(final String openIdConfigUri, final SSLContext sslContext) {
+        return this.extractJwksUri(openIdConfigUri, sslContext, null);
+    }
 
-        final String opendIdConfigData = getHttpData(openIdConfigUri, sslContext);
+    public String extractJwksUri(final String openIdConfigUri, final SSLContext sslContext, final String proxyUrl) {
+
+        final String opendIdConfigData = getHttpData(openIdConfigUri, sslContext, proxyUrl);
         if (opendIdConfigData == null) {
             return null;
         }
@@ -59,14 +62,26 @@ public class JwtsHelper {
     }
 
     public String getHttpData(final String serverUri, final SSLContext sslContext) {
+        return getHttpData(serverUri, sslContext, null);
+    }
+
+    public String getHttpData(final String serverUri, final SSLContext sslContext, final String proxyUrl) {
 
         if (serverUri == null || serverUri.isEmpty()) {
             return null;
         }
 
         try {
-            URLConnection con = getUrlConnection(serverUri);
+            URLConnection con;
+            if (proxyUrl == null || proxyUrl.isEmpty()) {
+                con = getUrlConnection(serverUri);
+            } else {
+                URL url = new URL(proxyUrl);
+                con = getUrlConnection(serverUri, url.getHost(), url.getPort());
+            }
+
             con.setRequestProperty("Accept", "application/json");
+            con.setConnectTimeout(10000);
             con.setReadTimeout(15000);
             con.setDoOutput(true);
             if (con instanceof HttpURLConnection) {
@@ -117,5 +132,11 @@ public class JwtsHelper {
 
     URLConnection getUrlConnection(final String serverUrl) throws IOException {
         return new URL(serverUrl).openConnection();
+    }
+
+    URLConnection getUrlConnection(final String serverUrl, final String proxyHost, final Integer proxyPort) throws IOException {
+        SocketAddress addr = new InetSocketAddress(proxyHost, proxyPort);
+        Proxy proxy = new Proxy(Proxy.Type.HTTP, addr);
+        return new URL(serverUrl).openConnection(proxy);
     }
 }

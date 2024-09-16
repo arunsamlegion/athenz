@@ -26,6 +26,12 @@ public class SSHCertRequestData {
     @RdlOptional
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public String touchPublicKey;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public Integer caPubKeyAlgo;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public String command;
 
     public SSHCertRequestData setPrincipals(List<String> principals) {
         this.principals = principals;
@@ -62,6 +68,20 @@ public class SSHCertRequestData {
     public String getTouchPublicKey() {
         return touchPublicKey;
     }
+    public SSHCertRequestData setCaPubKeyAlgo(Integer caPubKeyAlgo) {
+        this.caPubKeyAlgo = caPubKeyAlgo;
+        return this;
+    }
+    public Integer getCaPubKeyAlgo() {
+        return caPubKeyAlgo;
+    }
+    public SSHCertRequestData setCommand(String command) {
+        this.command = command;
+        return this;
+    }
+    public String getCommand() {
+        return command;
+    }
 
     @Override
     public boolean equals(Object another) {
@@ -83,6 +103,12 @@ public class SSHCertRequestData {
                 return false;
             }
             if (touchPublicKey == null ? a.touchPublicKey != null : !touchPublicKey.equals(a.touchPublicKey)) {
+                return false;
+            }
+            if (caPubKeyAlgo == null ? a.caPubKeyAlgo != null : !caPubKeyAlgo.equals(a.caPubKeyAlgo)) {
+                return false;
+            }
+            if (command == null ? a.command != null : !command.equals(a.command)) {
                 return false;
             }
         }

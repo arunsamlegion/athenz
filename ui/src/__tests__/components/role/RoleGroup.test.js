@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,10 @@ describe('RoleGroup', () => {
         let roles = [];
         let role1 = {
             name: 'domain:role.role1',
-            roleMembers: [{ memberName: 'user.test1' }, { memberName: 'user.test2' }],
+            roleMembers: [
+                { memberName: 'user.test1' },
+                { memberName: 'user.test2' },
+            ],
             memberExpiryDays: 30,
             serviceExpiryDays: 20,
             memberReviewDays: 70,
@@ -36,7 +39,10 @@ describe('RoleGroup', () => {
         };
         let role2 = {
             name: 'domain:role.role2',
-            roleMembers: [{ memberName: 'user.test3' }, { memberName: 'user.test4' }],
+            roleMembers: [
+                { memberName: 'user.test3' },
+                { memberName: 'user.test4' },
+            ],
             memberExpiryDays: null,
             serviceExpiryDays: 20,
             memberReviewDays: 30,
@@ -69,7 +75,6 @@ describe('RoleGroup', () => {
         let name = 'AWS';
         let domain = 'domain';
         let roles = [];
-        const assertions = [];
         const { getByTestId } = render(
             <table>
                 <tbody>

@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Yahoo Holdings, Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,11 @@
 package com.oath.auth;
 
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
+import org.bouncycastle.jcajce.provider.asymmetric.ec.BCECPrivateKey;
+import org.bouncycastle.jce.spec.ECPublicKeySpec;
+import org.bouncycastle.math.ec.ECMultiplier;
+import org.bouncycastle.math.ec.ECPoint;
+import org.bouncycastle.math.ec.FixedPointCombMultiplier;
 import org.bouncycastle.openssl.PEMKeyPair;
 import org.bouncycastle.openssl.PEMParser;
 import org.bouncycastle.openssl.jcajce.JcaPEMKeyConverter;
@@ -34,6 +39,9 @@ import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
+import java.security.interfaces.ECKey;
+import java.security.interfaces.RSAKey;
+import java.security.spec.InvalidKeySpecException;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
@@ -42,8 +50,13 @@ public class Utils {
 
     private static final Logger LOG = LoggerFactory.getLogger(Utils.class);
 
-    private static final String SSLCONTEXT_ALGORITHM = "TLSv1.2";
-    private static final String PROP_KEY_WAIT_TIME = "athenz.cert_refresher.key_wait_time";
+    private static final String SSLCONTEXT_ALGORITHM_TLS12 = "TLSv1.2";
+    private static final String SSLCONTEXT_ALGORITHM_TLS13 = "TLSv1.3";
+
+    private static final String PROP_KEY_WAIT_TIME         = "athenz.cert_refresher.key_wait_time";
+    private static final String PROP_TLS_ALGORITHM         = "athenz.cert_refresher.tls_algorithm";
+    private static final String PROP_DISABLE_PUB_KEY_CHECK = "athenz.cert_refresher.disable_public_key_check";
+    private static final String PROP_SKIP_BC_PROVIDER      = "athenz.cert_refresher.skip_bc_provider";
 
     private static final char[] KEYSTORE_PASSWORD = "secret".toCharArray();
 
@@ -54,20 +67,34 @@ public class Utils {
     private static final long KEY_WAIT_TIME_MILLIS = TimeUnit.MINUTES.toMillis(
             Integer.parseInt(System.getProperty(PROP_KEY_WAIT_TIME, "10")));
 
-    public static KeyStore getKeyStore(final String jksFilePath) throws FileNotFoundException, IOException, KeyRefresherException {
+    private static boolean disablePublicKeyCheck = Boolean.parseBoolean(
+            System.getProperty(PROP_DISABLE_PUB_KEY_CHECK, "false"));
+
+    static {
+        boolean skipBCProvider = Boolean.parseBoolean(System.getProperty(PROP_SKIP_BC_PROVIDER, "false"));
+        if (!skipBCProvider) {
+            Security.addProvider(new org.bouncycastle.jce.provider.BouncyCastleProvider());
+        }
+    }
+
+    public static void setDisablePublicKeyCheck(boolean state) {
+        disablePublicKeyCheck = state;
+    }
+
+    public static KeyStore getKeyStore(final String jksFilePath) throws IOException, KeyRefresherException {
         return getKeyStore(jksFilePath, KEYSTORE_PASSWORD);
     }
 
-    public static KeyStore getKeyStore(final String jksFilePath, final char[] password) throws FileNotFoundException, IOException, KeyRefresherException {
+    public static KeyStore getKeyStore(final String jksFilePath, final char[] password)
+            throws IOException, KeyRefresherException {
+
         if (jksFilePath == null || jksFilePath.isEmpty()) {
             throw new FileNotFoundException("jksFilePath is empty");
         }
-        KeyStore keyStore = null;
         String keyStoreFailMsg = "Unable to load " + jksFilePath + " as a KeyStore.  Please check the validity of the file.";
         try {
-            keyStore = KeyStore.getInstance(DEFAULT_KEYSTORE_TYPE);
+            KeyStore keyStore = KeyStore.getInstance(DEFAULT_KEYSTORE_TYPE);
 
-            ///CLOVER:OFF
             if (Paths.get(jksFilePath).isAbsolute()) {
                 // Can not cover this branch in unit test. Can not refer any files by absolute paths
                 try (InputStream jksFileInputStream = new FileInputStream(jksFilePath)) {
@@ -77,7 +104,6 @@ public class Utils {
                     throw new KeyRefresherException(keyStoreFailMsg, e);
                 }
             }
-            ///CLOVER:ON
 
             try (InputStream jksFileInputStream = Utils.class.getClassLoader().getResourceAsStream(jksFilePath)) {
                 keyStore.load(jksFileInputStream, password);
@@ -86,15 +112,28 @@ public class Utils {
                 throw new KeyRefresherException(keyStoreFailMsg, e);
             }
 
-        } catch (KeyStoreException ignored) {
-            LOG.error("No Provider supports a KeyStoreSpi implementation for the specified type.", ignored);
+        } catch (KeyStoreException ex) {
+            LOG.error("No Provider supports a KeyStoreSpi implementation for the specified type.", ex);
         }
-        return keyStore;
+        return null;
     }
 
-    public static KeyManager[] getKeyManagers(final String athenzPublicCert, final String athenzPrivateKey) throws FileNotFoundException, IOException, InterruptedException, KeyRefresherException {
+    public static KeyManager[] getKeyManagers(final String athenzPublicCert, final String athenzPrivateKey)
+            throws IOException, InterruptedException, KeyRefresherException {
+
         final KeyStore keystore = createKeyStore(athenzPublicCert, athenzPrivateKey);
-        KeyManagerFactory keyManagerFactory = null;
+        return getKeyManagersFromKeyStore(keystore);
+    }
+
+    public static KeyManager[] getKeyManagersFromPems(final String athenzPublicCertPem, final String athenzPrivateKeyPem)
+            throws IOException, KeyRefresherException {
+
+        final KeyStore keystore = Utils.createKeyStoreFromPems(athenzPublicCertPem, athenzPrivateKeyPem);
+        return getKeyManagersFromKeyStore(keystore);
+    }
+
+    private static KeyManager[] getKeyManagersFromKeyStore(final KeyStore keystore) throws KeyRefresherException {
+        KeyManagerFactory keyManagerFactory;
         try {
             keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
             keyManagerFactory.init(keystore, KEYSTORE_PASSWORD);
@@ -205,8 +244,10 @@ public class Utils {
                                                     final char[] trustStorePassword, final String athenzPublicCert,
                                                     final String athenzPrivateKey, final KeyRefresherListener keyRefresherListener)
             throws FileNotFoundException, IOException, InterruptedException, KeyRefresherException {
-        TrustStore trustStore = new TrustStore(trustStorePath,
-                new JavaKeyStoreProvider(trustStorePath, trustStorePassword));
+        TrustStore trustStore = null;
+        if (trustStorePath != null && !trustStorePath.isEmpty()) {
+            trustStore = new TrustStore(trustStorePath, new JavaKeyStoreProvider(trustStorePath, trustStorePassword));
+        }
         return getKeyRefresher(athenzPublicCert, athenzPrivateKey, trustStore, keyRefresherListener);
     }
 
@@ -228,23 +269,30 @@ public class Utils {
      * @throws FileNotFoundException in case key/cert are not found
      */
     public static KeyRefresher generateKeyRefresherFromCaCert(final String caCertPath,
-                                                              final String athenzPublicCert, final String athenzPrivateKey) throws FileNotFoundException, IOException, InterruptedException, KeyRefresherException {
-        TrustStore trustStore = new TrustStore(caCertPath, new CaCertKeyStoreProvider(caCertPath));
+            final String athenzPublicCert, final String athenzPrivateKey)
+            throws IOException, InterruptedException, KeyRefresherException {
+        TrustStore trustStore = null;
+        if (caCertPath != null && !caCertPath.isEmpty()) {
+            trustStore = new TrustStore(caCertPath, new CaCertKeyStoreProvider(caCertPath));
+        }
         return getKeyRefresher(athenzPublicCert, athenzPrivateKey, trustStore);
     }
 
-    static KeyRefresher getKeyRefresher(String athenzPublicCert, String athenzPrivateKey,
-                                        TrustStore trustStore) throws FileNotFoundException, IOException, InterruptedException, KeyRefresherException {
+    static KeyRefresher getKeyRefresher(String athenzPublicCert, String athenzPrivateKey, TrustStore trustStore)
+            throws IOException, InterruptedException, KeyRefresherException {
         return getKeyRefresher(athenzPublicCert, athenzPrivateKey, trustStore, null);
     }
 
     static KeyRefresher getKeyRefresher(String athenzPublicCert, String athenzPrivateKey,
-                                        TrustStore trustStore, final KeyRefresherListener keyRefresherListener)
-            throws FileNotFoundException, IOException, InterruptedException, KeyRefresherException {
-        KeyRefresher keyRefresher = null;
+            TrustStore trustStore, final KeyRefresherListener keyRefresherListener)
+            throws IOException, InterruptedException, KeyRefresherException {
+        KeyRefresher keyRefresher;
         KeyManagerProxy keyManagerProxy =
                 new KeyManagerProxy(getKeyManagers(athenzPublicCert, athenzPrivateKey));
-        TrustManagerProxy trustManagerProxy = new TrustManagerProxy(trustStore.getTrustManagers());
+        TrustManagerProxy trustManagerProxy = null;
+        if (trustStore != null) {
+            trustManagerProxy = new TrustManagerProxy(trustStore.getTrustManagers());
+        }
         try {
             keyRefresher = new KeyRefresher(athenzPublicCert, athenzPrivateKey, trustStore,
                     keyManagerProxy, trustManagerProxy, keyRefresherListener);
@@ -255,8 +303,36 @@ public class Utils {
     }
 
     /**
+     * this method will create a new SSLContext object with the given tls protocol
+     * that can be updated on the fly should the public/private keys / trustStore change.
+     *
+     * @param keyManagerProxy   uses standard KeyManager interface except also allows
+     *                          for the updating of KeyManager on the fly
+     * @param trustManagerProxy uses standard TrustManager interface except also allows
+     *                          for the updating of TrustManager on the fly
+     * @param protocol          TLS protocol supported by the context
+     * @return a valid SSLContext object using the passed in key/trust managers
+     * @throws KeyRefresherException in case of any errors
+     */
+    public static SSLContext buildSSLContext(KeyManagerProxy keyManagerProxy, TrustManagerProxy trustManagerProxy,
+            final String protocol) throws KeyRefresherException {
+        SSLContext sslContext;
+        try {
+            sslContext = SSLContext.getInstance(protocol);
+            sslContext.init(new KeyManager[]{keyManagerProxy},
+                    trustManagerProxy == null ? null : new TrustManager[]{trustManagerProxy}, null);
+        } catch (NoSuchAlgorithmException e) {
+            throw new KeyRefresherException("No Provider supports a SSLContextSpi implementation for the specified protocol " + protocol, e);
+        } catch (KeyManagementException e) {
+            throw new KeyRefresherException("Unable to create SSLContext.", e);
+        }
+        return sslContext;
+    }
+
+    /**
      * this method will create a new SSLContext object that can be updated on the fly should the
-     * public/private keys / trustStore change.
+     * public/private keys / trustStore change. It defaults to TLS 1.3 protocol. If the 1.3
+     * is not supported, then it'll fall back to TLS 1.2 protocol.
      *
      * @param keyManagerProxy   uses standard KeyManager interface except also allows
      *                          for the updating of KeyManager on the fly
@@ -265,18 +341,55 @@ public class Utils {
      * @return a valid SSLContext object using the passed in key/trust managers
      * @throws KeyRefresherException in case of any errors
      */
-    public static SSLContext buildSSLContext(KeyManagerProxy keyManagerProxy,
-                                             TrustManagerProxy trustManagerProxy) throws KeyRefresherException {
-        SSLContext sslContext = null;
-        try {
-            sslContext = SSLContext.getInstance(SSLCONTEXT_ALGORITHM);
-            sslContext.init(new KeyManager[]{keyManagerProxy}, new TrustManager[]{trustManagerProxy}, null);
-        } catch (NoSuchAlgorithmException e) {
-            throw new KeyRefresherException("No Provider supports a SSLContextSpi implementation for the specified protocol " + SSLCONTEXT_ALGORITHM, e);
-        } catch (KeyManagementException e) {
-            throw new KeyRefresherException("Unable to create SSLContext.", e);
+    public static SSLContext buildSSLContext(KeyManagerProxy keyManagerProxy, TrustManagerProxy trustManagerProxy)
+            throws KeyRefresherException {
+
+        // if the user has configured our tls property then that's what we'll
+        // be using for our ssl context
+
+        final String protocol = System.getProperty(PROP_TLS_ALGORITHM);
+        if (protocol != null && !protocol.isEmpty()) {
+            return buildSSLContext(keyManagerProxy, trustManagerProxy, protocol);
         }
-        return sslContext;
+
+        // we're going to default to 1.3 protocol and if it fails, we're
+        // going to fall back and try tls 1.2
+
+        try {
+            return buildSSLContext(keyManagerProxy, trustManagerProxy, SSLCONTEXT_ALGORITHM_TLS13);
+        } catch (KeyRefresherException ignored) {
+            return buildSSLContext(keyManagerProxy, trustManagerProxy, SSLCONTEXT_ALGORITHM_TLS12);
+        }
+    }
+
+    /**
+     * this method will create a new SSLContext object based on the given strings representing
+     * the trust CA certificates, x.509 certificate and private key all in PEM format. There is
+     * no refresh capability for the SSL context since it is created based on given strings
+     * that cannot change.
+     *
+     * @param caCertsPem CA certificates in PEM format
+     * @param athenzPublicCertPem x.509 certificate in PEM format
+     * @param athenzPrivateKeyPem private key in PEM format
+     * @return a valid SSLContext object
+     */
+    public static SSLContext buildSSLContext(final String caCertsPem, final String athenzPublicCertPem,
+            final String athenzPrivateKeyPem) throws KeyRefresherException, IOException {
+
+        TrustManagerProxy trustManagerProxy = null;
+        if (caCertsPem != null) {
+            TrustStore trustStore = new TrustStore(null, new CaCertKeyStoreProvider(inputStreamSupplierFromString(caCertsPem)));
+            trustManagerProxy = new TrustManagerProxy(trustStore.getTrustManagers());
+        }
+
+        KeyManagerProxy keyManagerProxy =
+                new KeyManagerProxy(getKeyManagersFromPems(athenzPublicCertPem, athenzPrivateKeyPem));
+
+        // if the user has configured our tls property then that's what we'll
+        // be using for our ssl context otherwise we'll default to TLS 1.3
+
+        final String protocol = System.getProperty(PROP_TLS_ALGORITHM, SSLCONTEXT_ALGORITHM_TLS13);
+        return buildSSLContext(keyManagerProxy, trustManagerProxy, protocol);
     }
 
     static Supplier<InputStream> inputStreamSupplierFromFile(File file) throws UncheckedIOException {
@@ -333,7 +446,7 @@ public class Utils {
             while (!certFile.exists() || !keyFile.exists()) {
                 long durationInMillis = System.currentTimeMillis() - startTime;
                 if (durationInMillis > KEY_WAIT_TIME_MILLIS) {
-                    throw new KeyRefresherException("Keyfresher waited " + durationInMillis
+                    throw new KeyRefresherException("KeyRefresher waited " + durationInMillis
                             + " ms for valid public cert: " + athenzPublicCert + " or private key: "
                             + athenzPrivateKey + " files. Giving up.");
                 }
@@ -379,7 +492,7 @@ public class Utils {
      * @param athenzPublicCertInputStream      Supplier of the certificate input stream
      * @param athenzPublicCertLocationSupplier Supplier of the location of the certificate (for error logging)
      * @param athenzPrivateKeyInputStream      Supplier of the private key input stream
-     * @param athenzPrivateKeyLocationSupplier Supplier of the location of the certificate (for error logging)
+     * @param athenzPrivateKeyLocationSupplier Supplier of the location of the private key (for error logging)
      * @return a KeyStore with loaded key and certificate
      * @throws KeyRefresherException in case of any key refresher errors processing the request
      * @throws IOException in case of any errors with reading files
@@ -407,10 +520,9 @@ public class Utils {
             } else if (key instanceof PrivateKeyInfo) {
                 privateKey = pemConverter.getPrivateKey((PrivateKeyInfo) key);
             } else {
-                throw new KeyRefresherException("Unknown object type: " + key == null ? "null" : key.getClass().getName());
+                throw new KeyRefresherException("Unknown object type: " + (key == null ? "null" : key.getClass().getName()));
             }
 
-            //noinspection unchecked
             certificates = (List<? extends Certificate>) cf.generateCertificates(publicCertStream);
             if (certificates.isEmpty()) {
                 throw new KeyRefresherException("Certificate file contains empty certificate or an invalid certificate.");
@@ -418,21 +530,73 @@ public class Utils {
             //We are going to assume that the first one is the main certificate which will be used for the alias
             String alias = ((X509Certificate) certificates.get(0)).getSubjectX500Principal().getName();
             if (LOG.isDebugEnabled()) {
-                LOG.debug("{} number of certificates found.  Using {} alias to create the keystore", certificates.size(), alias);
+                LOG.debug("{} number of certificates found. Using {} alias to create the keystore", certificates.size(), alias);
             }
+            // if configured (default - true) verify that the private key and certificate match
+            // you would only want to disable this check if the library does not support
+            // the private key type (currently RSA and EC keys are supported)
+            verifyPrivateKeyCertsMatch(privateKey, certificates);
             keyStore = KeyStore.getInstance(DEFAULT_KEYSTORE_TYPE);
             keyStore.load(null);
             keyStore.setKeyEntry(alias, privateKey, KEYSTORE_PASSWORD,
                     certificates.toArray((Certificate[]) new X509Certificate[certificates.size()]));
 
-        } catch (CertificateException | NoSuchAlgorithmException e) {
-            String keyStoreFailMsg = "Unable to load " + athenzPublicCertLocationSupplier.get() + " as a KeyStore.  Please check the validity of the file.";
-            throw new KeyRefresherException(keyStoreFailMsg, e);
-        } catch (KeyStoreException ignored) {
-            LOG.error("No Provider supports a KeyStoreSpi implementation for the specified type.", ignored);
+        } catch (CertificateException | NoSuchAlgorithmException ex) {
+            String keyStoreFailMsg = "Unable to load private key: " + athenzPrivateKeyLocationSupplier.get() +
+                    " and certificate: " + athenzPublicCertLocationSupplier.get() +
+                    " as a KeyStore. Please check the validity of the files.";
+            throw new KeyRefresherException(keyStoreFailMsg, ex);
+        } catch (KeyStoreException ex) {
+            LOG.error("No Provider supports a KeyStoreSpi implementation for the specified type.", ex);
         }
 
         return keyStore;
+    }
+
+    static boolean verifyPrivatePublicKeyMatch(PrivateKey privateKey, PublicKey publicKey)
+            throws NoSuchAlgorithmException, InvalidKeySpecException {
+
+        if (publicKey instanceof RSAKey) {
+            if (!(privateKey instanceof RSAKey)) {
+                return false;
+            }
+            RSAKey pubRSAKey = (RSAKey) publicKey;
+            RSAKey prvRSAKey = (RSAKey) privateKey;
+            return pubRSAKey.getModulus().compareTo(prvRSAKey.getModulus()) == 0;
+        } else if (publicKey instanceof ECKey) {
+            if (!(privateKey instanceof ECKey)) {
+                return false;
+            }
+            KeyFactory keyFactory = KeyFactory.getInstance(privateKey.getAlgorithm());
+            BCECPrivateKey ecPrivKey = (BCECPrivateKey) privateKey;
+            ECMultiplier ecMultiplier = new FixedPointCombMultiplier();
+            org.bouncycastle.jce.spec.ECParameterSpec ecParamSpec = ecPrivKey.getParameters();
+            ECPoint ecPointQ = ecMultiplier.multiply(ecParamSpec.getG(), ecPrivKey.getD());
+            ECPublicKeySpec prvKeySpec = new ECPublicKeySpec(ecPointQ, ecParamSpec);
+
+            ECPublicKeySpec pubKeySpec = keyFactory.getKeySpec(publicKey, ECPublicKeySpec.class);
+
+            return prvKeySpec.getQ().equals(pubKeySpec.getQ()) && prvKeySpec.getParams().equals(pubKeySpec.getParams());
+        }
+        return false;
+    }
+
+    static void verifyPrivateKeyCertsMatch(PrivateKey privateKey, List<? extends Certificate> certificates) throws KeyRefresherException {
+        // if the check is disabled then we have nothing to do
+        if (disablePublicKeyCheck) {
+            return;
+        }
+        // we need to make sure at least one of the certificates matches
+        // the public key for the given private key
+        try {
+            for (Certificate certificate : certificates) {
+                if (verifyPrivatePublicKeyMatch(privateKey, certificate.getPublicKey())) {
+                    return;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        throw new KeyRefresherException("Public key mismatch");
     }
 
     /**
@@ -458,7 +622,7 @@ public class Utils {
                 keyStore.setCertificateEntry(alias, certificate);
             }
         } catch (CertificateException | NoSuchAlgorithmException e) {
-            String keyStoreFailMsg = "Unable to load the inputstream as a KeyStore.  Please check the content.";
+            String keyStoreFailMsg = "Unable to load the input stream as a KeyStore. Please check the content.";
             throw new KeyRefresherException(keyStoreFailMsg, e);
         } catch (KeyStoreException ex) {
             LOG.error("No Provider supports a KeyStoreSpi implementation for the specified type {}", DEFAULT_KEYSTORE_TYPE, ex);

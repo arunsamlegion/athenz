@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,10 @@ import React from 'react';
 import styled from '@emotion/styled';
 import RoleGroup from '../role/RoleGroup';
 import { GROUP_ROLES_CATEGORY } from '../constants/constants';
+import { selectIsLoading } from '../../redux/selectors/loading';
+import { connect } from 'react-redux';
+import { ReduxPageLoader } from '../denali/ReduxPageLoader';
+import { selectTimeZone } from '../../redux/selectors/domains';
 
 const StyleTable = styled.div`
     width: 100%;
@@ -33,7 +37,6 @@ const GroupRoleDiv = styled.div`
 const TableHeadStyled = styled.div`
     border-bottom: 2px solid rgb(213, 213, 213);
     color: rgb(154, 154, 154);
-    font-size: 0.8rem;
     vertical-align: top;
     text-transform: uppercase;
     padding: 5px 0px 5px 15px;
@@ -46,10 +49,9 @@ const TableHeadStyledLabel = styled.div`
     width: ${(props) => props.width};
 `;
 
-export default class GroupRoleTable extends React.Component {
+class GroupRoleTable extends React.Component {
     constructor(props) {
         super(props);
-        this.api = props.api;
         let subRows = [];
 
         if (props.prefixes) {
@@ -104,12 +106,12 @@ export default class GroupRoleTable extends React.Component {
                         <RoleGroup
                             category={GROUP_ROLES_CATEGORY}
                             key={'group-role:' + name}
-                            api={this.api}
                             domain={name}
                             name={name}
                             roles={this.state.rows[name]}
                             onUpdateSuccess={this.props.onSubmit}
                             _csrf={this.props._csrf}
+                            timeZone={this.props.timeZone}
                         />
                     );
                     rows.push(roleGroup);
@@ -125,7 +127,9 @@ export default class GroupRoleTable extends React.Component {
             );
         }
 
-        return (
+        return this.props.isLoading.length !== 0 ? (
+            <ReduxPageLoader message={'Loading group data'} />
+        ) : (
             <StyleTable key='role-table' data-testid='roletable'>
                 <TableHeadStyled>
                     <TableHeadStyledLabel align={left} width={'50%'}>
@@ -138,8 +142,18 @@ export default class GroupRoleTable extends React.Component {
                         Members
                     </TableHeadStyledLabel>
                 </TableHeadStyled>
-                <tbody>{rows}</tbody>
+                <GroupRoleDiv>{rows}</GroupRoleDiv>
             </StyleTable>
         );
     }
 }
+
+const mapStateToProps = (state, props) => {
+    return {
+        ...props,
+        isLoading: selectIsLoading(state),
+        timeZone: selectTimeZone(state),
+    };
+};
+
+export default connect(mapStateToProps)(GroupRoleTable);

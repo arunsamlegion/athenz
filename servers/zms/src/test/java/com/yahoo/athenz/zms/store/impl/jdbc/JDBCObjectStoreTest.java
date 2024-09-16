@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,6 @@ import org.mockito.Mockito;
 import org.testng.annotations.Test;
 
 import com.yahoo.athenz.common.server.db.PoolableDataSource;
-import com.yahoo.athenz.zms.store.impl.jdbc.JDBCObjectStore;
 
 import static org.testng.Assert.*;
 

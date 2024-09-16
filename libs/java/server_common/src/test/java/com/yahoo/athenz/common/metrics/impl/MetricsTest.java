@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,9 +20,6 @@ import org.testng.annotations.Test;
 
 import com.yahoo.athenz.common.metrics.Metric;
 import com.yahoo.athenz.common.metrics.MetricFactory;
-
-import java.util.HashMap;
-import java.util.Map;
 
 public class MetricsTest {
 
@@ -105,7 +102,6 @@ public class MetricsTest {
         };
 
         metric.increment("metric1");
-        //metric.increment("metric1", "athenz");
         metric.increment("metric1", "athenz", 3);
         metric.increment("metric1", "athenz", "sports");
         metric.increment("metric1", "athenz", "sports", 3);
@@ -118,11 +114,66 @@ public class MetricsTest {
         };
         metric.increment("metric1", attributes);
 
-        //assertNull(metric.startTiming("metric1", "athenz"));
         assertNull(metric.startTiming("metric1", "athenz", "sports"));
         assertNull(metric.startTiming("apiRquestsMetric", "athenz", "sports", "POST", "caller"));
 
-        //metric.stopTiming("metric1");
+        metric.stopTiming("metric1", "athenz", "sports");
+        metric.stopTiming("apiRquestsMetric", "athenz", "sports", "POST", 200, "caller");
+        metric.flush();
+        metric.quit();
+    }
+
+    @Test
+    public void testMetricInterfaceNonDefaults() {
+
+        Metric metric = new Metric() {
+
+            @Override
+            public void increment(String metric) {
+            }
+
+            @Override
+            public void increment(String metric, String requestDomainName) {
+            }
+
+            @Override
+            public void increment(String metric, String requestDomainName, int count) {
+            }
+
+            @Override
+            public Object startTiming(String metric, String requestDomainName) {
+                return null;
+            }
+
+            @Override
+            public void stopTiming(Object timerMetric) {
+            }
+
+            @Override
+            public void flush() {
+            }
+
+            @Override
+            public void quit() {
+            }
+        };
+
+        metric.increment("metric1");
+        metric.increment("metric1", "athenz", 3);
+        metric.increment("metric1", "athenz", "sports");
+        metric.increment("metric1", "athenz", "sports", 3);
+        metric.increment("apiRquestsMetric", "athenz", "sports", "POST", 200, "caller");
+
+        String[] attributes = new String[] {
+                "tag1", "value1",
+                "tag2", "value2",
+                "tag3", "value3",
+        };
+        metric.increment("metric1", attributes);
+
+        assertNull(metric.startTiming("metric1", "athenz", "sports"));
+        assertNull(metric.startTiming("apiRquestsMetric", "athenz", "sports", "POST", "caller"));
+
         metric.stopTiming("metric1", "athenz", "sports");
         metric.stopTiming("apiRquestsMetric", "athenz", "sports", "POST", 200, "caller");
         metric.flush();

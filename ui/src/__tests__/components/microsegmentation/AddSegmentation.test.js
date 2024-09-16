@@ -14,28 +14,50 @@
  * limitations under the License.
  */
 import React from 'react';
-import {fireEvent, render} from '@testing-library/react';
-import AddSegmentation from "../../../components/microsegmentation/AddSegmentation";
-import API from "../../../api";
+import {
+    buildServicesForState,
+    getStateWithServices,
+    renderWithRedux,
+} from '../../../tests_utils/ComponentsTestUtils';
+import AddSegmentation from '../../../components/microsegmentation/AddSegmentation';
+import { resetIdCounter } from 'downshift';
 
 describe('AddSegmentation', () => {
+    beforeEach(() => {
+        resetIdCounter();
+    });
+    const pageFeatureFlag = {
+        policyValidation: true,
+    };
+
+    const services = buildServicesForState([
+        {
+            name: 'user.test1',
+        },
+        {
+            name: 'user.test2',
+        },
+    ]);
+
+    beforeEach(() => resetIdCounter());
+
     it('should render', () => {
         let domain = 'domain';
         const showAddSegmentation = true;
-        const cancel = function() {};
-        const submit = function() {};
+        const cancel = function () {};
+        const submit = function () {};
         let _csrf = 'csrf';
-
-        const { getByTestId } = render(
+        const { getByTestId } = renderWithRedux(
             <AddSegmentation
-                api={API()}
                 domain={domain}
                 onSubmit={submit}
                 onCancel={cancel}
                 _csrf={_csrf}
                 showAddSegment={showAddSegmentation}
                 justificationRequired={false}
-            />
+                pageFeatureFlag={pageFeatureFlag}
+            />,
+            getStateWithServices(services)
         );
         const addsegment = getByTestId('add-segment');
         expect(addsegment).toMatchSnapshot();
@@ -43,31 +65,23 @@ describe('AddSegmentation', () => {
 
     it('should render fail to submit add-segmentation: destinationService is required', () => {
         const showAddSegmentation = true;
-        const cancel = function() {};
+        const cancel = function () {};
         const domain = 'domain';
-        let role ='roleName';
-        const submit = function() {};
+        let role = 'roleName';
+        const submit = function () {};
         let _csrf = 'csrf';
-        const api = {
-            getServices(domain) {
-                return new Promise((resolve, reject) => {
-                    resolve(['a, b']);
-                });
-            },
-        };
-        const { getByTestId, getByText } =  render(
+        const { getByTestId, getByText } = renderWithRedux(
             <AddSegmentation
-                api={api}
                 domain={domain}
                 onSubmit={submit}
                 onCancel={cancel}
                 _csrf={_csrf}
                 showAddSegment={showAddSegmentation}
                 justificationRequired={false}
+                pageFeatureFlag={pageFeatureFlag}
             />
         );
         const addSegmentation = getByTestId('add-modal-message');
         expect(addSegmentation).toMatchSnapshot();
     });
-
 });

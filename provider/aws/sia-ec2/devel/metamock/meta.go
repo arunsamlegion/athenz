@@ -1,5 +1,5 @@
 //
-// Copyright 2020 Verizon Media
+// Copyright The Athenz Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -38,7 +38,7 @@ var (
 		"instanceId" : "i-03d1ae7035f931a90",
 		"billingProducts" : null,
 		"instanceType" : "t2.micro",
-		"accountId" : "000000000000",
+		"accountId" : "000000000001",
 		"imageId" : "ami-527b8832",
 		"pendingTime" : "2016-05-02T22:23:14Z",
 		"architecture" : "x86_64",
@@ -60,10 +60,12 @@ func StartMetaServer(EndPoint string) {
 	http.HandleFunc("/latest/dynamic/instance-identity/pkcs7", func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, signature)
 	})
-
+	http.HandleFunc("/latest/meta-data/public-ipv4", func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "172.31.30.75")
+	})
 	log.Println("Starting Meta Mock listening on: " + EndPoint)
 	err := http.ListenAndServe(EndPoint, nil)
 	if err != nil {
-		log.Fatal("ListenAndServe: ", err)
+		log.Fatalf("ListenAndServe: %v\n", err)
 	}
 }

@@ -7,9 +7,6 @@ exports[`RulesList should render 1`] = `
 
 .emotion-2 {
   padding-bottom: 20px;
-  display: -webkit-box;
-  display: -webkit-flex;
-  display: -ms-flexbox;
   display: flex;
   -webkit-box-pack: justify;
   -webkit-justify-content: space-between;
@@ -26,9 +23,13 @@ exports[`RulesList should render 1`] = `
 }
 
 .emotion-4 {
+  margin-right: 10px;
+}
+
+.emotion-6 {
   border: none;
   border-radius: 2px;
-  box-shadow: 0 0 0 1px transparent inset,0 0 0 0 #d5d5d5 inset;
+  box-shadow: 0 0 0 1px #3697f2 inset;
   box-sizing: border-box;
   cursor: pointer;
   display: inline-block;
@@ -47,29 +48,28 @@ exports[`RulesList should render 1`] = `
   vertical-align: baseline;
   white-space: nowrap;
   background: transparent;
-  box-shadow: 0 0 0 1px #3697f2 inset;
   color: #3697f2;
 }
 
-.emotion-4:first-of-type {
+.emotion-6:first-of-type {
   margin-left: 0;
 }
 
-.emotion-4:disabled {
+.emotion-6:disabled {
   background: rgba(48,48,48,0.1);
   color: rgba(48,48,48,0.2);
   cursor: not-allowed;
 }
 
-.emotion-4:disabled {
+.emotion-6:disabled {
   box-shadow: 0 0 0 1px rgba(48,48,48,0.1) inset;
 }
 
-.emotion-4:hover:not(:disabled) {
+.emotion-6:hover:not(:disabled) {
   background: #d7e2fd;
 }
 
-.emotion-5 {
+.emotion-7 {
   width: 100%;
   border-spacing: 0;
   display: table;
@@ -79,14 +79,12 @@ exports[`RulesList should render 1`] = `
   margin-top: 5px;
   box-shadow: 0 1px 4px #d9d9d9;
   border: 1px solid #fff;
-  -webkit-border-image: none;
-  border-image: none;
   -webkit-border-image: initial;
   border-image: initial;
   height: 50px;
 }
 
-.emotion-7 {
+.emotion-9 {
   height: 25px;
   margin-left: 10px;
   margin-top: 10px;
@@ -95,20 +93,21 @@ exports[`RulesList should render 1`] = `
   vertical-align: middle;
   word-break: break-all;
   display: block;
+  font-weight: lighter;
 }
 
-.emotion-9 {
+.emotion-11 {
   margin-right: 10px;
   verticalalign: bottom;
 }
 
-.emotion-11 {
+.emotion-13 {
   fill: #188fff;
   cursor: pointer;
   vertical-align: text-bottom;
 }
 
-.emotion-12 {
+.emotion-14 {
   text-align: left;
   border-bottom: 2px solid #d5d5d5;
   color: #9a9a9a;
@@ -121,7 +120,7 @@ exports[`RulesList should render 1`] = `
   word-break: break-all;
 }
 
-.emotion-16 {
+.emotion-18 {
   text-align: left;
   border-bottom: 2px solid #d5d5d5;
   color: #9a9a9a;
@@ -134,7 +133,7 @@ exports[`RulesList should render 1`] = `
   word-break: break-all;
 }
 
-.emotion-24 {
+.emotion-28 {
   text-align: center;
   border-bottom: 2px solid #d5d5d5;
   color: #9a9a9a;
@@ -147,7 +146,7 @@ exports[`RulesList should render 1`] = `
   word-break: break-all;
 }
 
-.emotion-32 {
+.emotion-36 {
   background-color: #3570f40D;
   text-align: left;
   padding: 5px 0 5px 15px;
@@ -155,7 +154,7 @@ exports[`RulesList should render 1`] = `
   word-break: break-all;
 }
 
-.emotion-38 {
+.emotion-42 {
   background-color: #3570f40D;
   text-align: left;
   padding: 5px 0 5px 15px;
@@ -165,7 +164,7 @@ exports[`RulesList should render 1`] = `
   text-decoration: dashed underline;
 }
 
-.emotion-45 {
+.emotion-51 {
   background-color: #3570f40D;
   text-align: center;
   padding: 5px 0 5px 15px;
@@ -175,7 +174,7 @@ exports[`RulesList should render 1`] = `
   text-decoration: dashed underline;
 }
 
-.emotion-48 {
+.emotion-54 {
   background-color: #3570f40D;
   text-align: center;
   padding: 5px 0 5px 15px;
@@ -190,86 +189,124 @@ exports[`RulesList should render 1`] = `
   <div
     class="emotion-2 emotion-3"
   >
+    <div
+      class="emotion-4 emotion-5"
+    >
+      <div
+        class="toggle is-small"
+      >
+        <input
+          checked=""
+          id="tabular"
+          name="tabular"
+          type="radio"
+          value="tabular"
+        />
+        <label
+          for="tabular"
+        >
+          Tabular
+        </label>
+        <input
+          id="graphical"
+          name="graphical"
+          type="radio"
+          value="graphical"
+        />
+        <label
+          for="graphical"
+        >
+          Graphical
+        </label>
+      </div>
+    </div>
     <div>
       <button
-        class="emotion-4 denali-button"
+        class="emotion-6 denali-button"
       >
         Add ACL Policy
       </button>
-      
     </div>
   </div>
   <table
-    class="emotion-5 emotion-6"
+    class="emotion-7 emotion-8"
     data-testid="segmentation-rule-table"
   >
     <thead>
-      <caption
-        class="emotion-7 emotion-8"
-      >
-        <span
-          class="emotion-9 emotion-10"
-        >
-          <svg
-            class="emotion-11"
-            data-testid="icon"
-            height="1.25em"
-            viewBox="0 0 1024 1024"
-            width="1.25em"
-          >
-            <title>
-              arrowhead-up-circle-solid
-            </title>
-            <path
-              d="M512 42.667c-259.206 0-469.333 210.128-469.333 469.333s210.128 469.333 469.333 469.333c259.206 0 469.333-210.128 469.333-469.333v0c0.003-0.635 0.005-1.387 0.005-2.138 0-258.027-209.173-467.2-467.2-467.2-0.752 0-1.504 0.002-2.255 0.005l0.117-0zM718.933 601.6c-9.129 9.862-21.88 16.257-36.127 17.060l-0.14 0.006h-341.333c-14.386-0.81-27.138-7.205-36.235-17.032l-0.032-0.035c-4.299-6.754-6.851-14.984-6.851-23.81 0-13.46 5.936-25.533 15.332-33.745l0.053-0.045 168.533-168.533c7.434-8.083 18.061-13.13 29.867-13.13s22.432 5.047 29.84 13.101l0.026 0.029 168.533 168.533c9.449 8.257 15.384 20.33 15.384 33.79 0 8.826-2.552 17.056-6.959 23.992l0.108-0.182z"
-            />
-          </svg>
-        </span>
-        Inbound (1)
-      </caption>
       <tr>
         <th
-          class="emotion-12 emotion-13"
+          class="emotion-9 emotion-10"
+        >
+          <span
+            class="emotion-11 emotion-12"
+          >
+            <svg
+              class="emotion-13"
+              data-testid="icon"
+              height="1.25em"
+              id=""
+              viewBox="0 0 1024 1024"
+              width="1.25em"
+            >
+              <title>
+                arrowhead-up-circle-solid
+              </title>
+              <path
+                d="M512 42.667c-259.206 0-469.333 210.128-469.333 469.333s210.128 469.333 469.333 469.333c259.206 0 469.333-210.128 469.333-469.333v0c0.003-0.635 0.005-1.387 0.005-2.138 0-258.027-209.173-467.2-467.2-467.2-0.752 0-1.504 0.002-2.255 0.005l0.117-0zM718.933 601.6c-9.129 9.862-21.88 16.257-36.127 17.060l-0.14 0.006h-341.333c-14.386-0.81-27.138-7.205-36.235-17.032l-0.032-0.035c-4.299-6.754-6.851-14.984-6.851-23.81 0-13.46 5.936-25.533 15.332-33.745l0.053-0.045 168.533-168.533c7.434-8.083 18.061-13.13 29.867-13.13s22.432 5.047 29.84 13.101l0.026 0.029 168.533 168.533c9.449 8.257 15.384 20.33 15.384 33.79 0 8.826-2.552 17.056-6.959 23.992l0.108-0.182z"
+              />
+            </svg>
+          </span>
+          Inbound (1)
+        </th>
+      </tr>
+      <tr>
+        <th
+          class="emotion-14 emotion-15"
         >
           Identifier
         </th>
         <th
-          class="emotion-12 emotion-13"
+          class="emotion-14 emotion-15"
         >
           Destination Service
         </th>
         <th
-          class="emotion-16 emotion-17"
+          class="emotion-18 emotion-19"
         >
           Destination Port
         </th>
         <th
-          class="emotion-16 emotion-17"
+          class="emotion-18 emotion-19"
         >
           Source Service
         </th>
         <th
-          class="emotion-16 emotion-17"
+          class="emotion-18 emotion-19"
         >
           Source Port
         </th>
         <th
-          class="emotion-16 emotion-17"
+          class="emotion-18 emotion-19"
         >
           Layer
         </th>
         <th
-          class="emotion-24 emotion-17"
+          class="emotion-18 emotion-19"
+        >
+          Scope
+        </th>
+        <th
+          class="emotion-28 emotion-19"
         >
           Enforcement State
         </th>
         <th
-          class="emotion-24 emotion-17"
+          class="emotion-28 emotion-19"
         >
           Edit
         </th>
         <th
-          class="emotion-24 emotion-17"
+          class="emotion-28 emotion-19"
         >
           Delete
         </th>
@@ -277,32 +314,33 @@ exports[`RulesList should render 1`] = `
     </thead>
     <tbody>
       <tr
-        class="emotion-30 emotion-31"
+        class="emotion-34 emotion-35"
         data-testid="segmentation-row"
       >
         <td
-          class="emotion-32 emotion-33"
+          class="emotion-36 emotion-37"
           color="#3570f40D"
         />
         <td
-          class="emotion-32 emotion-33"
+          class="emotion-36 emotion-37"
           color="#3570f40D"
         />
         <td
-          class="emotion-32 emotion-33"
+          class="emotion-36 emotion-37"
           color="#3570f40D"
         >
           2222
         </td>
         <td
-          class="emotion-38 emotion-39"
+          class="emotion-42 emotion-43"
           color="#3570f40D"
         >
           <span>
             <svg
-              class="emotion-11"
+              class="emotion-13"
               data-testid="icon"
               height="1.25em"
+              id=""
               viewBox="0 0 1024 1024"
               width="1.25em"
             >
@@ -319,26 +357,33 @@ exports[`RulesList should render 1`] = `
           </span>
         </td>
         <td
-          class="emotion-32 emotion-33"
+          class="emotion-36 emotion-37"
           color="#3570f40D"
         >
           1111
         </td>
         <td
-          class="emotion-32 emotion-33"
+          class="emotion-36 emotion-37"
           color="#3570f40D"
         >
           tcp
         </td>
         <td
-          class="emotion-45 emotion-39"
+          class="emotion-36 emotion-37"
+          color="#3570f40D"
+        >
+          OnPrem
+        </td>
+        <td
+          class="emotion-51 emotion-43"
           color="#3570f40D"
         >
           <span>
             <svg
-              class="emotion-11"
+              class="emotion-13"
               data-testid="icon"
               height="1.25em"
+              id=""
               viewBox="0 0 1024 1024"
               width="1.25em"
             >
@@ -361,14 +406,15 @@ exports[`RulesList should render 1`] = `
           </span>
         </td>
         <td
-          class="emotion-48 emotion-33"
+          class="emotion-54 emotion-37"
           color="#3570f40D"
         >
           <span>
             <svg
-              class="emotion-11"
+              class="emotion-13"
               data-testid="icon"
               height="1.25em"
+              id=""
               viewBox="0 0 1024 1024"
               width="1.25em"
             >
@@ -381,16 +427,16 @@ exports[`RulesList should render 1`] = `
             </svg>
           </span>
         </td>
-        
         <td
-          class="emotion-48 emotion-33"
+          class="emotion-54 emotion-37"
           color="#3570f40D"
         >
           <span>
             <svg
-              class="emotion-11"
+              class="emotion-13"
               data-testid="icon"
               height="1.25em"
+              id=""
               viewBox="0 0 1024 1024"
               width="1.25em"
             >
@@ -411,76 +457,84 @@ exports[`RulesList should render 1`] = `
   </table>
   <br />
   <table
-    class="emotion-5 emotion-6"
+    class="emotion-7 emotion-8"
     data-testid="segmentation-rule-table"
   >
     <thead>
-      <caption
-        class="emotion-7 emotion-8"
-      >
-        <span
-          class="emotion-9 emotion-10"
-        >
-          <svg
-            class="emotion-11"
-            data-testid="icon"
-            height="1.25em"
-            viewBox="0 0 1024 1024"
-            width="1.25em"
-          >
-            <title>
-              arrowhead-up-circle-solid
-            </title>
-            <path
-              d="M512 42.667c-259.206 0-469.333 210.128-469.333 469.333s210.128 469.333 469.333 469.333c259.206 0 469.333-210.128 469.333-469.333v0c0.003-0.635 0.005-1.387 0.005-2.138 0-258.027-209.173-467.2-467.2-467.2-0.752 0-1.504 0.002-2.255 0.005l0.117-0zM718.933 601.6c-9.129 9.862-21.88 16.257-36.127 17.060l-0.14 0.006h-341.333c-14.386-0.81-27.138-7.205-36.235-17.032l-0.032-0.035c-4.299-6.754-6.851-14.984-6.851-23.81 0-13.46 5.936-25.533 15.332-33.745l0.053-0.045 168.533-168.533c7.434-8.083 18.061-13.13 29.867-13.13s22.432 5.047 29.84 13.101l0.026 0.029 168.533 168.533c9.449 8.257 15.384 20.33 15.384 33.79 0 8.826-2.552 17.056-6.959 23.992l0.108-0.182z"
-            />
-          </svg>
-        </span>
-        Outbound (1)
-      </caption>
       <tr>
         <th
-          class="emotion-12 emotion-13"
+          class="emotion-9 emotion-10"
+        >
+          <span
+            class="emotion-11 emotion-12"
+          >
+            <svg
+              class="emotion-13"
+              data-testid="icon"
+              height="1.25em"
+              id=""
+              viewBox="0 0 1024 1024"
+              width="1.25em"
+            >
+              <title>
+                arrowhead-up-circle-solid
+              </title>
+              <path
+                d="M512 42.667c-259.206 0-469.333 210.128-469.333 469.333s210.128 469.333 469.333 469.333c259.206 0 469.333-210.128 469.333-469.333v0c0.003-0.635 0.005-1.387 0.005-2.138 0-258.027-209.173-467.2-467.2-467.2-0.752 0-1.504 0.002-2.255 0.005l0.117-0zM718.933 601.6c-9.129 9.862-21.88 16.257-36.127 17.060l-0.14 0.006h-341.333c-14.386-0.81-27.138-7.205-36.235-17.032l-0.032-0.035c-4.299-6.754-6.851-14.984-6.851-23.81 0-13.46 5.936-25.533 15.332-33.745l0.053-0.045 168.533-168.533c7.434-8.083 18.061-13.13 29.867-13.13s22.432 5.047 29.84 13.101l0.026 0.029 168.533 168.533c9.449 8.257 15.384 20.33 15.384 33.79 0 8.826-2.552 17.056-6.959 23.992l0.108-0.182z"
+              />
+            </svg>
+          </span>
+          Outbound (1)
+        </th>
+      </tr>
+      <tr>
+        <th
+          class="emotion-14 emotion-15"
         >
           Identifier
         </th>
         <th
-          class="emotion-12 emotion-13"
+          class="emotion-14 emotion-15"
         >
           Source Service
         </th>
         <th
-          class="emotion-16 emotion-17"
+          class="emotion-18 emotion-19"
         >
           Source Port
         </th>
         <th
-          class="emotion-16 emotion-17"
+          class="emotion-18 emotion-19"
         >
           Destination Service
         </th>
         <th
-          class="emotion-16 emotion-17"
+          class="emotion-18 emotion-19"
         >
           Destination Port
         </th>
         <th
-          class="emotion-16 emotion-17"
+          class="emotion-18 emotion-19"
         >
           Layer
         </th>
         <th
-          class="emotion-24 emotion-17"
+          class="emotion-18 emotion-19"
+        >
+          Scope
+        </th>
+        <th
+          class="emotion-28 emotion-19"
         >
           Enforcement State
         </th>
         <th
-          class="emotion-24 emotion-17"
+          class="emotion-28 emotion-19"
         >
           Edit
         </th>
         <th
-          class="emotion-24 emotion-17"
+          class="emotion-28 emotion-19"
         >
           Delete
         </th>
@@ -488,34 +542,35 @@ exports[`RulesList should render 1`] = `
     </thead>
     <tbody>
       <tr
-        class="emotion-30 emotion-31"
+        class="emotion-34 emotion-35"
         data-testid="segmentation-row"
       >
         <td
-          class="emotion-32 emotion-33"
+          class="emotion-36 emotion-37"
           color="#3570f40D"
         />
         <td
-          class="emotion-32 emotion-33"
+          class="emotion-36 emotion-37"
           color="#3570f40D"
         >
           serviceE
         </td>
         <td
-          class="emotion-32 emotion-33"
+          class="emotion-36 emotion-37"
           color="#3570f40D"
         >
           3333
         </td>
         <td
-          class="emotion-38 emotion-39"
+          class="emotion-42 emotion-43"
           color="#3570f40D"
         >
           <span>
             <svg
-              class="emotion-11"
+              class="emotion-13"
               data-testid="icon"
               height="1.25em"
+              id=""
               viewBox="0 0 1024 1024"
               width="1.25em"
             >
@@ -532,26 +587,33 @@ exports[`RulesList should render 1`] = `
           </span>
         </td>
         <td
-          class="emotion-32 emotion-33"
+          class="emotion-36 emotion-37"
           color="#3570f40D"
         >
           4444
         </td>
         <td
-          class="emotion-32 emotion-33"
+          class="emotion-36 emotion-37"
           color="#3570f40D"
         >
           udp
         </td>
         <td
-          class="emotion-45 emotion-39"
+          class="emotion-36 emotion-37"
+          color="#3570f40D"
+        >
+          OnPrem
+        </td>
+        <td
+          class="emotion-51 emotion-43"
           color="#3570f40D"
         >
           <span>
             <svg
-              class="emotion-11"
+              class="emotion-13"
               data-testid="icon"
               height="1.25em"
+              id=""
               viewBox="0 0 1024 1024"
               width="1.25em"
             >
@@ -565,14 +627,15 @@ exports[`RulesList should render 1`] = `
           </span>
         </td>
         <td
-          class="emotion-48 emotion-33"
+          class="emotion-54 emotion-37"
           color="#3570f40D"
         >
           <span>
             <svg
-              class="emotion-11"
+              class="emotion-13"
               data-testid="icon"
               height="1.25em"
+              id=""
               viewBox="0 0 1024 1024"
               width="1.25em"
             >
@@ -585,16 +648,16 @@ exports[`RulesList should render 1`] = `
             </svg>
           </span>
         </td>
-        
         <td
-          class="emotion-48 emotion-33"
+          class="emotion-54 emotion-37"
           color="#3570f40D"
         >
           <span>
             <svg
-              class="emotion-11"
+              class="emotion-13"
               data-testid="icon"
               height="1.25em"
+              id=""
               viewBox="0 0 1024 1024"
               width="1.25em"
             >

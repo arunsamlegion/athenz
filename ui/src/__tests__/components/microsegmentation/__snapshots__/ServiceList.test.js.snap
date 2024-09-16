@@ -18,8 +18,6 @@ exports[`ServiceList should render 1`] = `
   margin-top: 5px;
   box-shadow: 0 1px 4px #d9d9d9;
   border: 5px solid #fff;
-  -webkit-border-image: none;
-  border-image: none;
   -webkit-border-image: initial;
   border-image: initial;
   max-height: 600px;
@@ -51,60 +49,64 @@ exports[`ServiceList should render 1`] = `
   <table
     class="emotion-2 emotion-3"
   >
-    <tr
-      class="emotion-4 emotion-5"
-    >
-      <th
-        class="emotion-6 emotion-7"
+    <thead>
+      <tr
+        class="emotion-4 emotion-5"
       >
-         Services 
-      </th>
-    </tr>
-    <tr
-      class="emotion-4 emotion-5"
-    >
-      <td
-        class="emotion-10 emotion-11"
-      >
-        <a
-          class="emotion-12 emotion-13"
+        <th
+          class="emotion-6 emotion-7"
         >
-           
-          serviceB
-           
-        </a>
-      </td>
-    </tr>
-    <tr
-      class="emotion-4 emotion-5"
-    >
-      <td
-        class="emotion-10 emotion-11"
+           Services 
+        </th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr
+        class="emotion-4 emotion-5"
       >
-        <a
-          class="emotion-12 emotion-13"
+        <td
+          class="emotion-10 emotion-11"
         >
-           
-          serviceC
-           
-        </a>
-      </td>
-    </tr>
-    <tr
-      class="emotion-4 emotion-5"
-    >
-      <td
-        class="emotion-10 emotion-11"
+          <a
+            class="emotion-12 emotion-13"
+          >
+             
+            serviceB
+             
+          </a>
+        </td>
+      </tr>
+      <tr
+        class="emotion-4 emotion-5"
       >
-        <a
-          class="emotion-12 emotion-13"
+        <td
+          class="emotion-10 emotion-11"
         >
-           
-          serviceD
-           
-        </a>
-      </td>
-    </tr>
+          <a
+            class="emotion-12 emotion-13"
+          >
+             
+            serviceC
+             
+          </a>
+        </td>
+      </tr>
+      <tr
+        class="emotion-4 emotion-5"
+      >
+        <td
+          class="emotion-10 emotion-11"
+        >
+          <a
+            class="emotion-12 emotion-13"
+          >
+             
+            serviceD
+             
+          </a>
+        </td>
+      </tr>
+    </tbody>
   </table>
 </div>
 `;

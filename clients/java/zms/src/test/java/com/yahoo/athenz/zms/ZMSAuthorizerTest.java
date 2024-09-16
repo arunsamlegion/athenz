@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,10 +21,11 @@ import org.testng.annotations.Test;
 import com.yahoo.athenz.auth.Authority;
 import com.yahoo.athenz.auth.Principal;
 import com.yahoo.athenz.auth.impl.SimplePrincipal;
-import com.yahoo.athenz.zms.ZMSAuthorizer;
 
 import static org.testng.Assert.*;
 
+import java.io.IOException;
+import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -32,7 +33,7 @@ import org.mockito.Mockito;
 
 public class ZMSAuthorizerTest {
 
-    private static String ZMS_CLIENT_PROP_TEST_ADMIN = "athenz.zms.client.test_admin";
+    private static final String ZMS_CLIENT_PROP_TEST_ADMIN = "athenz.zms.client.test_admin";
     private static final String AUDIT_REF = "zmsjcltauthtest";
 
     private String systemAdminUser = null;
@@ -47,7 +48,7 @@ public class ZMSAuthorizerTest {
     }
 
     @Test
-    public void testAuthorizer() {
+    public void testAuthorizer() throws URISyntaxException, IOException {
 
         ZMSClient client = getClient(systemAdminUser);
         String domain = "authorizerdom1";
@@ -63,7 +64,7 @@ public class ZMSAuthorizerTest {
         ZMSRDLGeneratedClient zmsRdlClient = Mockito.mock(ZMSRDLGeneratedClient.class);
         client.setZMSRDLGeneratedClient(zmsRdlClient);
         Domain domainMock = Mockito.mock(Domain.class);
-        Mockito.when(zmsRdlClient.postTopLevelDomain(Mockito.any(), Mockito.any(TopLevelDomain.class)))
+        Mockito.when(zmsRdlClient.postTopLevelDomain(Mockito.any(), Mockito.isNull(), Mockito.any(TopLevelDomain.class)))
                 .thenReturn(domainMock);
 
         setupAccess(client, domain);
@@ -133,7 +134,7 @@ public class ZMSAuthorizerTest {
         }
         
         TopLevelDomain topLevelDomainMock = Mockito.mock(TopLevelDomain.class);
-        Mockito.when(zmsRdlClient.deleteTopLevelDomain(domain, AUDIT_REF)).thenReturn(topLevelDomainMock);
+        Mockito.when(zmsRdlClient.deleteTopLevelDomain(domain, null, AUDIT_REF)).thenReturn(topLevelDomainMock);
         cleanUpAccess(domain);
     }
 
@@ -150,7 +151,7 @@ public class ZMSAuthorizerTest {
     }
 
     @Test
-    public void testAddCredentials() {
+    public void testAddCredentials() throws URISyntaxException, IOException {
         ZMSClient client = getClient(systemAdminUser);
         String domain = "AuthorizerDom5";
         ZMSAuthorizer authorizer = new ZMSAuthorizer(zmsUrl, null);
@@ -161,7 +162,7 @@ public class ZMSAuthorizerTest {
         ZMSRDLGeneratedClient c = Mockito.mock(ZMSRDLGeneratedClient.class);
         client.setZMSRDLGeneratedClient(c);
         Domain domainMock = Mockito.mock(Domain.class);
-        Mockito.when(c.postTopLevelDomain(Mockito.any(), Mockito.any(TopLevelDomain.class)))
+        Mockito.when(c.postTopLevelDomain(Mockito.any(), Mockito.isNull(), Mockito.any(TopLevelDomain.class)))
                 .thenReturn(domainMock);
 
         setupAccess(client, domain);
@@ -200,7 +201,7 @@ public class ZMSAuthorizerTest {
     }
 
     @Test
-    public void testAuthorizerNoDomain() {
+    public void testAuthorizerNoDomain() throws URISyntaxException, IOException {
         ZMSClient client = getClient(systemAdminUser);
         String domain = "AuthorizerDom3";
         ZMSAuthorizer authorizer = new ZMSAuthorizer(zmsUrl, null);
@@ -215,7 +216,7 @@ public class ZMSAuthorizerTest {
         ZMSRDLGeneratedClient c = Mockito.mock(ZMSRDLGeneratedClient.class);
         client.setZMSRDLGeneratedClient(c);
         Domain domainMock = Mockito.mock(Domain.class);
-        Mockito.when(c.postTopLevelDomain(Mockito.any(), Mockito.any(TopLevelDomain.class)))
+        Mockito.when(c.postTopLevelDomain(Mockito.any(), Mockito.isNull(), Mockito.any(TopLevelDomain.class)))
                 .thenReturn(domainMock);
 
         setupAccess(client, domain);
@@ -237,13 +238,13 @@ public class ZMSAuthorizerTest {
         access = authorizer.access("UPDATE", domain + ":resource1", p3, domain);
         assertTrue(access);
         TopLevelDomain topLevelDomainMock = Mockito.mock(TopLevelDomain.class);
-        Mockito.when(c.deleteTopLevelDomain(domain, AUDIT_REF)).thenReturn(topLevelDomainMock);
+        Mockito.when(c.deleteTopLevelDomain(domain, null, AUDIT_REF)).thenReturn(topLevelDomainMock);
         authorizer.close();
         cleanUpAccess(domain);
     }
 
     @Test
-    public void testAuthorizerResourceWithDomain() {
+    public void testAuthorizerResourceWithDomain() throws URISyntaxException, IOException {
         ZMSClient client = getClient(systemAdminUser);
         String domain = "AuthorizerDom4";
         ZMSAuthorizer authorizer = new ZMSAuthorizer(zmsUrl, domain);
@@ -258,7 +259,7 @@ public class ZMSAuthorizerTest {
         ZMSRDLGeneratedClient c = Mockito.mock(ZMSRDLGeneratedClient.class);
         client.setZMSRDLGeneratedClient(c);
         Domain domainMock = Mockito.mock(Domain.class);
-        Mockito.when(c.postTopLevelDomain(Mockito.any(), Mockito.any(TopLevelDomain.class)))
+        Mockito.when(c.postTopLevelDomain(Mockito.any(), Mockito.isNull(), Mockito.any(TopLevelDomain.class)))
                 .thenReturn(domainMock);
         setupAccess(client, domain);
 
@@ -280,7 +281,7 @@ public class ZMSAuthorizerTest {
         assertTrue(access);
 
         TopLevelDomain topLevelDomainMock = Mockito.mock(TopLevelDomain.class);
-        Mockito.when(c.deleteTopLevelDomain(domain, AUDIT_REF)).thenReturn(topLevelDomainMock);
+        Mockito.when(c.deleteTopLevelDomain(domain, null, AUDIT_REF)).thenReturn(topLevelDomainMock);
         cleanUpAccess(domain);
     }
 

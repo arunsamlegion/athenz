@@ -4,9 +4,10 @@
 package com.yahoo.athenz.zts;
 
 import com.yahoo.rdl.*;
-import javax.ws.rs.core.Response;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.ws.rs.core.Response;
+import jakarta.servlet.ServletContext;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 //
 // ZTSHandler is the interface that the service implementation must implement
@@ -19,6 +20,7 @@ public interface ZTSHandler {
     PublicKeyEntry getPublicKeyEntry(ResourceContext context, String domainName, String serviceName, String keyId);
     HostServices getHostServices(ResourceContext context, String host);
     Response getDomainSignedPolicyData(ResourceContext context, String domainName, String matchingTag);
+    Response postSignedPolicyRequest(ResourceContext context, String domainName, SignedPolicyRequest request, String matchingTag);
     RoleToken getRoleToken(ResourceContext context, String domainName, String role, Integer minExpiryTime, Integer maxExpiryTime, String proxyForPrincipal);
     RoleToken postRoleCertificateRequest(ResourceContext context, String domainName, String roleName, RoleCertificateRequest req);
     Access getAccess(ResourceContext context, String domainName, String roleName, String principal);
@@ -33,13 +35,20 @@ public interface ZTSHandler {
     CertificateAuthorityBundle getCertificateAuthorityBundle(ResourceContext context, String name);
     Status getStatus(ResourceContext context);
     Response postSSHCertRequest(ResourceContext context, SSHCertRequest certRequest);
-    JWKList getJWKList(ResourceContext context, Boolean rfc);
+    OpenIDConfig getOpenIDConfig(ResourceContext context);
+    OAuthConfig getOAuthConfig(ResourceContext context);
+    JWKList getJWKList(ResourceContext context, Boolean rfc, String service);
     AccessTokenResponse postAccessTokenRequest(ResourceContext context, String request);
+    Response getOIDCResponse(ResourceContext context, String responseType, String clientId, String redirectUri, String scope, String state, String nonce, String keyType, Boolean fullArn, Integer expiryTime, String output, Boolean roleInAudClaim, Boolean allScopePresent);
     RoleCertificate postRoleCertificateRequestExt(ResourceContext context, RoleCertificateRequest req);
+    RoleAccess getRolesRequireRoleCert(ResourceContext context, String principal);
     Workloads getWorkloadsByService(ResourceContext context, String domainName, String serviceName);
     Workloads getWorkloadsByIP(ResourceContext context, String ip);
     TransportRules getTransportRules(ResourceContext context, String domainName, String serviceName);
+    Info getInfo(ResourceContext context);
+    ExternalCredentialsResponse postExternalCredentialsRequest(ResourceContext context, String provider, String domainName, ExternalCredentialsRequest request);
     Schema getRdlSchema(ResourceContext context);
-    ResourceContext newResourceContext(HttpServletRequest request, HttpServletResponse response, String apiName);
+    ResourceContext newResourceContext(ServletContext servletContext, HttpServletRequest request, HttpServletResponse response, String apiName);
     void recordMetrics(ResourceContext ctx, int httpStatus);
+    void publishChangeMessage(ResourceContext ctx, int httpStatus);
 }

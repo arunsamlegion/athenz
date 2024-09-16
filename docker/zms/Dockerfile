@@ -1,6 +1,6 @@
-FROM athenz-builder AS builder
+FROM athenz/athenz-builder AS builder
 
-FROM adoptopenjdk/openjdk8:alpine-jre
+FROM eclipse-temurin:11-jre-focal
 # date -u +'%Y-%m-%dT%H:%M:%SZ'
 ARG BUILD_DATE
 # git rev-parse --short HEAD
@@ -13,14 +13,15 @@ LABEL org.label-schema.description="Athenz ZMS server"
 LABEL org.label-schema.url="https://www.athenz.io/"
 LABEL org.label-schema.vcs-url="https://github.com/AthenZ/athenz"
 LABEL org.label-schema.vcs-ref=$VCS_REF
-# LABEL maintainer "YJ Athenz Team <>"
 
 ARG GID=1001
 ARG UID=10001
 
+RUN apt-get -y install bash
+
 # add athenz user
-RUN addgroup -g ${GID} athenz && \
-  adduser -S -D -H -s /sbin/nologin -u ${UID} -G athenz athenz
+RUN addgroup --system --gid ${GID} athenz && \
+  adduser --system --disabled-password --no-create-home --shell /sbin/nologin --uid ${UID} --ingroup athenz athenz
 USER athenz
 
 WORKDIR /opt/athenz/zms

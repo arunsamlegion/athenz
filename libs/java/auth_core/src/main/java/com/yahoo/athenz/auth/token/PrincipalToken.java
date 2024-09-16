@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,9 +41,9 @@ public class PrincipalToken extends Token {
     public static class Builder {
 
         // required attributes
-        private String domain;
-        private String name;
-        private String version;
+        private final String domain;
+        private final String name;
+        private final String version;
         
         // optional attributes with default values
         private String salt = Crypto.randomSalt();
@@ -402,7 +402,6 @@ public class PrincipalToken extends Token {
         try {
             pub = Crypto.loadPublicKey(pubKey);
             verified = Crypto.verify(unsignedAuthorizedServiceToken, pub, authorizedServiceSignature);
-            ///CLOVER:OFF
             if (!verified) {
                 errMsg.append("PrincipalToken:validateForAuthorizedService: token=").
                        append(unsignedToken).append(" : authentication failed: public key=").
@@ -411,7 +410,6 @@ public class PrincipalToken extends Token {
             } else if (LOG.isDebugEnabled()) {
                 LOG.debug("validateForAuthorizedService: Token: {} -  successfully authenticated", unsignedToken);
             }
-            ///CLOVER:ON
         } catch (Exception e) {
             errMsg.append("PrincipalToken:validateForAuthorizedService: token=").
                    append(unsignedToken).

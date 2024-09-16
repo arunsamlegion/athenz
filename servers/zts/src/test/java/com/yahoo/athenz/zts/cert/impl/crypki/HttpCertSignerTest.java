@@ -13,6 +13,7 @@ import java.io.InputStream;
 import java.net.ConnectException;
 import java.nio.charset.StandardCharsets;
 
+import com.yahoo.athenz.common.server.cert.Priority;
 import com.yahoo.athenz.instance.provider.InstanceProvider;
 import org.apache.http.HttpEntity;
 import org.apache.http.StatusLine;
@@ -47,7 +48,7 @@ public class HttpCertSignerTest {
         certSigner.close();
     }
 
-    private CloseableHttpResponse mockRequest(int expectedStatusCode, String expectedReponseContent) throws Exception {
+    private CloseableHttpResponse mockRequest(int expectedStatusCode, String expectedResponseContent) throws Exception {
         CloseableHttpResponse response = Mockito.mock(CloseableHttpResponse.class);
         StatusLine statusLine = Mockito.mock(StatusLine.class);
         Mockito.when(response.getStatusLine()).thenReturn(statusLine);
@@ -56,8 +57,8 @@ public class HttpCertSignerTest {
         HttpEntity httpEntity = Mockito.mock(HttpEntity.class);
         Mockito.when(response.getEntity()).thenReturn(httpEntity);
 
-        if (expectedReponseContent != null) {
-            InputStream stream = new ByteArrayInputStream(expectedReponseContent.getBytes(StandardCharsets.UTF_8));
+        if (expectedResponseContent != null) {
+            InputStream stream = new ByteArrayInputStream(expectedResponseContent.getBytes(StandardCharsets.UTF_8));
             Mockito.when(httpEntity.getContent()).thenReturn(stream);
         }
         
@@ -78,6 +79,24 @@ public class HttpCertSignerTest {
         Mockito.verify(httpClient, times(1)).execute(Mockito.any(HttpPost.class));
         
         certSigner.close();
+    }
+
+    @Test
+    public void testGenerateX509CertificateExceptionIOExceptionRetry() throws Exception {
+
+        CloseableHttpClient httpClient = Mockito.mock(CloseableHttpClient.class);
+        System.setProperty(ZTSConsts.ZTS_PROP_CERTSIGN_RETRY_CONN_ONLY, "false");
+
+        HttpCertSignerFactory certFactory = new HttpCertSignerFactory();
+        HttpCertSigner certSigner = (HttpCertSigner) certFactory.create();
+        certSigner.setHttpClient(httpClient);
+
+        Mockito.when(httpClient.execute(Mockito.any(HttpPost.class))).thenThrow(new IOException());
+        assertNull(certSigner.generateX509Certificate("aws", null, "csr", null, 0));
+        Mockito.verify(httpClient, times(2)).execute(Mockito.any(HttpPost.class));
+
+        certSigner.close();
+        System.clearProperty(ZTSConsts.ZTS_PROP_CERTSIGN_RETRY_CONN_ONLY);
     }
 
     @Test
@@ -141,7 +160,7 @@ public class HttpCertSignerTest {
         CloseableHttpResponse response = mockRequest(201, pemResponse);
         Mockito.when(httpClient.execute(Mockito.any(HttpPost.class))).thenReturn(response);
 
-        String pem = certSigner.generateX509Certificate("aws", null, "csr", null, 0);
+        String pem = certSigner.generateX509Certificate("aws", null, "csr", null, 0, Priority.Unspecified_priority);
         assertEquals(pem, "pem-value");
         Mockito.verify(httpClient, times(1)).execute(Mockito.any(HttpPost.class));
 
@@ -156,6 +175,18 @@ public class HttpCertSignerTest {
         pem = certSigner.generateX509Certificate("aws", null, "csr", InstanceProvider.ZTS_CERT_USAGE_CLIENT, 30);
         assertEquals(pem, "pem-value");
         Mockito.verify(httpClient, times(3)).execute(Mockito.any(HttpPost.class));
+
+        response = mockRequest(201, pemResponse);
+        Mockito.when(httpClient.execute(Mockito.any(HttpPost.class))).thenReturn(response);
+        pem = certSigner.generateX509Certificate("aws", null, "csr", InstanceProvider.ZTS_CERT_USAGE_CODE_SIGNING, 15);
+        assertEquals(pem, "pem-value");
+        Mockito.verify(httpClient, times(4)).execute(Mockito.any(HttpPost.class));
+
+        response = mockRequest(201, pemResponse);
+        Mockito.when(httpClient.execute(Mockito.any(HttpPost.class))).thenReturn(response);
+        pem = certSigner.generateX509Certificate("aws", null, "csr", InstanceProvider.ZTS_CERT_USAGE_TIMESTAMPING, 30);
+        assertEquals(pem, "pem-value");
+        Mockito.verify(httpClient, times(5)).execute(Mockito.any(HttpPost.class));
 
         certSigner.close();
     }
@@ -172,7 +203,7 @@ public class HttpCertSignerTest {
         String pemResponse = "{\"pem2\": \"pem-value\"}";
         CloseableHttpResponse response = mockRequest(201, pemResponse);
         Mockito.when(httpClient.execute(Mockito.any(HttpPost.class))).thenReturn(response);
-        assertNull(certSigner.generateX509Certificate("aws", null, "csr", null, 0));
+        assertNull(certSigner.generateX509Certificate("aws", null, "csr", null, 0, Priority.Unspecified_priority));
 
         pemResponse = "invalid-json";
         response = mockRequest(201, pemResponse);
@@ -185,11 +216,15 @@ public class HttpCertSignerTest {
     @Test
     public void testGenerateX509CertificateInvalidCsr() {
        HttpCertSigner testHttpCertSigner = new HttpCertSigner() {
-            public Object getX509CertSigningRequest(String provider, String csr, String keyUsage, int expireMins) {
+            @Override
+            public Object getX509CertSigningRequest(String provider, String csr, String keyUsage, int expireMins,
+                    Priority priority, String keyId) {
                 throw new IllegalArgumentException();
             }
         };
         assertNull(testHttpCertSigner.generateX509Certificate("aws", null, "csr", null, 0));
+        assertNull(testHttpCertSigner.generateX509Certificate("aws", null, "csr", null, 0, Priority.High));
+        assertNull(testHttpCertSigner.generateX509Certificate("aws", null, "csr", null, 0, Priority.High, "keyid"));
         testHttpCertSigner.close();
     }
 
@@ -253,6 +288,26 @@ public class HttpCertSignerTest {
         Mockito.when(httpClient.execute(Mockito.any(HttpGet.class))).thenReturn(response);
         
         String pem = certSigner.getCACertificate("aws");
+        assertEquals(pem, "pem-value");
+        Mockito.verify(httpClient, times(1)).execute(Mockito.any(HttpGet.class));
+
+        certSigner.close();
+    }
+
+    @Test
+    public void testGetCACertificateWithKeyId() throws Exception {
+
+        CloseableHttpClient httpClient = Mockito.mock(CloseableHttpClient.class);
+
+        HttpCertSignerFactory certFactory = new HttpCertSignerFactory();
+        HttpCertSigner certSigner = (HttpCertSigner) certFactory.create();
+        certSigner.setHttpClient(httpClient);
+
+        String pemResponse = "{\"cert\": \"pem-value\"}";
+        CloseableHttpResponse response = mockRequest(200, pemResponse);
+        Mockito.when(httpClient.execute(Mockito.any(HttpGet.class))).thenReturn(response);
+
+        String pem = certSigner.getCACertificate("aws", "keyid");
         assertEquals(pem, "pem-value");
         Mockito.verify(httpClient, times(1)).execute(Mockito.any(HttpGet.class));
 
@@ -360,21 +415,45 @@ public class HttpCertSignerTest {
         HttpCertSignerFactory certFactory = new HttpCertSignerFactory();
         HttpCertSigner certSigner = (HttpCertSigner) certFactory.create();
 
-        assertEquals("x509-key-data", certSigner.getProviderKeyId("unknown"));
-        assertEquals("x509-key-data", certSigner.getProviderKeyId(null));
-        assertEquals("x509-key-data", certSigner.getProviderKeyId(""));
+        assertEquals("x509-key-data", certSigner.getProviderKeyId("unknown", null));
+        assertEquals("x509-key-data", certSigner.getProviderKeyId(null, null));
+        assertEquals("x509-key-data", certSigner.getProviderKeyId("", null));
 
-        assertEquals("x509-aws-key", certSigner.getProviderKeyId("athenz.aws.us-east-1"));
-        assertEquals("x509-aws-key", certSigner.getProviderKeyId("athenz.aws.us-east-2"));
-        assertEquals("x509-aws-key", certSigner.getProviderKeyId("athenz.aws.us-west-1"));
-        assertEquals("x509-aws-key", certSigner.getProviderKeyId("athenz.aws.us-west-2"));
+        assertEquals("x509-key-data", certSigner.getProviderKeyId("unknown", ""));
+        assertEquals("x509-key-data", certSigner.getProviderKeyId(null, ""));
+        assertEquals("x509-key-data", certSigner.getProviderKeyId("", ""));
 
-        assertEquals("x509-key-data", certSigner.getProviderKeyId("athenz.aws.us-west-3"));
+        // using null for the key-id argument
 
-        assertEquals("x509-azure-key", certSigner.getProviderKeyId("athenz.azure.eastus"));
-        assertEquals("x509-azure-key", certSigner.getProviderKeyId("athenz.azure.westus"));
+        assertEquals("x509-aws-key", certSigner.getProviderKeyId("athenz.aws.us-east-1", null));
+        assertEquals("x509-aws-key", certSigner.getProviderKeyId("athenz.aws.us-east-2", null));
+        assertEquals("x509-aws-key", certSigner.getProviderKeyId("athenz.aws.us-west-1", null));
+        assertEquals("x509-aws-key", certSigner.getProviderKeyId("athenz.aws.us-west-2", null));
 
-        assertEquals("x509-key-data", certSigner.getProviderKeyId("athenz.azure.eastus2"));
+        assertEquals("x509-key-data", certSigner.getProviderKeyId("athenz.aws.us-west-3", null));
+
+        assertEquals("x509-azure-key", certSigner.getProviderKeyId("athenz.azure.eastus", null));
+        assertEquals("x509-azure-key", certSigner.getProviderKeyId("athenz.azure.westus", null));
+
+        assertEquals("x509-key-data", certSigner.getProviderKeyId("athenz.azure.eastus2", null));
+
+        assertEquals("x509-key-data-id", certSigner.getProviderKeyId("athenz.azure.eastus2", "x509-key-data-id"));
+
+        // using empty string for key-id argument
+
+        assertEquals("x509-aws-key", certSigner.getProviderKeyId("athenz.aws.us-east-1", ""));
+        assertEquals("x509-aws-key", certSigner.getProviderKeyId("athenz.aws.us-east-2", ""));
+        assertEquals("x509-aws-key", certSigner.getProviderKeyId("athenz.aws.us-west-1", ""));
+        assertEquals("x509-aws-key", certSigner.getProviderKeyId("athenz.aws.us-west-2", ""));
+
+        assertEquals("x509-key-data", certSigner.getProviderKeyId("athenz.aws.us-west-3", ""));
+
+        assertEquals("x509-azure-key", certSigner.getProviderKeyId("athenz.azure.eastus", ""));
+        assertEquals("x509-azure-key", certSigner.getProviderKeyId("athenz.azure.westus", ""));
+
+        assertEquals("x509-key-data", certSigner.getProviderKeyId("athenz.azure.eastus2", ""));
+
+        assertEquals("x509-key-data-id2", certSigner.getProviderKeyId("athenz.azure.eastus2", "x509-key-data-id2"));
 
         certSigner.close();
         System.clearProperty(ZTSConsts.ZTS_PROP_CERTSIGN_PROVIDER_KEYS_FNAME);
@@ -387,14 +466,16 @@ public class HttpCertSignerTest {
         HttpCertSignerFactory certFactory = new HttpCertSignerFactory();
         HttpCertSigner certSigner = (HttpCertSigner) certFactory.create();
 
-        assertEquals("x509-key", certSigner.getProviderKeyId("unknown"));
-        assertEquals("x509-key", certSigner.getProviderKeyId(null));
-        assertEquals("x509-key", certSigner.getProviderKeyId(""));
+        assertEquals("x509-key", certSigner.getProviderKeyId("unknown", null));
+        assertEquals("x509-key", certSigner.getProviderKeyId(null, ""));
+        assertEquals("x509-key", certSigner.getProviderKeyId("", null));
 
-        assertEquals("x509-key", certSigner.getProviderKeyId("athenz.aws.us-east-1"));
-        assertEquals("x509-key", certSigner.getProviderKeyId("athenz.aws.us-east-2"));
-        assertEquals("x509-key", certSigner.getProviderKeyId("athenz.azure.eastus"));
-        assertEquals("x509-key", certSigner.getProviderKeyId("athenz.azure.westus"));
+        assertEquals("x509-key", certSigner.getProviderKeyId("athenz.aws.us-east-1", null));
+        assertEquals("x509-key-id", certSigner.getProviderKeyId("athenz.aws.us-east-1", "x509-key-id"));
+        assertEquals("x509-key", certSigner.getProviderKeyId("athenz.aws.us-east-2", ""));
+        assertEquals("x509-key", certSigner.getProviderKeyId("athenz.azure.eastus", null));
+        assertEquals("x509-key-id2", certSigner.getProviderKeyId("athenz.azure.eastus", "x509-key-id2"));
+        assertEquals("x509-key", certSigner.getProviderKeyId("athenz.azure.westus", ""));
         certSigner.close();
     }
 
@@ -404,21 +485,21 @@ public class HttpCertSignerTest {
         HttpCertSignerFactory certFactory = new HttpCertSignerFactory();
         HttpCertSigner certSigner = (HttpCertSigner) certFactory.create();
 
-        assertEquals("x509-key", certSigner.getProviderKeyId("unknown"));
-        assertEquals("x509-key", certSigner.getProviderKeyId(null));
-        assertEquals("x509-key", certSigner.getProviderKeyId(""));
+        assertEquals("x509-key", certSigner.getProviderKeyId("unknown", null));
+        assertEquals("x509-key", certSigner.getProviderKeyId(null, null));
+        assertEquals("x509-key", certSigner.getProviderKeyId("", ""));
 
-        assertEquals("x509-aws-key", certSigner.getProviderKeyId("athenz.aws.us-west-1"));
-        assertEquals("x509-aws-key", certSigner.getProviderKeyId("athenz.aws.us-west-2"));
+        assertEquals("x509-aws-key", certSigner.getProviderKeyId("athenz.aws.us-west-1", ""));
+        assertEquals("x509-aws-key", certSigner.getProviderKeyId("athenz.aws.us-west-2", null));
 
-        assertEquals("x509-key", certSigner.getProviderKeyId("athenz.aws.us-east-1"));
-        assertEquals("x509-key", certSigner.getProviderKeyId("athenz.aws.us-east-2"));
-        assertEquals("x509-key", certSigner.getProviderKeyId("athenz.aws.us-west-3"));
+        assertEquals("x509-key", certSigner.getProviderKeyId("athenz.aws.us-east-1", null));
+        assertEquals("x509-key", certSigner.getProviderKeyId("athenz.aws.us-east-2", ""));
+        assertEquals("x509-key", certSigner.getProviderKeyId("athenz.aws.us-west-3", null));
 
-        assertEquals("x509-azure-key", certSigner.getProviderKeyId("athenz.azure.eastus"));
-        assertEquals("x509-azure-key", certSigner.getProviderKeyId("athenz.azure.westus"));
+        assertEquals("x509-azure-key", certSigner.getProviderKeyId("athenz.azure.eastus", null));
+        assertEquals("x509-azure-key", certSigner.getProviderKeyId("athenz.azure.westus", null));
 
-        assertEquals("x509-key", certSigner.getProviderKeyId("athenz.azure.eastus2"));
+        assertEquals("x509-key", certSigner.getProviderKeyId("athenz.azure.eastus2", null));
 
         certSigner.close();
         System.clearProperty(ZTSConsts.ZTS_PROP_CERTSIGN_PROVIDER_KEYS_FNAME);

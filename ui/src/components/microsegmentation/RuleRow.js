@@ -24,7 +24,13 @@ import RequestUtils from '../utils/RequestUtils';
 import ServiceList from './ServiceList';
 import { css, keyframes } from '@emotion/react';
 import EnforcementStateList from './EnforcementStateList';
+import { MICROSEG_TRANSPORT_RULE_DELETE_JUSTIFICATION } from '../constants/constants';
 import AddSegmentation from './AddSegmentation';
+import { connect } from 'react-redux';
+import { deleteTransportRule } from '../../redux/thunks/microsegmentation';
+import { deleteAssertionCondition } from '../../redux/thunks/policies';
+import { selectDomainAuditEnabled } from '../../redux/selectors/domainData';
+import StringUtils from '../utils/StringUtils';
 
 const TDStyled = styled.td`
     background-color: ${(props) => props.color};
@@ -44,12 +50,12 @@ const GroupTDStyled = styled.td`
 `;
 
 const colorTransition = keyframes`
-        0% {
-            background-color: rgba(21, 192, 70, 0.20);
-        }
-        100% {
-            background-color: transparent;
-        }
+    0% {
+        background-color: rgba(21, 192, 70, 0.20);
+    }
+    100% {
+        background-color: transparent;
+    }
 `;
 
 const TrStyled = styled.tr`
@@ -67,7 +73,7 @@ const MenuDiv = styled.div`
     font-size: 12px;
 `;
 
-export default class RuleRow extends React.Component {
+export class RuleRow extends React.Component {
     constructor(props) {
         super(props);
         this.api = this.props.api;
@@ -93,6 +99,7 @@ export default class RuleRow extends React.Component {
             showEditSegmentation: false,
         };
         this.localDate = new DateUtils();
+        this.stringUtils = new StringUtils();
     }
 
     saveJustification(val) {
@@ -148,29 +155,22 @@ export default class RuleRow extends React.Component {
             return;
         }
 
-        let deletePolicyName =
+        const deletePolicyName =
             'acl.' + this.state.deleteName + '.' + this.props.category;
-        let deleteRoleName =
+        const deleteRoleName =
             deletePolicyName + '-' + this.props.details['identifier'];
-        Promise.all([
-            this.api.deleteAssertion(
+        const auditRef =
+            this.state.justification ||
+            MICROSEG_TRANSPORT_RULE_DELETE_JUSTIFICATION;
+        this.props
+            .deleteTransportRule(
                 domain,
                 deletePolicyName,
                 this.state.assertionId,
-                this.state.justification
-                    ? this.state.justification
-                    : 'Micro-segmentaion assertion deletion',
-                this.props._csrf
-            ),
-            this.api.deleteRole(
-                domain,
                 deleteRoleName,
-                this.state.justification
-                    ? this.state.justification
-                    : 'Micro-segmentaion Role deletion',
+                auditRef,
                 this.props._csrf
-            ),
-        ])
+            )
             .then(() => {
                 this.setState({
                     showDelete: false,
@@ -178,16 +178,9 @@ export default class RuleRow extends React.Component {
                 this.props.onUpdateSuccess();
             })
             .catch((err) => {
-                if (err.statusCode === 404) {
-                    this.setState({
-                        showDelete: false,
-                    });
-                    this.props.onUpdateSuccess();
-                } else {
-                    this.setState({
-                        errorMessage: RequestUtils.xhrErrorCheckHelper(err),
-                    });
-                }
+                this.setState({
+                    errorMessage: RequestUtils.xhrErrorCheckHelper(err),
+                });
             });
     }
 
@@ -212,7 +205,7 @@ export default class RuleRow extends React.Component {
             return;
         }
 
-        this.api
+        this.props
             .deleteAssertionCondition(
                 this.props.domain,
                 this.state.policyName,
@@ -220,7 +213,7 @@ export default class RuleRow extends React.Component {
                 this.state.conditionId,
                 this.state.justification
                     ? this.state.justification
-                    : 'Micro-segmentaion Assertion Condition deletion',
+                    : 'Microsegmentaion Assertion Condition deletion',
                 this.props._csrf
             )
             .then(() => {
@@ -244,6 +237,24 @@ export default class RuleRow extends React.Component {
         });
     }
 
+    removeDuplicatePort(port) {
+        let portArray = port.split(',');
+
+        portArray = portArray.map((ports) => {
+            if (ports.indexOf('-') != -1) {
+                let port = ports.split('-');
+                if (port[0] == port[1]) {
+                    return port[0];
+                } else {
+                    return ports;
+                }
+            } else {
+                return ports;
+            }
+        });
+        return portArray.join();
+    }
+
     render() {
         let rows = [];
         let left = 'left';
@@ -258,6 +269,10 @@ export default class RuleRow extends React.Component {
             this.onClickDeleteConditionCancel.bind(this);
         let inbound = this.props.category === 'inbound';
         let clickDelete;
+
+        data.destination_port = this.removeDuplicatePort(data.destination_port);
+        data.source_port = this.removeDuplicatePort(data.source_port);
+
         if (inbound) {
             key =
                 this.props.category +
@@ -284,8 +299,9 @@ export default class RuleRow extends React.Component {
             );
         }
 
-        let editData = this.props.details;
+        let editData = data;
         editData['category'] = this.props.category;
+
         let addSegmentation = this.state.showEditSegmentation ? (
             <AddSegmentation
                 api={this.api}
@@ -297,10 +313,22 @@ export default class RuleRow extends React.Component {
                 justificationRequired={this.props.justificationRequired}
                 editMode={true}
                 data={editData}
+                pageFeatureFlag={this.props.pageFeatureFlag}
             />
         ) : (
             ''
         );
+
+        let scope = new Set();
+        if (data && data['conditionsList']) {
+            data['conditionsList'].forEach((item) => {
+                scope.add(this.stringUtils.getScopeString(item));
+            });
+        } else {
+            // Backward compatability - if no scope, assume on-prem
+            scope.add('OnPrem');
+        }
+        scope = [...scope].sort().join(' ');
 
         rows.push(
             <TrStyled key={key} data-testid='segmentation-row'>
@@ -349,14 +377,12 @@ export default class RuleRow extends React.Component {
                         {inbound && (
                             <ServiceList
                                 list={data['source_services']}
-                                api={this.api}
                                 domain={this.props.domain}
                             />
                         )}
                         {!inbound && (
                             <ServiceList
                                 list={data['destination_services']}
-                                api={this.api}
                                 domain={this.props.domain}
                             />
                         )}
@@ -376,6 +402,10 @@ export default class RuleRow extends React.Component {
 
                 <TDStyled color={color} align={left}>
                     {data['layer']}
+                </TDStyled>
+
+                <TDStyled color={color} align={left}>
+                    {scope}
                 </TDStyled>
 
                 <GroupTDStyled color={color} align={center}>
@@ -495,3 +525,51 @@ export default class RuleRow extends React.Component {
         return rows;
     }
 }
+
+const mapStateToProps = (state, props) => {
+    return {
+        ...props,
+        justificationRequired: selectDomainAuditEnabled(state),
+    };
+};
+
+const mapDispatchToProps = (dispatch) => ({
+    deleteTransportRule: (
+        domain,
+        deletePolicyName,
+        assertionId,
+        auditRef,
+        deleteRoleName,
+        _csrf
+    ) =>
+        dispatch(
+            deleteTransportRule(
+                domain,
+                deletePolicyName,
+                assertionId,
+                auditRef,
+                deleteRoleName,
+                _csrf
+            )
+        ),
+    deleteAssertionCondition: (
+        domain,
+        policyName,
+        assertionId,
+        conditionId,
+        auditRef,
+        _csrf
+    ) =>
+        dispatch(
+            deleteAssertionCondition(
+                domain,
+                policyName,
+                assertionId,
+                conditionId,
+                auditRef,
+                _csrf
+            )
+        ),
+});
+
+export default connect(mapStateToProps, mapDispatchToProps)(RuleRow);

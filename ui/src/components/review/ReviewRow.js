@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,8 +44,7 @@ export default class ReviewRow extends React.Component {
         super(props);
         this.api = this.props.api;
         this.onReview = this.onReview.bind(this);
-        let selectedOption =
-            this.props.category === 'group' ? 'no-action' : 'extend';
+        let selectedOption = 'extend';
         this.state = {
             selectedOption: selectedOption,
         };
@@ -74,8 +73,7 @@ export default class ReviewRow extends React.Component {
     componentDidUpdate = (prevProps) => {
         if (prevProps.submittedReview !== this.props.submittedReview) {
             this.setState({
-                selectedOption:
-                    this.props.category === 'group' ? 'no-action' : 'extend',
+                selectedOption: 'extend',
             });
         }
     };
@@ -87,10 +85,18 @@ export default class ReviewRow extends React.Component {
         let member = this.props.details;
         let color = this.props.color;
         let exp = member.expiration
-            ? this.localDate.getLocalDate(member.expiration, 'UTC', 'UTC')
+            ? this.localDate.getLocalDate(
+                  member.expiration,
+                  this.props.timeZone,
+                  this.props.timeZone
+              )
             : 'N/A';
         let reminder = member.reviewReminder
-            ? this.localDate.getLocalDate(member.reviewReminder, 'UTC', 'UTC')
+            ? this.localDate.getLocalDate(
+                  member.reviewReminder,
+                  this.props.timeZone,
+                  this.props.timeZone
+              )
             : 'N/A';
 
         rows.push(
@@ -116,16 +122,14 @@ export default class ReviewRow extends React.Component {
                         {reminder}
                     </TDStyled>
                 )}
-                {this.props.category === 'role' && (
-                    <TDStyled color={color} align={center}>
-                        <RadioButton
-                            name={this.props.collection + this.props.idx}
-                            value='extend'
-                            checked={this.state.selectedOption === 'extend'}
-                            onChange={this.onReview}
-                        />
-                    </TDStyled>
-                )}
+                <TDStyled color={color} align={center}>
+                    <RadioButton
+                        name={this.props.collection + this.props.idx}
+                        value='extend'
+                        checked={this.state.selectedOption === 'extend'}
+                        onChange={this.onReview}
+                    />
+                </TDStyled>
                 <TDStyled color={color} align={center}>
                     <RadioButton
                         name={this.props.collection + this.props.idx}

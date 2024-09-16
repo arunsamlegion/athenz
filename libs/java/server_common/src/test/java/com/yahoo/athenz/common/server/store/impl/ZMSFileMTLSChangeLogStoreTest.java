@@ -1,5 +1,5 @@
 /*
- *  Copyright 2020 Verizon Media
+ *  Copyright The Athenz Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -36,7 +36,6 @@ import java.util.*;
 
 import static com.yahoo.athenz.common.ServerCommonConsts.PROP_ATHENZ_CONF;
 import static com.yahoo.athenz.common.ServerCommonConsts.ZTS_PROP_FILE_NAME;
-import static org.mockito.ArgumentMatchers.any;
 import static org.testng.Assert.*;
 
 public class ZMSFileMTLSChangeLogStoreTest {
@@ -99,8 +98,7 @@ public class ZMSFileMTLSChangeLogStoreTest {
             
             new ZMSFileChangeLogStore(fpath, null, null);
             fail();
-        } catch (RuntimeException | IOException ex) {
-            assertTrue(true);
+        } catch (RuntimeException | IOException ignored) {
         }
     }
 
@@ -110,8 +108,7 @@ public class ZMSFileMTLSChangeLogStoreTest {
         try {
             new ZMSFileChangeLogStore("/proc/usr\ninvaliddir", null, null);
             fail();
-        } catch (RuntimeException ex) {
-            assertTrue(true);
+        } catch (RuntimeException ignored) {
         }
     }
     
@@ -477,5 +474,193 @@ public class ZMSFileMTLSChangeLogStoreTest {
         fstore.setChangeLogStoreCommon(storeCommon);
         fstore.setRequestConditions(true);
         assertTrue(storeCommon.requestConditions);
+    }
+
+    @Test
+    public void testGetUpdatedJWSDomainsNull() throws KeyRefresherException, IOException, InterruptedException {
+        MockZMSFileMTLSChangeLogStore fstore = new MockZMSFileMTLSChangeLogStore(FSTORE_PATH, keyPath, certPath,
+                trustStorePath, trustStorePassword);
+        fstore.setSignedDomainsExc();
+        StringBuilder str = new StringBuilder();
+        assertNull(fstore.getUpdatedJWSDomains(str));
+    }
+
+    @Test
+    public void testGetUpdatedJWSDomainsNullDomains() throws KeyRefresherException, IOException, InterruptedException {
+        MockZMSFileMTLSChangeLogStore fstore = new MockZMSFileMTLSChangeLogStore(FSTORE_PATH, keyPath, certPath,
+                trustStorePath, trustStorePassword);
+        SignedDomains domains = new SignedDomains();
+        fstore.setSignedDomains(domains);
+        StringBuilder str = new StringBuilder();
+        assertNull(fstore.getUpdatedJWSDomains(str));
+    }
+
+    @Test
+    public void testGetServerJWSDomain() throws KeyRefresherException, IOException, InterruptedException {
+        MockZMSFileMTLSChangeLogStore fstore = new MockZMSFileMTLSChangeLogStore(FSTORE_PATH, keyPath, certPath,
+                trustStorePath, trustStorePassword);
+        ZMSClient zmsClient = Mockito.mock(ZMSClient.class);
+        fstore.setZMSClient(zmsClient);
+
+        JWSDomain jwsDomain = new JWSDomain();
+        Mockito.when(zmsClient.getJWSDomain("athenz", null, null)).thenReturn(jwsDomain);
+
+        JWSDomain jwsDomain1 = fstore.getServerJWSDomain("athenz");
+        assertNotNull(jwsDomain1);
+
+        // invalid domain should return null
+
+        assertNull(fstore.getServerJWSDomain("coretech"));
+    }
+
+    @Test
+    public void testGetServerJWSDomainException() throws KeyRefresherException, IOException, InterruptedException {
+        MockZMSFileMTLSChangeLogStore fstore = new MockZMSFileMTLSChangeLogStore(FSTORE_PATH, keyPath, certPath,
+                trustStorePath, trustStorePassword);
+        ZMSClient zmsClient = Mockito.mock(ZMSClient.class);
+        fstore.setZMSClient(zmsClient);
+
+        Mockito.when(zmsClient.getJWSDomain("athenz", null, null))
+                .thenThrow(new ZMSClientException(500, "invalid server error:"));
+
+        assertNull(fstore.getServerJWSDomain("athenz"));
+    }
+
+    @Test
+    public void testJWSDomainOperations() throws KeyRefresherException, IOException, InterruptedException {
+        final String domainName = "coretech";
+        JWSDomain jwsDomain = new JWSDomain();
+
+        ZMSFileMTLSChangeLogStore fstore = new ZMSFileMTLSChangeLogStore(FSTORE_PATH, keyPath, certPath,
+                trustStorePath, trustStorePassword);
+
+        JWSDomain jwsDomain1 = fstore.getLocalJWSDomain(domainName);
+        assertNull(jwsDomain1);
+
+        fstore.saveLocalDomain(domainName, jwsDomain);
+
+        jwsDomain1 = fstore.getLocalJWSDomain(domainName);
+        assertNotNull(jwsDomain1);
+
+        fstore.removeLocalDomain(domainName);
+        jwsDomain1 = fstore.getLocalJWSDomain(domainName);
+        assertNull(jwsDomain1);
+    }
+
+    @Test
+    public void testGetUpdatedJWSDomains() throws InterruptedException, IOException, KeyRefresherException {
+        MockZMSFileMTLSChangeLogStore store = new MockZMSFileMTLSChangeLogStore(FSTORE_PATH, keyPath, certPath,
+                trustStorePath, trustStorePassword);
+        MockZMSFileChangeLogStoreCommon cstore = new MockZMSFileChangeLogStoreCommon(FSTORE_PATH);
+        store.setChangeLogStoreCommon(cstore);
+
+        List<SignedDomain> domains = new ArrayList<>();
+        DomainData domData = new DomainData().setName("athenz");
+        SignedDomain domain = new SignedDomain().setDomain(domData);
+        domains.add(domain);
+        SignedDomains signedDomains = new SignedDomains().setDomains(domains);
+
+        store.setSignedDomains(signedDomains);
+        store.setJWSDomains(signedDomains);
+        StringBuilder str = new StringBuilder();
+
+        assertNull(store.getUpdatedJWSDomains(str));
+
+        // now let's set the tag header
+
+        cstore.setTagHeader(Timestamp.fromCurrentTime().toString());
+        List<JWSDomain> retDomains = store.getUpdatedJWSDomains(str);
+        assertNotNull(retDomains);
+        assertEquals(retDomains.size(), 1);
+
+        // now set the signed domains to be null
+
+        store.setSignedDomains(null);
+        store.setJWSDomains(null);
+        str.setLength(0);
+        assertNull(store.getUpdatedJWSDomains(str));
+    }
+
+    @Test
+    public void testGetLocalDomainListAttributeListMultiple() throws KeyRefresherException, IOException, InterruptedException {
+
+        ZMSFileMTLSChangeLogStore fstore = new ZMSFileMTLSChangeLogStore(FSTORE_PATH, keyPath, certPath,
+                trustStorePath, trustStorePassword);
+        ZMSFileChangeLogStoreCommon cstore = new ZMSFileChangeLogStoreCommon(FSTORE_PATH);
+
+        Struct data = new Struct();
+        data.put("key", "val1");
+        cstore.put("test1", JSON.bytes(data));
+
+        data = new Struct();
+        data.put("key", "val1");
+        cstore.put("test2", JSON.bytes(data));
+
+        data = new Struct();
+        data.put("key", "val1");
+        cstore.put("test3", JSON.bytes(data));
+
+        Map<String, DomainAttributes> domainMap = fstore.getLocalDomainAttributeList();
+        assertEquals(domainMap.size(), 3);
+
+        DomainAttributes attrs = domainMap.get("test1");
+        assertNotNull(attrs);
+        assertTrue(attrs.getFetchTime() > 0);
+
+        attrs = domainMap.get("test2");
+        assertNotNull(attrs);
+        assertTrue(attrs.getFetchTime() > 0);
+
+        attrs = domainMap.get("test3");
+        assertNotNull(attrs);
+        assertTrue(attrs.getFetchTime() > 0);
+    }
+
+    @Test
+    public void testGetLocalDomainAttributeListHidden() throws KeyRefresherException, IOException, InterruptedException {
+        ZMSFileMTLSChangeLogStore fstore = new ZMSFileMTLSChangeLogStore(FSTORE_PATH, keyPath, certPath,
+                trustStorePath, trustStorePassword);
+        ZMSFileChangeLogStoreCommon cstore = new ZMSFileChangeLogStoreCommon(FSTORE_PATH);
+
+        Struct data = new Struct();
+        data.put("key", "val1");
+        cstore.put("test1", JSON.bytes(data));
+
+        data = new Struct();
+        data.put("key", "val1");
+        cstore.put(".test2", JSON.bytes(data));
+
+        data = new Struct();
+        data.put("key", "val1");
+        cstore.put(".test3", JSON.bytes(data));
+
+        Map<String, DomainAttributes> domainMap = fstore.getLocalDomainAttributeList();
+        assertEquals(domainMap.size(), 1);
+
+        DomainAttributes attrs = domainMap.get("test1");
+        assertNotNull(attrs);
+        assertTrue(attrs.getFetchTime() > 0);
+    }
+
+    @Test
+    public void testGetLocalDomainAttributeListEmpty() throws KeyRefresherException, IOException, InterruptedException {
+        ZMSFileMTLSChangeLogStore fstore = new ZMSFileMTLSChangeLogStore(FSTORE_PATH, keyPath, certPath,
+                trustStorePath, trustStorePassword);
+        Map<String, DomainAttributes> domainMap = fstore.getLocalDomainAttributeList();
+        assertTrue(domainMap.isEmpty());
+    }
+
+    @Test
+    public void testGetLocalDomainAttributeListError() throws InterruptedException, IOException, KeyRefresherException {
+        ZMSFileMTLSChangeLogStore fstore = new ZMSFileMTLSChangeLogStore(FSTORE_PATH, keyPath, certPath,
+                trustStorePath, trustStorePassword);
+        ZMSFileChangeLogStoreCommon cstore = new ZMSFileChangeLogStoreCommon(FSTORE_PATH);
+
+        File dir = Mockito.spy(cstore.rootDir);
+        Mockito.when(dir.list()).thenReturn(null);
+        cstore.rootDir = dir;
+
+        Map<String, DomainAttributes> domainMap = fstore.getLocalDomainAttributeList();
+        assertTrue(domainMap.isEmpty());
     }
 }

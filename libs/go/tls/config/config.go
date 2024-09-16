@@ -2,6 +2,7 @@ package config
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 )
 
 func GetTLSConfigFromFiles(certFile, keyFile string) (*tls.Config, error) {
@@ -12,6 +13,24 @@ func GetTLSConfigFromFiles(certFile, keyFile string) (*tls.Config, error) {
 	config := ClientTLSConfig()
 	config.Certificates = []tls.Certificate{cert}
 
+	return config, nil
+}
+
+func ClientTLSConfigFromPEM(keypem, certpem, cacertpem []byte) (*tls.Config, error) {
+	config := &tls.Config{}
+	if certpem != nil && keypem != nil {
+		mycert, err := tls.X509KeyPair(certpem, keypem)
+		if err != nil {
+			return nil, err
+		}
+		config.Certificates = make([]tls.Certificate, 1)
+		config.Certificates[0] = mycert
+	}
+	if cacertpem != nil {
+		certPool := x509.NewCertPool()
+		certPool.AppendCertsFromPEM(cacertpem)
+		config.RootCAs = certPool
+	}
 	return config, nil
 }
 
@@ -44,6 +63,5 @@ func StandardCipherSuites() []uint16 {
 		tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
 		tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 		tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
-		tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,
 	}
 }

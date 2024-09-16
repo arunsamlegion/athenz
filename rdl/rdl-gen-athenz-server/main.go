@@ -1,5 +1,5 @@
-// Copyright 2015 Yahoo Inc. https://github.com/ardielle
-//           2018 Oath Inc. Modified to generate server code for Athenz Server components
+// Copyright The Athenz Authors
+//           Modified https://github.com/ardielle to generate server code for Athenz Server components
 // Licensed under the terms of the Apache version 2.0 license. See LICENSE file for terms.
 
 package main
@@ -49,7 +49,7 @@ func main() {
 
 // GenerateJavaServer generates the server code for the RDL-defined service
 func GenerateZMSJavaServer(banner string, schema *rdl.Schema, outdir string, ns string, base string) error {
-	fmt.Fprintln(os.Stderr, "Staring ZMS Server code generation...")
+	fmt.Fprintln(os.Stderr, "Starting ZMS Server code generation...")
 	reg := rdl.NewTypeRegistry(schema)
 	packageDir, err := javaGenerationDir(outdir, schema, ns)
 	if err != nil {
@@ -247,46 +247,56 @@ func (gen *javaServerGenerator) makeHeaderAssign(r *rdl.Resource) string {
 const javaServerHandlerTemplate = `{{header}}
 {{package}}
 import com.yahoo.rdl.*;
-import javax.ws.rs.core.Response;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.ws.rs.core.Response;
+import jakarta.servlet.ServletContext;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 //
 // {{cName}}Handler is the interface that the service implementation must implement
 //
 public interface {{cName}}Handler {{openBrace}} {{range .Resources}}
     {{methodSig .}};{{end}}
-    ResourceContext newResourceContext(HttpServletRequest request, HttpServletResponse response, String apiName);
+    ResourceContext newResourceContext(ServletContext servletContext, HttpServletRequest request, HttpServletResponse response, String apiName);
     void recordMetrics(ResourceContext ctx, int httpStatus);
+    void publishChangeMessage(ResourceContext ctx, int httpStatus);
 }
 `
 
 const javaServerContextTemplate = `{{header}}
 {{package}}
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import com.yahoo.athenz.common.messaging.DomainChangeMessage;
+
+import jakarta.servlet.ServletContext;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.util.List;
 
 //
 // ResourceContext
 //
 public interface ResourceContext {
+    ServletContext servletContext();
     HttpServletRequest request();
     HttpServletResponse response();
     String getApiName();
     String getHttpMethod();
     void authenticate();
     void authorize(String action, String resource, String trustedDomain);
+    void addDomainChangeMessage(DomainChangeMessage domainChangeMsg);
+    List<DomainChangeMessage> getDomainChangeMessages();
 }
 `
 
 const javaServerTemplate = `{{header}}
 {{package}}
 import com.yahoo.rdl.*;
-import javax.ws.rs.*;
-import javax.ws.rs.core.*;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import javax.inject.Inject;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.*;
+import jakarta.servlet.ServletContext;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.inject.Inject;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 
@@ -310,9 +320,9 @@ public class {{cName}}Resources {
     }
 
     @Inject private {{cName}}Handler delegate;
+    @Context private ServletContext servletContext;
     @Context private HttpServletRequest request;
     @Context private HttpServletResponse response;
-    
 }
 `
 
@@ -416,7 +426,7 @@ func (gen *javaServerGenerator) handlerBody(r *rdl.Resource) string {
 	s := "        int code = ResourceException.OK;\n"
 	s += "        ResourceContext context = null;\n"
 	s += "        try {\n"
-	s += "            context = this.delegate.newResourceContext(this.request, this.response, \"" + methName + "\");\n"
+	s += "            context = this.delegate.newResourceContext(this.servletContext, this.request, this.response, \"" + methName + "\");\n"
 	var fargs []string
 	bodyName := ""
 	if r.Auth != nil {
@@ -479,6 +489,9 @@ func (gen *javaServerGenerator) handlerBody(r *rdl.Resource) string {
 	s += "                throw typedException(code, e, ResourceError.class);\n" //? really
 	s += "            }\n"
 	s += "        } finally {\n"
+	if r.Method == "POST" || r.Method == "PUT" || r.Method == "DELETE" {
+		s += "            this.delegate.publishChangeMessage(context, code);\n"
+	}
 	s += "            this.delegate.recordMetrics(context, code);\n"
 	s += "        }\n"
 	return s
@@ -541,7 +554,7 @@ func (gen *javaServerGenerator) handlerSignature(r *rdl.Resource) string {
 		if v.Optional {
 			required = "false"
 		}
-		escapedComment := strings.Replace(v.Comment ,`"`, `\"`, -1)
+		escapedComment := strings.Replace(v.Comment, `"`, `\"`, -1)
 		pdecl := ""
 		pdecl += "@Parameter(description = \"" + escapedComment + "\", required = " + required + ") "
 		if v.QueryParam != "" {
@@ -572,7 +585,7 @@ func (gen *javaServerGenerator) handlerSignature(r *rdl.Resource) string {
 	default:
 		spec += "@Produces(MediaType.APPLICATION_JSON)\n    "
 	}
-	escapedComment := strings.Replace(r.Comment ,`"`, `\"`, -1)
+	escapedComment := strings.Replace(r.Comment, `"`, `\"`, -1)
 	spec += "@Operation(description = \"" + escapedComment + "\")\n    "
 	methName, _ := javaMethodName(reg, r)
 	return spec + "public " + returnType + " " + methName + "(\n        " + strings.Join(params, ",\n        ") + ")"

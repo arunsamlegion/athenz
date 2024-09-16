@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,14 @@
 import React from 'react';
 import { render } from '@testing-library/react';
 import Member from '../../../components/member/Member';
+import { renderWithRedux } from '../../../tests_utils/ComponentsTestUtils';
 
 describe('Member', () => {
     it('should render', () => {
         let member = { memberName: 'user.test2' };
 
-        const { getByTestId } = render(
-            <Member
-                item={member}
-                idx={0}
-            />
+        const { getByTestId } = renderWithRedux(
+            <Member item={member} idx={0} />
         );
         const roleMember = getByTestId('tag');
         expect(roleMember).toMatchSnapshot();

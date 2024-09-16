@@ -20,6 +20,12 @@ public class InstanceRefreshRequest {
     @RdlOptional
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public String keyId;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public String namespace;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public String cloud;
 
     public InstanceRefreshRequest setCsr(String csr) {
         this.csr = csr;
@@ -42,6 +48,20 @@ public class InstanceRefreshRequest {
     public String getKeyId() {
         return keyId;
     }
+    public InstanceRefreshRequest setNamespace(String namespace) {
+        this.namespace = namespace;
+        return this;
+    }
+    public String getNamespace() {
+        return namespace;
+    }
+    public InstanceRefreshRequest setCloud(String cloud) {
+        this.cloud = cloud;
+        return this;
+    }
+    public String getCloud() {
+        return cloud;
+    }
 
     @Override
     public boolean equals(Object another) {
@@ -57,6 +77,12 @@ public class InstanceRefreshRequest {
                 return false;
             }
             if (keyId == null ? a.keyId != null : !keyId.equals(a.keyId)) {
+                return false;
+            }
+            if (namespace == null ? a.namespace != null : !namespace.equals(a.namespace)) {
+                return false;
+            }
+            if (cloud == null ? a.cloud != null : !cloud.equals(a.cloud)) {
                 return false;
             }
         }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,9 +18,14 @@ import styled from '@emotion/styled';
 import ReviewRow from '../review/ReviewRow';
 import Button from '../denali/Button';
 import Color from '../denali/Color';
-import InputLabel from '../denali/InputLabel';
 import Input from '../denali/Input';
 import RequestUtils from '../utils/RequestUtils';
+import { selectReviewGroupMembers } from '../../redux/selectors/groups';
+import { reviewGroup } from '../../redux/thunks/groups';
+import { connect } from 'react-redux';
+import produce from 'immer';
+import CollectionUtils from 'lodash';
+import DeleteModal from '../modal/DeleteModal';
 
 const TitleDiv = styled.div`
     font-size: 16px;
@@ -49,7 +54,6 @@ const TableHeadStyled = styled.th`
     border-bottom: 2px solid #d5d5d5;
     color: #9a9a9a;
     font-weight: 600;
-    font-size: 0.8rem;
     padding-bottom: 5px;
     vertical-align: top;
     text-transform: uppercase;
@@ -75,33 +79,102 @@ const StyledJustification = styled(Input)`
     margin-top: 5px;
 `;
 
-export default class GroupReviewTable extends React.Component {
+const MessageP = styled.p`
+    width: 500px;
+`;
+
+class GroupReviewTable extends React.Component {
     constructor(props) {
         super(props);
-        this.api = this.props.api;
         this.submitReview = this.submitReview.bind(this);
+        this.updateReviewGroup = this.updateReviewGroup.bind(this);
+        this.onClickDeleteCancel = this.onClickDeleteCancel.bind(this);
         this.onUpdate = this.onUpdate.bind(this);
+        let members = props.members && props.members.map((m) => m.memberName);
         this.state = {
-            groupObj: props.groupDetails,
-            list: props.members || [],
             submittedReview: false,
+            showDeleteConfirmation: false,
+            extendedMembers: new Set(members),
             deletedMembers: new Set(),
+            justification: props.justification || '',
         };
     }
 
-    loadGroup() {
-        this.props.api
-            .getGroup(this.props.domain, this.props.group)
-            .then((group) => {
-                let members =
-                    group.groupMembers &&
-                    group.groupMembers.map((m) => m.memberName);
+    componentDidUpdate(prevProps) {
+        if (prevProps.justification !== this.props.justification) {
+            this.setState({
+                justification: this.props.justification,
+            });
+        }
+    }
+
+    inputChanged(key, evt) {
+        this.setState({ [key]: evt.target.value });
+    }
+
+    onClickDeleteCancel() {
+        this.setState({ showDeleteConfirmation: false });
+    }
+
+    submitReview() {
+        if (
+            this.state.justification === undefined ||
+            this.state.justification.trim() === ''
+        ) {
+            this.setState({
+                errorMessage: 'Justification is required to submit the review.',
+            });
+            return;
+        }
+
+        // show prompt for user to ask for confirmation once the user asked to delete member/s
+
+        if (this.state.deletedMembers.size > 0) {
+            this.setState({ showDeleteConfirmation: true });
+        } else {
+            this.updateReviewGroup();
+        }
+    }
+
+    updateReviewGroup() {
+        //construct role object from state
+        let group = {
+            name: this.props.groupName,
+        };
+        group.groupMembers = produce(this.props.members, (draft) => {
+            draft.forEach((member) => {
+                if (this.state.deletedMembers.has(member.memberName)) {
+                    member.active = false;
+                }
+                member.expiration = null;
+                delete member.memberFullName;
+            });
+        });
+        group.groupMembers = group.groupMembers.filter((m) => {
+            if (
+                this.state.deletedMembers.has(m.memberName) ||
+                this.state.extendedMembers.has(m.memberName)
+            ) {
+                return m;
+            }
+        });
+        this.props
+            .reviewGroup(
+                this.props.domain,
+                this.props.groupName,
+                group,
+                this.state.justification,
+                this.props._csrf
+            )
+            .then(() => {
                 this.setState({
-                    groupObj: group,
-                    list: group.groupMembers || [],
-                    deletedMembers: new Set(),
-                    submittedReview: false,
+                    submittedReview: true,
+                    errorMessage: null,
+                    justification: '',
                 });
+                this.props.onUpdateSuccess(
+                    `Successfully submitted the review for group ${this.props.groupName}.`
+                );
             })
             .catch((err) => {
                 this.setState({
@@ -110,78 +183,19 @@ export default class GroupReviewTable extends React.Component {
             });
     }
 
-    inputChanged(key, evt) {
-        this.setState({ [key]: evt.target.value });
-    }
-
-    submitReview() {
-        if (
-            this.state.groupObj.groupMembers &&
-            this.state.groupObj.groupMembers.length > 0
-        ) {
-            if (
-                this.state.justification === undefined ||
-                this.state.justification.trim() === ''
-            ) {
-                this.setState({
-                    errorMessage:
-                        'Justification is required to submit the review.',
-                });
-                return;
-            }
-
-            //construct role object from state
-            let group = {
-                name: this.props.group,
-            };
-            group.groupMembers = this.state.groupObj.groupMembers;
-            group.groupMembers.forEach((m) => {
-                if (this.state.deletedMembers.has(m.memberName)) {
-                    m.active = false;
-                }
-                m.expiration = null;
-                delete m.memberFullName; // memberFullName is not a valid property on the server
-            });
-            group.groupMembers = group.groupMembers.filter((m) => {
-                if (this.state.deletedMembers.has(m.memberName)) {
-                    return m;
-                }
-            });
-            this.props.api
-                .reviewGroup(
-                    this.props.domain,
-                    this.props.group,
-                    group,
-                    this.state.justification,
-                    this.props._csrf
-                )
-                .then(() => {
-                    this.setState({
-                        submittedReview: true,
-                        errorMessage: null,
-                    });
-                    this.props.onUpdateSuccess(
-                        `Successfully submitted the review for group ${this.props.group}`
-                    );
-                    this.loadGroup();
-                })
-                .catch((err) => {
-                    this.setState({
-                        errorMessage: RequestUtils.xhrErrorCheckHelper(err),
-                    });
-                });
-        } else {
-            this.props.onUpdateSuccess('There is nothing to review.');
-        }
-    }
-
     onUpdate(key, value) {
         switch (key) {
             case 'delete':
                 this.state.deletedMembers.add(value);
+                this.state.extendedMembers.delete(value);
+                break;
+            case 'extend':
+                this.state.extendedMembers.add(value);
+                this.state.deletedMembers.delete(value);
                 break;
             case 'no-action':
                 this.state.deletedMembers.delete(value);
+                this.state.extendedMembers.delete(value);
                 break;
         }
     }
@@ -190,28 +204,36 @@ export default class GroupReviewTable extends React.Component {
         const left = 'left';
         let center = 'center';
         const rows =
-            this.state.list && this.state.list.length > 0
-                ? this.state.list
+            this.props.members && this.props.members.length > 0
+                ? this.props.members
                       .sort((a, b) => {
                           return a.memberName.localeCompare(b.memberName);
                       })
-                      .map((item, i) => {
+                      .map((item) => {
                           let color = 'white';
                           return (
                               <ReviewRow
                                   category={'group'}
-                                  key={'group-review-' + i}
-                                  idx={'group-review-' + i}
+                                  key={
+                                      'group-review-' +
+                                      this.props.groupName +
+                                      item.memberName
+                                  }
+                                  idx={
+                                      'group-review-' +
+                                      this.props.groupName +
+                                      item.memberName
+                                  }
                                   details={item}
-                                  collection={this.props.group}
+                                  collection={this.props.groupName}
                                   color={color}
                                   onUpdate={this.onUpdate}
                                   submittedReview={this.state.submittedReview}
+                                  timeZone={this.props.timeZone}
                               />
                           );
                       })
                 : [];
-
         if (this.state.showTrustError) {
             return (
                 <ReviewMembersContainerDiv>
@@ -222,14 +244,6 @@ export default class GroupReviewTable extends React.Component {
                             </Color>
                         )}
                     </ContentDiv>
-                </ReviewMembersContainerDiv>
-            );
-        }
-
-        if (!this.state.list || this.state.list.length === 0) {
-            return (
-                <ReviewMembersContainerDiv>
-                    There is no members to review for group: {this.props.group}.
                 </ReviewMembersContainerDiv>
             );
         }
@@ -251,6 +265,9 @@ export default class GroupReviewTable extends React.Component {
                                     EXPIRATION DATE
                                 </TableHeadStyled>
                                 <TableHeadStyled align={center}>
+                                    EXTEND
+                                </TableHeadStyled>
+                                <TableHeadStyled align={center}>
                                     NO ACTION
                                 </TableHeadStyled>
                                 <TableHeadStyled align={center}>
@@ -260,6 +277,14 @@ export default class GroupReviewTable extends React.Component {
                         </thead>
                         <tbody>
                             {rows}
+                            {rows.length > 0 ? (
+                                ''
+                            ) : (
+                                <MessageP key='no-members'>
+                                    There are no members to review for group:{' '}
+                                    {this.props.groupName}.
+                                </MessageP>
+                            )}
                             <tr key='submit-review'>
                                 <td colSpan={2}>
                                     <StyledJustification
@@ -279,7 +304,12 @@ export default class GroupReviewTable extends React.Component {
                                     />
                                 </td>
                                 <td colSpan={1}>
-                                    <SubmitDiv>
+                                    <SubmitDiv
+                                        id={
+                                            'submit-button-' +
+                                            this.props.groupName
+                                        }
+                                    >
                                         <Button
                                             secondary={true}
                                             onClick={this.submitReview}
@@ -302,7 +332,35 @@ export default class GroupReviewTable extends React.Component {
                         </tbody>
                     </ReviewMembersTable>
                 </ReviewMembersSectionDiv>
+                {this.state.showDeleteConfirmation && (
+                    <DeleteModal
+                        name={this.props.groupName}
+                        isOpen={this.state.showDeleteConfirmation}
+                        cancel={this.onClickDeleteCancel}
+                        submit={this.updateReviewGroup}
+                        key={this.props.groupName + '-delete'}
+                        message={
+                            'Are you sure you want to permanently delete member/s from group '
+                        }
+                    />
+                )}
             </ReviewMembersContainerDiv>
         );
     }
 }
+
+const mapStateToProps = (state, props) => {
+    return {
+        ...props,
+        members: selectReviewGroupMembers(state, props.domain, props.groupName),
+    };
+};
+
+const mapDispatchToProps = (dispatch) => ({
+    reviewGroup: (domainName, groupName, group, justification, _csrf) =>
+        dispatch(
+            reviewGroup(domainName, groupName, group, justification, _csrf)
+        ),
+});
+
+export default connect(mapStateToProps, mapDispatchToProps)(GroupReviewTable);

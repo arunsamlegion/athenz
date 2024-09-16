@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,12 +13,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 const Fetchr = require('fetchr');
 let CLIENTS = require('../clients');
 const errorHandler = require('../utils/errorHandler');
 const userService = require('../services/userService');
+const apiUtils = require('../utils/apiUtils');
 const debug = require('debug')('AthenzUI:server:handlers:api');
+const cytoscape = require('cytoscape');
+let dagre = require('cytoscape-dagre');
+
 let appConfig = {};
+
 let domainHistoryApi = undefined;
 try {
     domainHistoryApi = require('./domain-history');
@@ -36,13 +42,188 @@ const responseHandler = function (err, data) {
             `principal: ${this.req.session.shortId} rid: ${
                 this.req.headers.rid
             } Error from ZMS while calling ${this.caller} API: ${JSON.stringify(
-                err
+                errorHandler.fetcherError(err)
             )}`
         );
         return this.callback(errorHandler.fetcherError(err));
     } else {
         this.callback(null, data);
     }
+};
+
+const deleteInstanceZts = (
+    provider,
+    domainName,
+    service,
+    instanceId,
+    auditRef,
+    req
+) => {
+    return new Promise((resolve, reject) => {
+        req.clients.zts.deleteInstanceIdentity(
+            {
+                provider: provider,
+                domain: domainName,
+                service: service,
+                instanceId: instanceId,
+                auditRef: auditRef,
+            },
+            (err, json) => {
+                if (err) {
+                    if (err.status === 404) {
+                        resolve();
+                    } else {
+                        reject(errorHandler.fetcherError(err, 'ZTS'));
+                    }
+                } else {
+                    resolve();
+                }
+            }
+        );
+    });
+};
+
+const deleteInstanceUms = (domainName, service, instanceId, auditRef, req) => {
+    return new Promise((resolve, reject) => {
+        req.clients.ums.deleteInstance(
+            {
+                domainName: domainName,
+                serviceName: service,
+                instanceId: instanceId,
+                auditRef: auditRef,
+            },
+            (err, json) => {
+                if (err) {
+                    if (err.status === 404) {
+                        resolve();
+                    } else {
+                        reject(errorHandler.fetcherError(err, 'UMS'));
+                    }
+                } else {
+                    resolve();
+                }
+            }
+        );
+    });
+};
+
+const deleteDynamicInstanceMsd = (
+    domainName,
+    service,
+    instanceId,
+    auditRef,
+    req
+) => {
+    return new Promise((resolve, reject) => {
+        req.clients.msd.deleteDynamicWorkload(
+            {
+                domainName: domainName,
+                serviceName: service,
+                instanceId: instanceId,
+                auditRef: auditRef,
+            },
+            (err, json) => {
+                if (err) {
+                    if (err.status === 404) {
+                        resolve();
+                    } else {
+                        reject(errorHandler.fetcherError(err, 'MSD'));
+                    }
+                } else {
+                    resolve();
+                }
+            }
+        );
+    });
+};
+
+const deleteStaticInstanceMsd = (
+    domainName,
+    service,
+    instanceId,
+    auditRef,
+    req
+) => {
+    return new Promise((resolve, reject) => {
+        // Note: instanceId may contain url unsafe characters like '10..../20'
+        // the name parameter is then decoded twice (jetty default and msd deleteStaticWorkload logic)
+        // hence the double url encoding for instanceId
+        let instanceIdEncoded = encodeURIComponent(
+            encodeURIComponent(instanceId)
+        );
+        req.clients.msd.deleteStaticWorkload(
+            {
+                domainName: domainName,
+                serviceName: service,
+                name: instanceIdEncoded,
+                auditRef: auditRef,
+            },
+            (err, json) => {
+                if (err) {
+                    if (err.status === 404) {
+                        resolve();
+                    } else {
+                        reject(errorHandler.fetcherError(err, 'MSD'));
+                    }
+                } else {
+                    resolve();
+                }
+            }
+        );
+    });
+};
+
+const deleteAssertion = (
+    domainName,
+    policyName,
+    assertionId,
+    auditRef,
+    req
+) => {
+    return new Promise((resolve, reject) => {
+        req.clients.zms.deleteAssertion(
+            {
+                domainName: domainName,
+                policyName: policyName,
+                assertionId: assertionId,
+                auditRef: auditRef,
+            },
+            (err, json) => {
+                if (err) {
+                    if (err.status === 404) {
+                        resolve();
+                    } else {
+                        reject(err);
+                    }
+                } else {
+                    resolve();
+                }
+            }
+        );
+    });
+};
+
+const deleteRole = (domainName, roleName, auditRef, req) => {
+    return new Promise((resolve, reject) => {
+        req.clients.zms.deleteRole(
+            {
+                domainName: domainName,
+                roleName: roleName,
+                auditRef: auditRef,
+            },
+            (err, json) => {
+                if (err) {
+                    if (err.status === 404) {
+                        resolve();
+                    } else {
+                        reject(err);
+                    }
+                } else {
+                    resolve();
+                }
+            }
+        );
+    });
 };
 
 Fetchr.registerService({
@@ -57,6 +238,30 @@ Fetchr.registerService({
         req.clients.zms.deleteAssertion(
             params,
             responseHandler.bind({ caller: 'deleteAssertion', callback, req })
+        );
+    },
+});
+
+Fetchr.registerService({
+    name: 'assertion-version',
+    create(req, resource, params, body, config, callback) {
+        req.clients.zms.putAssertionPolicyVersion(
+            params,
+            responseHandler.bind({
+                caller: 'putAssertionPolicyVersion',
+                callback,
+                req,
+            })
+        );
+    },
+    delete(req, resource, params, config, callback) {
+        req.clients.zms.deleteAssertionPolicyVersion(
+            params,
+            responseHandler.bind({
+                caller: 'deleteAssertionPolicyVersion',
+                callback,
+                req,
+            })
         );
     },
 });
@@ -100,6 +305,16 @@ Fetchr.registerService({
             params,
             responseHandler.bind({
                 caller: 'putAssertionConditions',
+                callback,
+                req,
+            })
+        );
+    },
+    delete(req, resource, params, config, callback) {
+        req.clients.zms.deleteAssertionConditions(
+            params,
+            responseHandler.bind({
+                caller: 'deleteAssertionConditions',
                 callback,
                 req,
             })
@@ -222,7 +437,7 @@ Fetchr.registerService({
                     `principal: ${req.session.shortId} rid: ${
                         req.headers.rid
                     } Error from ZMS while calling putDomainTemplate API for applying AWS templates : ${JSON.stringify(
-                        err
+                        errorHandler.fetcherError(err)
                     )}`
                 );
                 return callback(errorHandler.fetcherError(err));
@@ -271,7 +486,7 @@ Fetchr.registerService({
                         `principal: ${req.session.shortId} rid: ${
                             req.headers.rid
                         } Error from ZMS getDomainTemplateDetailsList API: ${JSON.stringify(
-                            err
+                            errorHandler.fetcherError(err)
                         )}`
                     );
                     callback(errorHandler.fetcherError(err));
@@ -285,7 +500,7 @@ Fetchr.registerService({
 Fetchr.registerService({
     name: 'admin-domains',
     read(req, resource, params, config, callback) {
-        let username = 'user.' + req.session.shortId;
+        let username = `${appConfig.userDomain}.${req.session.shortId}`;
         // this will allow non-human functional test identity to see domains
         if (req.session.shortId.indexOf('.') !== -1) {
             username = req.session.shortId;
@@ -335,7 +550,7 @@ Fetchr.registerService({
                     `principal: ${req.session.shortId} rid: ${
                         req.headers.rid
                     } Error from ZMS while calling getSignedDomains API for managedDomains : ${JSON.stringify(
-                        err
+                        errorHandler.fetcherError(err)
                     )}`
                 );
                 return callback(errorHandler.fetcherError(err));
@@ -346,7 +561,7 @@ Fetchr.registerService({
 Fetchr.registerService({
     name: 'domain-list',
     read(req, resource, params, config, callback) {
-        let username = 'user.' + req.session.shortId;
+        let username = `${appConfig.userDomain}.${req.session.shortId}`;
         // this will allow non-human functional test identity to see domains
         if (req.session.shortId.indexOf('.') !== -1) {
             username = req.session.shortId;
@@ -425,11 +640,38 @@ Fetchr.registerService({
                     `principal: ${req.session.shortId} rid: ${
                         req.headers.rid
                     } Error from ZMS while calling getDomainList API for UserDomainList: ${JSON.stringify(
-                        err
+                        errorHandler.fetcherError(err)
                     )}`
                 );
                 callback(errorHandler.fetcherError(err));
             });
+    },
+});
+
+Fetchr.registerService({
+    name: 'all-domain-list',
+    read(req, resource, params, config, callback) {
+        let domains = [];
+        req.clients.zms.getDomainList(function (err, json) {
+            if (err) {
+                debug(
+                    `principal: ${req.session.shortId} rid: ${
+                        req.headers.rid
+                    } Error from ZMS while calling getDomainList API for AllDomainList: ${JSON.stringify(
+                        errorHandler.fetcherError(err)
+                    )}`
+                );
+                return callback(errorHandler.fetcherError(err));
+            } else if (Array.isArray(json.names)) {
+                json.names.forEach((domainName) => {
+                    let domainData = { name: domainName, value: domainName };
+                    domains.push(domainData);
+                });
+                return callback(null, domains);
+            } else {
+                return callback(null, domains);
+            }
+        });
     },
 });
 
@@ -462,12 +704,18 @@ Fetchr.registerService({
                     auditRef: params.auditRef,
                     membership: params.membership,
                     category: params.category,
+                    returnObj: params.returnObj,
                 },
-                responseHandler.bind({
-                    caller: 'putGroupMembership',
-                    callback,
-                    req,
-                })
+                function (err, data) {
+                    if (err) {
+                        callback(errorHandler.fetcherError(err));
+                    } else {
+                        data.memberFullName = userService.getUserFullName(
+                            data.memberName
+                        );
+                        callback(null, data);
+                    }
+                }
             );
         } else if (params.category === 'role') {
             req.clients.zms.putMembership(
@@ -477,8 +725,18 @@ Fetchr.registerService({
                     memberName: params.memberName,
                     auditRef: params.auditRef,
                     membership: params.membership,
+                    returnObj: params.returnObj,
                 },
-                responseHandler.bind({ caller: 'putMembership', callback, req })
+                function (err, data) {
+                    if (err) {
+                        callback(errorHandler.fetcherError(err));
+                    } else {
+                        data.memberFullName = data.memberName
+                            ? userService.getUserFullName(data.memberName)
+                            : null;
+                        callback(null, data);
+                    }
+                }
             );
         }
     },
@@ -572,6 +830,7 @@ Fetchr.registerService({
                 memberName: params.memberName,
                 membership: params.membership,
                 auditRef: params.auditRef,
+                returnObj: params.returnObj,
             };
             promises.push(
                 new Promise((resolve, reject) => {
@@ -597,7 +856,7 @@ Fetchr.registerService({
                     `principal: ${req.session.shortId} rid: ${
                         req.headers.rid
                     } Error from ZMS while calling putMembership API for multiple roles: ${JSON.stringify(
-                        err
+                        errorHandler.fetcherError(err)
                     )}`
                 );
                 return callback(errorHandler.fetcherError(err));
@@ -614,7 +873,7 @@ Fetchr.registerService({
                     `principal: ${req.session.shortId} rid: ${
                         req.headers.rid
                     } Error from ZMS while calling getDomainRoleMembers API: ${JSON.stringify(
-                        err
+                        errorHandler.fetcherError(err)
                     )}`
                 );
                 callback(errorHandler.fetcherError(err));
@@ -654,13 +913,41 @@ Fetchr.registerService({
                     })
                 );
             }
-            debug(
-                `principal: ${req.session.shortId} rid: ${
-                    req.headers.rid
-                } Error from ZMS while calling getPolicies API: ${JSON.stringify(
-                    err
-                )}`
-            );
+            if (err) {
+                debug(
+                    `principal: ${req.session.shortId} rid: ${
+                        req.headers.rid
+                    } Error from ZMS while calling getPolicies API: ${JSON.stringify(
+                        errorHandler.fetcherError(err)
+                    )}`
+                );
+            }
+            return callback(errorHandler.fetcherError(err));
+        });
+    },
+});
+
+Fetchr.registerService({
+    name: 'policies-versions',
+    read(req, resource, params, config, callback) {
+        req.clients.zms.getPolicyVersionList(params, function (err, data) {
+            if (!err && Array.isArray(data.list)) {
+                return callback(
+                    null,
+                    data.list.sort((a, b) => {
+                        return a.name > b.name ? 1 : -1;
+                    })
+                );
+            }
+            if (err) {
+                debug(
+                    `principal: ${req.session.shortId} rid: ${
+                        req.headers.rid
+                    } Error from ZMS while calling getPolicyVersionList API: ${JSON.stringify(
+                        errorHandler.fetcherError(err)
+                    )}`
+                );
+            }
             return callback(errorHandler.fetcherError(err));
         });
     },
@@ -674,6 +961,7 @@ Fetchr.registerService({
             responseHandler.bind({ caller: 'getPolicy', callback, req })
         );
     },
+
     create(req, resource, params, body, config, callback) {
         req.clients.zms.getPolicy(params, (err) => {
             if (err) {
@@ -700,7 +988,7 @@ Fetchr.registerService({
                 `principal: ${req.session.shortId} rid: ${
                     req.headers.rid
                 } Error from ZMS while calling getPolicy API: ${JSON.stringify(
-                    customError
+                    errorHandler.fetcherError(customError)
                 )}`
             );
             return callback(errorHandler.fetcherError(customError));
@@ -718,63 +1006,37 @@ Fetchr.registerService({
 });
 
 Fetchr.registerService({
-    name: 'assertionId',
+    name: 'policy-version',
+    create(req, resource, params, body, config, callback) {
+        req.clients.zms.putPolicyVersion(
+            params,
+            responseHandler.bind({ caller: 'putPolicyVersion', callback, req })
+        );
+    },
     read(req, resource, params, config, callback) {
-        new Promise((resolve, reject) => {
-            req.clients.zms.getPolicy(
-                {
-                    policyName: params.policyName,
-                    domainName: params.domainName,
-                },
-                (err, data) => {
-                    if (err) {
-                        reject(err);
-                    }
-                    if (data) {
-                        resolve(data);
-                    }
-                }
-            );
-        })
-            .then((policyData) => {
-                let flag = 0;
-                policyData.assertions.forEach((assertion) => {
-                    if (
-                        assertion.role ===
-                            params.domainName + ':role.' + params.roleName &&
-                        assertion.resource ===
-                            params.domainName + ':' + params.resource &&
-                        assertion.action === params.action &&
-                        assertion.effect === params.effect
-                    ) {
-                        flag = 1;
-                        callback(null, assertion.id);
-                    }
-                });
-
-                if (!flag) {
-                    let error = {
-                        status: 404,
-                        message: {
-                            message:
-                                'Failed to get assertion for policy' +
-                                params.policyName +
-                                '.',
-                        },
-                    };
-                    callback(errorHandler.fetcherError(error));
-                }
+        req.clients.zms.getPolicyVersion(
+            params,
+            responseHandler.bind({ caller: 'getPolicyVersion', callback, req })
+        );
+    },
+    update(req, resource, params, body, config, callback) {
+        req.clients.zms.setActivePolicyVersion(
+            params,
+            responseHandler.bind({
+                caller: 'setActivePolicyVersion',
+                callback,
+                req,
             })
-            .catch((err) => {
-                debug(
-                    `principal: ${req.session.shortId} rid: ${
-                        req.headers.rid
-                    } Error from ZMS while calling getPolicy API for microsegmentation: ${JSON.stringify(
-                        err
-                    )}`
-                );
-                callback(errorHandler.fetcherError(err));
-            });
+        );
+    },
+    delete(req, resource, params, config, callback) {
+        req.clients.zms.deletePolicyVersion(params, function (err, data) {
+            if (err) {
+                return callback(errorHandler.fetcherError(err));
+            } else {
+                callback(null, data);
+            }
+        });
     },
 });
 
@@ -865,7 +1127,7 @@ Fetchr.registerService({
                     `principal: ${req.session.shortId} rid: ${
                         req.headers.rid
                     } Error from ZMS while calling getPolicy API for providers: ${JSON.stringify(
-                        err
+                        errorHandler.fetcherError(err)
                     )}`
                 );
                 callback(errorHandler.fetcherError(err));
@@ -894,6 +1156,15 @@ Fetchr.registerService({
     read(req, resource, params, config, callback) {
         callback(null, {
             allPrefixes: appConfig.allPrefixes,
+        });
+    },
+});
+
+Fetchr.registerService({
+    name: 'all-users',
+    read(req, resource, params, config, callback) {
+        callback(null, {
+            users: userService.getAllUsers(),
         });
     },
 });
@@ -932,7 +1203,7 @@ Fetchr.registerService({
                     `principal: ${req.session.shortId} rid: ${
                         req.headers.rid
                     } Error from ZMS while calling getRole API: ${JSON.stringify(
-                        err
+                        errorHandler.fetcherError(err)
                     )}`
                 );
                 callback(errorHandler.fetcherError(err));
@@ -952,7 +1223,7 @@ Fetchr.registerService({
                                 `principal: ${req.session.shortId} rid: ${
                                     req.headers.rid
                                 } Error from ZMS while calling getRole API: ${JSON.stringify(
-                                    err
+                                    errorHandler.fetcherError(err)
                                 )}`
                             );
                             callback(errorHandler.fetcherError(err));
@@ -1046,10 +1317,80 @@ Fetchr.registerService({
         });
     },
     create(req, resource, params, body, config, callback) {
-        req.clients.zms.putRole(
-            params,
-            responseHandler.bind({ caller: 'putRole', callback, req })
-        );
+        let promises = [];
+
+        const getGroupMembers = (domainName, groupName, roleMember) => {
+            return new Promise((resolve, reject) => {
+                req.clients.zms.getGroup(
+                    { domainName, groupName },
+                    (err, data) => {
+                        if (err) {
+                            reject(err);
+                        }
+                        if (data && data.groupMembers) {
+                            roleMember.groupMembers = data.groupMembers;
+                            roleMember.groupMembers.forEach((member) => {
+                                member.memberFullName =
+                                    userService.getUserFullName(
+                                        member.memberName
+                                    );
+                            });
+                        }
+                        resolve();
+                    }
+                );
+            });
+        };
+
+        req.clients.zms.putRole(params, function (err, data) {
+            if (err) {
+                debug(
+                    `principal: ${req.session.shortId} rid: ${
+                        req.headers.rid
+                    } Error from ZMS while calling putRole API: ${JSON.stringify(
+                        errorHandler.fetcherError(err)
+                    )}`
+                );
+                callback(errorHandler.fetcherError(err));
+            } else if (data) {
+                if (data.auditLog) {
+                    data.auditLog.forEach((m) => {
+                        m.memberFullName = userService.getUserFullName(
+                            m.member
+                        );
+                        m.adminFullName = userService.getUserFullName(m.admin);
+                    });
+                }
+                if (data.roleMembers) {
+                    let roleMembers = data.roleMembers;
+                    roleMembers.forEach((member) => {
+                        member.memberFullName = userService.getUserFullName(
+                            member.memberName
+                        );
+                    });
+                    roleMembers.forEach((member) => {
+                        if (member.memberName.includes(':group.')) {
+                            promises.push(
+                                getGroupMembers(
+                                    member.memberName.split(':group.')[0],
+                                    member.memberName.split(':group.')[1],
+                                    member
+                                )
+                            );
+                        }
+                    });
+                    Promise.all(promises)
+                        .then(() => {
+                            callback(null, data);
+                        })
+                        .catch((err) => {
+                            callback(errorHandler.fetcherError(err));
+                        });
+                } else {
+                    callback(null, data);
+                }
+            }
+        });
     },
     delete(req, resource, params, config, callback) {
         req.clients.zms.deleteRole(
@@ -1058,45 +1399,165 @@ Fetchr.registerService({
         );
     },
     update(req, resource, params, body, config, callback) {
-        req.clients.zms.putRoleReview(
-            params,
-            responseHandler.bind({ caller: 'putRoleReview', callback, req })
-        );
+        let promises = [];
+
+        const getGroupMembers = (domainName, groupName, roleMember) => {
+            return new Promise((resolve, reject) => {
+                req.clients.zms.getGroup(
+                    { domainName, groupName },
+                    (err, data) => {
+                        if (err) {
+                            reject(err);
+                        }
+                        if (data && data.groupMembers) {
+                            roleMember.groupMembers = data.groupMembers;
+                            roleMember.groupMembers.forEach((member) => {
+                                member.memberFullName =
+                                    userService.getUserFullName(
+                                        member.memberName
+                                    );
+                            });
+                        }
+                        resolve();
+                    }
+                );
+            });
+        };
+
+        req.clients.zms.putRoleReview(params, function (err, data) {
+            if (err) {
+                debug(
+                    `principal: ${req.session.shortId} rid: ${
+                        req.headers.rid
+                    } Error from ZMS while calling putRoleReview API: ${JSON.stringify(
+                        errorHandler.fetcherError(err)
+                    )}`
+                );
+                callback(errorHandler.fetcherError(err));
+            } else if (data) {
+                if (data.roleMembers) {
+                    let roleMembers = data.roleMembers;
+                    roleMembers.forEach((member) => {
+                        member.memberFullName = userService.getUserFullName(
+                            member.memberName
+                        );
+                    });
+                    roleMembers.forEach((member) => {
+                        if (member.memberName.includes(':group.')) {
+                            promises.push(
+                                getGroupMembers(
+                                    member.memberName.split(':group.')[0],
+                                    member.memberName.split(':group.')[1],
+                                    member
+                                )
+                            );
+                        }
+                    });
+                    Promise.all(promises)
+                        .then(() => {
+                            callback(null, data);
+                        })
+                        .catch((err) => {
+                            callback(errorHandler.fetcherError(err));
+                        });
+                } else {
+                    callback(null, data);
+                }
+            }
+        });
     },
 });
 
 Fetchr.registerService({
     name: 'meta',
     create(req, resource, params, body, config, callback) {
-        if (params.category === 'group') {
-            req.clients.zms.putGroupMeta(
-                {
-                    domainName: params.domainName,
-                    groupName: params.collectionName,
-                    auditRef: params.auditRef,
-                    detail: params.detail,
-                },
-                responseHandler.bind({ caller: 'putGroupMeta', callback, req })
-            );
-        } else if (params.category === 'role') {
-            req.clients.zms.putRoleMeta(
-                {
-                    domainName: params.domainName,
-                    roleName: params.collectionName,
-                    auditRef: params.auditRef,
-                    detail: params.detail,
-                },
-                responseHandler.bind({ caller: 'putRoleMeta', callback, req })
-            );
-        } else if (params.category === 'domain') {
-            req.clients.zms.putDomainMeta(
-                {
-                    name: params.domainName,
-                    auditRef: params.auditRef,
-                    detail: params.detail,
-                },
-                responseHandler.bind({ caller: 'putDomainMeta', callback, req })
-            );
+        switch (params.category) {
+            case 'group': {
+                req.clients.zms.putGroupMeta(
+                    {
+                        domainName: params.domainName,
+                        groupName: params.collectionName,
+                        auditRef: params.auditRef,
+                        detail: params.detail,
+                    },
+                    responseHandler.bind({
+                        caller: 'putGroupMeta',
+                        callback,
+                        req,
+                    })
+                );
+                break;
+            }
+            case 'role': {
+                req.clients.zms.putRoleMeta(
+                    {
+                        domainName: params.domainName,
+                        roleName: params.collectionName,
+                        auditRef: params.auditRef,
+                        detail: params.detail,
+                    },
+                    responseHandler.bind({
+                        caller: 'putRoleMeta',
+                        callback,
+                        req,
+                    })
+                );
+                break;
+            }
+            case 'domain': {
+                req.clients.zms.putDomainMeta(
+                    {
+                        name: params.domainName,
+                        auditRef: params.auditRef,
+                        detail: params.detail,
+                    },
+                    responseHandler.bind({
+                        caller: 'putDomainMeta',
+                        callback,
+                        req,
+                    })
+                );
+                break;
+            }
+            case 'policy': {
+                req.clients.zms.putPolicy(
+                    {
+                        domainName: params.domainName,
+                        policyName: params.collectionName,
+                        policy: params.detail,
+                        auditRef: params.auditRef,
+                        returnObj: true,
+                    },
+                    responseHandler.bind({ caller: 'putPolicy', callback, req })
+                );
+                break;
+            }
+            case 'service': {
+                if (params.detail) {
+                    // Note: zms expects publicKeys to be an array but we store it as an object
+                    // Additionally, updating service tags should not modify existing public keys
+                    let publicKeysList = [];
+                    let publicKeysMap = params.detail.publicKeys || {};
+                    for (const [, value] of Object.entries(publicKeysMap)) {
+                        publicKeysList.push(value);
+                    }
+                    params.detail.publicKeys = publicKeysList;
+                }
+                req.clients.zms.putServiceIdentity(
+                    {
+                        domain: params.domainName,
+                        service: params.collectionName,
+                        auditRef: params.auditRef,
+                        detail: params.detail,
+                        returnObj: true,
+                    },
+                    responseHandler.bind({
+                        caller: 'putServiceIdentity',
+                        callback,
+                        req,
+                    })
+                );
+            }
         }
     },
     read(req, resource, params, config, callback) {
@@ -1132,7 +1593,7 @@ Fetchr.registerService({
                     `principal: ${req.session.shortId} rid: ${
                         req.headers.rid
                     } Error from ZMS while calling getGroups API: ${JSON.stringify(
-                        err
+                        errorHandler.fetcherError(err)
                     )}`
                 );
                 callback(errorHandler.fetcherError(err));
@@ -1181,6 +1642,34 @@ Fetchr.registerService({
 });
 
 Fetchr.registerService({
+    name: 'dependencies',
+    read(req, resource, params, config, callback) {
+        req.clients.zms.getDependentServiceResourceGroupList(
+            params,
+            responseHandler.bind({
+                caller: 'getServiceDependencies',
+                callback,
+                req,
+            })
+        );
+    },
+});
+
+Fetchr.registerService({
+    name: 'auth-history',
+    read(req, resource, params, config, callback) {
+        req.clients.zms.getAuthHistoryDependencies(
+            params,
+            responseHandler.bind({
+                caller: 'getAuthHistory',
+                callback,
+                req,
+            })
+        );
+    },
+});
+
+Fetchr.registerService({
     name: 'groups-list',
     read(req, resource, params, config, callback) {
         req.clients.zms.getGroups(params, function (err, data) {
@@ -1189,7 +1678,7 @@ Fetchr.registerService({
                     `principal: ${req.session.shortId} rid: ${
                         req.headers.rid
                     } Error from ZMS while calling getGroups API: ${JSON.stringify(
-                        err
+                        errorHandler.fetcherError(err)
                     )}`
                 );
                 callback(errorHandler.fetcherError(err));
@@ -1208,7 +1697,7 @@ Fetchr.registerService({
 Fetchr.registerService({
     name: 'add-service-host',
     update(req, resource, params, body, config, callback) {
-        req.clients.zms.putServiceIdentity(
+        req.clients.msd.putStaticWorkload(
             params,
             responseHandler.bind({ caller: 'add-service-host', callback, req })
         );
@@ -1218,102 +1707,17 @@ Fetchr.registerService({
 Fetchr.registerService({
     name: 'pending-approval',
     read(req, resource, params, config, callback) {
-        let username = 'user.' + req.session.shortId;
+        let username = `${appConfig.userDomain}.${req.session.shortId}`;
         // this will allow non-human functional test identity to see domains
         if (req.session.shortId.indexOf('.') !== -1) {
             username = req.session.shortId;
         }
         params.principal = username;
-        Promise.all([
-            new Promise((resolve, reject) => {
-                req.clients.zms.getPendingDomainGroupMembersList(
-                    params,
-                    (err, data) => {
-                        if (err) {
-                            reject(err);
-                        }
-                        if (data) {
-                            resolve(data);
-                        }
-                    }
-                );
-            }),
-            new Promise((resolve, reject) => {
-                req.clients.zms.getPendingDomainRoleMembersList(
-                    params,
-                    (err, data) => {
-                        if (err) {
-                            reject(err);
-                        }
-                        if (data) {
-                            resolve(data);
-                        }
-                    }
-                );
-            }),
-        ])
-            .then((values) => {
-                let data = values[1];
-                let pendingMap = {};
-                data.domainRoleMembersList.forEach((domain) => {
-                    const domainName = domain.domainName;
-                    domain.members.forEach((member) => {
-                        const memberName = member.memberName;
-                        member.memberRoles.forEach((role) => {
-                            const roleName = role.roleName;
-                            const expiryDate = role.expiration;
-                            const userComment = role.auditRef;
-                            const key = domainName + memberName + roleName;
-                            pendingMap[key] = {
-                                category: 'role',
-                                domainName: domainName,
-                                memberName: memberName,
-                                memberNameFull:
-                                    userService.getUserFullName(memberName),
-                                roleName: roleName,
-                                userComment: userComment,
-                                auditRef: '',
-                                requestPrincipal: role.requestPrincipal,
-                                requestPrincipalFull:
-                                    userService.getUserFullName(
-                                        role.requestPrincipal
-                                    ),
-                                requestTime: role.requestTime,
-                                expiryDate: expiryDate,
-                            };
-                        });
-                    });
-                });
-                values[0].domainGroupMembersList.forEach((domain) => {
-                    const domainName = domain.domainName;
-                    domain.members.forEach((member) => {
-                        const memberName = member.memberName;
-                        member.memberGroups.forEach((group) => {
-                            const groupName = group.groupName;
-                            const expiryDate = group.expiration;
-                            const userComment = group.auditRef;
-                            const key = domainName + memberName + groupName;
-                            pendingMap[key] = {
-                                category: 'group',
-                                domainName: domainName,
-                                memberName: memberName,
-                                memberNameFull:
-                                    userService.getUserFullName(memberName),
-                                roleName: groupName,
-                                userComment: userComment,
-                                auditRef: '',
-                                requestPrincipal: group.requestPrincipal,
-                                requestPrincipalFull:
-                                    userService.getUserFullName(
-                                        group.requestPrincipal
-                                    ),
-                                requestTime: group.requestTime,
-                                expiryDate: expiryDate,
-                            };
-                        });
-                    });
-                });
+        let promises = apiUtils.getPendingDomainMembersPromise(params, req);
 
+        Promise.all(promises)
+            .then((values) => {
+                let pendingMap = apiUtils.getPendingDomainMemberData(values);
                 return callback(null, pendingMap);
             })
             .catch((err) => {
@@ -1321,14 +1725,78 @@ Fetchr.registerService({
                     debug(
                         `principal: ${req.session.shortId} rid: ${
                             req.headers.rid
-                        } Error from ZMS while calling domainRoleMemberList API: ${JSON.stringify(
-                            err
+                        } Error from ZMS while calling getPendingDomainMembersList API: ${JSON.stringify(
+                            errorHandler.fetcherError(err)
                         )}`
                     );
                     callback(errorHandler.fetcherError(err));
                 } else {
                     // 404 from domainRoleMemberList is ok, no pending approvals.
                     callback(null, []);
+                }
+            });
+    },
+});
+
+Fetchr.registerService({
+    name: 'pending-approval-domain',
+    read(req, resource, params, config, callback) {
+        if (params.domainName === null) {
+            return callback(null, []);
+        }
+
+        let promises = apiUtils.getPendingDomainMembersPromise(params, req);
+        Promise.all(promises)
+            .then((values) => {
+                let pendingMap = apiUtils.getPendingDomainMemberData(values);
+                return callback(null, pendingMap);
+            })
+            .catch((err) => {
+                if (err.status !== 404) {
+                    debug(
+                        `principal: ${req.session.shortId} rid: ${
+                            req.headers.rid
+                        } Error from ZMS while calling getPendingDomainMembersListByDomain API: ${JSON.stringify(
+                            errorHandler.fetcherError(err)
+                        )}`
+                    );
+                    callback(errorHandler.fetcherError(err));
+                } else {
+                    // 404 from domainRoleMemberList is ok, no pending approvals.
+                    callback(null, []);
+                }
+            });
+    },
+});
+
+Fetchr.registerService({
+    name: 'pending-approval-domain-count',
+    read(req, resource, params, config, callback) {
+        if (params.domainName === null) {
+            return callback(null, 0);
+        }
+        let promises = apiUtils.getPendingDomainMembersPromise(params, req);
+        Promise.all(promises)
+            .then((values) => {
+                let count = 0;
+                count +=
+                    values[1].domainRoleMembersList.length +
+                    values[0].domainGroupMembersList.length;
+                return callback(null, count);
+            })
+            .catch((err) => {
+                if (err.status !== 404) {
+                    debug(
+                        `principal: ${req.session.shortId} rid: ${
+                            req.headers.rid
+                        } Error from ZMS while calling getPendingDomainMembersCountByDomain API: ${JSON.stringify(
+                            errorHandler.fetcherError(err)
+                        )}`
+                    );
+                    callback(errorHandler.fetcherError(err));
+                } else {
+                    // 404 from domainRoleMemberList is ok, no pending approvals.
+                    callback(null, 0);
                 }
             });
     },
@@ -1346,13 +1814,15 @@ Fetchr.registerService({
                     })
                 );
             }
-            debug(
-                `principal: ${req.session.shortId} rid: ${
-                    req.headers.rid
-                } Error from ZMS while calling getServiceIdentities API: ${JSON.stringify(
-                    err
-                )}`
-            );
+            if (err) {
+                debug(
+                    `principal: ${req.session.shortId} rid: ${
+                        req.headers.rid
+                    } Error from ZMS while calling getServiceIdentities API: ${JSON.stringify(
+                        errorHandler.fetcherError(err)
+                    )}`
+                );
+            }
             return callback(errorHandler.fetcherError(err));
         });
     },
@@ -1365,7 +1835,7 @@ Fetchr.registerService({
         let adminDomains = [];
         let memberDomains = [];
         let searchResults = [];
-        let username = 'user.' + req.session.shortId;
+        let username = `${appConfig.userDomain}.${req.session.shortId}`;
         // this will allow non-human functional test identity to see domains
         if (req.session.shortId.indexOf('.') !== -1) {
             username = req.session.shortId;
@@ -1445,7 +1915,7 @@ Fetchr.registerService({
                     `principal: ${req.session.shortId} rid: ${
                         req.headers.rid
                     } Error from ZMS while calling getDomainList API for search: ${JSON.stringify(
-                        err
+                        errorHandler.fetcherError(err)
                     )}`
                 );
                 callback(errorHandler.fetcherError(err));
@@ -1553,7 +2023,7 @@ Fetchr.registerService({
                         `principal: ${req.session.shortId} rid: ${
                             req.headers.rid
                         } Error from ZMS while calling getGroup API: ${JSON.stringify(
-                            err
+                            errorHandler.fetcherError(err)
                         )}`
                     );
                     callback(errorHandler.fetcherError(err));
@@ -1579,10 +2049,32 @@ Fetchr.registerService({
     },
 
     create(req, resource, params, body, config, callback) {
-        req.clients.zms.putGroup(
-            params,
-            responseHandler.bind({ caller: 'putGroup', callback, req })
-        );
+        req.clients.zms.putGroup(params, function (err, data) {
+            if (err) {
+                debug(
+                    `principal: ${req.session.shortId} rid: ${
+                        req.headers.rid
+                    } Error from ZMS while calling putGroup API: ${JSON.stringify(
+                        errorHandler.fetcherError(err)
+                    )}`
+                );
+                callback(errorHandler.fetcherError(err));
+            }
+            if (data && data.groupMembers) {
+                data.groupMembers.forEach((member) => {
+                    member.memberFullName = userService.getUserFullName(
+                        member.memberName
+                    );
+                });
+            }
+            if (data.auditLog) {
+                data.auditLog.forEach((m) => {
+                    m.memberFullName = userService.getUserFullName(m.member);
+                    m.adminFullName = userService.getUserFullName(m.admin);
+                });
+            }
+            callback(null, data);
+        });
     },
 
     delete(req, resource, params, config, callback) {
@@ -1593,10 +2085,36 @@ Fetchr.registerService({
     },
 
     update(req, resource, params, body, config, callback) {
-        req.clients.zms.putGroupReview(
-            params,
-            responseHandler.bind({ caller: 'putGroupReview', callback, req })
-        );
+        req.clients.zms.putGroupReview(params, function (err, data) {
+            if (err) {
+                if (err.status !== 404) {
+                    debug(
+                        `principal: ${req.session.shortId} rid: ${
+                            req.headers.rid
+                        } Error from ZMS while calling putGroup API: ${JSON.stringify(
+                            errorHandler.fetcherError(err)
+                        )}`
+                    );
+                    callback(errorHandler.fetcherError(err));
+                } else {
+                    callback(null, []);
+                }
+            }
+            if (data && data.groupMembers) {
+                data.groupMembers.forEach((member) => {
+                    member.memberFullName = userService.getUserFullName(
+                        member.memberName
+                    );
+                });
+            }
+            if (data.auditLog) {
+                data.auditLog.forEach((m) => {
+                    m.memberFullName = userService.getUserFullName(m.member);
+                    m.adminFullName = userService.getUserFullName(m.admin);
+                });
+            }
+            callback(null, data);
+        });
     },
 });
 
@@ -1617,7 +2135,7 @@ Fetchr.registerService({
                             `principal: ${req.session.shortId} rid: ${
                                 req.headers.rid
                             } Error from ZMS while calling getRole API: ${JSON.stringify(
-                                err
+                                errorHandler.fetcherError(err)
                             )}`
                         );
                         callback(errorHandler.fetcherError(err));
@@ -1679,7 +2197,7 @@ Fetchr.registerService({
                                 `principal: ${req.session.shortId} rid: ${
                                     req.headers.rid
                                 } Error from ZMS while calling getRole API: ${JSON.stringify(
-                                    err
+                                    errorHandler.fetcherError(err)
                                 )}`
                             );
                             callback(errorHandler.fetcherError(err));
@@ -1774,7 +2292,7 @@ Fetchr.registerService({
                                 `principal: ${req.session.shortId} rid: ${
                                     req.headers.rid
                                 } Error from ZMS while calling getRole API: ${JSON.stringify(
-                                    err
+                                    errorHandler.fetcherError(err)
                                 )}`
                             );
                             callback(errorHandler.fetcherError(err));
@@ -1836,13 +2354,15 @@ Fetchr.registerService({
     name: 'domain-role-member',
     read(req, resource, params, config, callback) {
         req.clients.zms.getPrincipalRoles(params, function (err, data) {
-            debug(
-                `principal: ${req.session.shortId} rid: ${
-                    req.headers.rid
-                } Error from ZMS while calling getDomainRoleMember API: ${JSON.stringify(
-                    err
-                )}`
-            );
+            if (err) {
+                debug(
+                    `principal: ${req.session.shortId} rid: ${
+                        req.headers.rid
+                    } Error from ZMS while calling getDomainRoleMember API: ${JSON.stringify(
+                        errorHandler.fetcherError(err)
+                    )}`
+                );
+            }
 
             if (data) {
                 let prefix = new Set();
@@ -1893,6 +2413,13 @@ Fetchr.registerService({
 });
 
 Fetchr.registerService({
+    name: 'time-zone',
+    read(req, resource, params, config, callback) {
+        callback(null, appConfig.timeZone);
+    },
+});
+
+Fetchr.registerService({
     name: 'feature-flag',
     read(req, resource, params, config, callback) {
         callback(null, appConfig.featureFlag);
@@ -1900,7 +2427,15 @@ Fetchr.registerService({
 });
 
 Fetchr.registerService({
+    name: 'page-feature-flag',
+    read(req, resource, params, config, callback) {
+        callback(null, appConfig.pageFeatureFlag[params.pageName]);
+    },
+});
+
+Fetchr.registerService({
     name: 'microsegmentation',
+
     read(req, resource, params, config, callback) {
         let jsonData = {
             inbound: [],
@@ -1927,15 +2462,26 @@ Fetchr.registerService({
                             item.assertions &&
                                 item.assertions.forEach(
                                     (assertionItem, assertionIdx) => {
+                                        if (
+                                            !apiUtils
+                                                .getMicrosegmentationActionRegex()
+                                                .test(assertionItem.action)
+                                        ) {
+                                            return;
+                                        }
                                         let tempData = {};
                                         let tempProtocol =
                                             assertionItem.action.split('-');
-                                        tempData['layer'] = tempProtocol[0];
+                                        tempData['layer'] =
+                                            apiUtils.omitUndefined(
+                                                tempProtocol[0]
+                                            );
                                         let tempPort =
                                             assertionItem.action.split(':');
-                                        tempData['source_port'] = tempPort[1];
+                                        tempData['source_port'] =
+                                            apiUtils.omitUndefined(tempPort[1]);
                                         tempData['destination_port'] =
-                                            tempPort[2];
+                                            apiUtils.omitUndefined(tempPort[2]);
                                         if (assertionItem.conditions) {
                                             tempData['conditionsList'] = [];
 
@@ -1985,7 +2531,7 @@ Fetchr.registerService({
                                             jsonData['outbound'].push(tempData);
                                             index = jsonData['outbound'].length;
                                         }
-                                        //assertion convention for micro-segmentation:
+                                        //assertion convention for microsegmentation:
                                         //GRANT [Action: <transport layer>-IN / <transport layer>-OUT]:[Source Port]:[Destination Port] [Resource:<service-name>] ON <role-name>
                                         // role name will be of the form : <domain>:role.<roleName>
                                         let roleName =
@@ -2020,7 +2566,7 @@ Fetchr.registerService({
                         return callback(null, jsonData);
                     })
                     .catch((err) => {
-                        return this.callback(errorHandler.fetcherError(err));
+                        return callback(errorHandler.fetcherError(err));
                     });
             }
         );
@@ -2133,7 +2679,14 @@ Fetchr.registerService({
                     conditionsMap: {},
                 };
                 Object.keys(params.data['conditionsList'][i]).forEach((key) => {
-                    if (key === 'enforcementstate' || key === 'instances') {
+                    if (
+                        key === 'enforcementstate' ||
+                        key === 'instances' ||
+                        key === 'scopeonprem' ||
+                        key === 'scopeaws' ||
+                        key === 'scopegcp' ||
+                        key === 'scopeall'
+                    ) {
                         let copyAssertionConditionData = JSON.parse(
                             JSON.stringify(assertionConditionData)
                         );
@@ -2290,6 +2843,9 @@ Fetchr.registerService({
                         },
                         (err, data) => {
                             if (err) {
+                                if (err.status === 404) {
+                                    resolve();
+                                }
                                 reject(err);
                             } else {
                                 return resolve(data);
@@ -2329,18 +2885,231 @@ Fetchr.registerService({
 });
 
 Fetchr.registerService({
+    name: 'validateMicrosegmentation',
+
+    getPorts(portList, protocol) {
+        let ports = [];
+        portList.forEach((port) => {
+            let portArr = port.split('-');
+            ports.push({
+                port: portArr[0],
+                endPort: portArr[1],
+                protocol: protocol,
+            });
+        });
+        return ports;
+    },
+
+    getEntitySelectorService(domainName, serviceName) {
+        return {
+            domainName: domainName,
+            serviceName: serviceName,
+        };
+    },
+
+    update(req, resource, params, body, config, callback) {
+        let entitySelectorService = '';
+        let entitySelectorServiceName = '';
+        let entitySelectorPorts = [];
+        let peerPorts = [];
+        let trafficDirection = '';
+        let allEntitySelectorPort,
+            allPeerPort = '';
+
+        if (params.category === 'inbound') {
+            trafficDirection = 'INGRESS';
+            entitySelectorServiceName = params.inboundDestinationService;
+            allEntitySelectorPort = params.destinationPort;
+            allPeerPort = params.sourcePort;
+        } else {
+            trafficDirection = 'EGRESS';
+            entitySelectorServiceName = params.outboundSourceService;
+            allEntitySelectorPort = params.sourcePort;
+            allPeerPort = params.destinationPort;
+        }
+
+        entitySelectorService = this.getEntitySelectorService(
+            params.domainName,
+            entitySelectorServiceName
+        );
+        let entitySelectorPortList = allEntitySelectorPort.split(',');
+        entitySelectorPorts = this.getPorts(
+            entitySelectorPortList,
+            params.protocol
+        );
+        let peerPortList = allPeerPort.split(',');
+        peerPorts = this.getPorts(peerPortList, params.protocol);
+
+        let athenzServices = [];
+        for (var i = 0; i < params.roleMembers.length; i++) {
+            let memberName = params.roleMembers[i].memberName;
+            let lastPeriodIndex = memberName.lastIndexOf('.');
+            let athenzService = {
+                domainName: memberName.substring(0, lastPeriodIndex),
+                serviceName: memberName.substring(lastPeriodIndex + 1),
+            };
+            athenzServices.push(athenzService);
+        }
+
+        let transportPolicy = {
+            entitySelector: {
+                match: {
+                    athenzService: entitySelectorService,
+                    conditions: [],
+                },
+                ports: entitySelectorPorts,
+            },
+            peer: {
+                athenzServices: athenzServices,
+                ports: peerPorts,
+            },
+            trafficDirection: trafficDirection,
+        };
+
+        if (params.assertionId != -1) {
+            transportPolicy.id = params.assertionId;
+        }
+
+        req.clients.msd.validateTransportPolicy(
+            { transportPolicy: transportPolicy },
+            (err, data) => {
+                if (err) {
+                    return callback(errorHandler.fetcherError(err));
+                } else {
+                    return callback(null, data);
+                }
+            }
+        );
+    },
+});
+
+Fetchr.registerService({
     name: 'instances',
     read(req, resource, params, config, callback) {
-        req.clients.zts.getWorkloadsByService(
+        req.clients.msd.getWorkloadsByService(
             { domainName: params.domainName, serviceName: params.serviceName },
             (err, data) => {
-                if (data && data.workloadList != null) {
-                    return callback(null, data);
+                if (data) {
+                    if (
+                        data.dynamicWorkloadList &&
+                        params.category !== 'static'
+                    ) {
+                        return callback(null, data.dynamicWorkloadList);
+                    } else if (
+                        data.staticWorkloadList &&
+                        params.category === 'static'
+                    ) {
+                        return callback(null, data.staticWorkloadList);
+                    } else {
+                        return callback(null, []);
+                    }
                 } else {
+                    if (err) {
+                        debug(
+                            `principal: ${req.session.shortId} rid: ${
+                                req.headers.rid
+                            } Error from MSD while calling getInstances API: ${JSON.stringify(
+                                errorHandler.fetcherError(err)
+                            )}`
+                        );
+                    }
                     return callback(errorHandler.fetcherError(err));
                 }
             }
         );
+    },
+    delete(req, resource, params, config, callback) {
+        let provider = params.provider;
+        let domainName = params.domainName;
+        let service = params.service;
+        let instanceId = params.instanceId;
+        let category = params.category;
+        let auditRef = params.auditRef;
+        if (category === 'static') {
+            deleteStaticInstanceMsd(
+                domainName,
+                service,
+                instanceId,
+                auditRef,
+                req
+            )
+                .then(() => {
+                    callback(null, []);
+                })
+                .catch((err) => {
+                    callback(err);
+                });
+        } else {
+            deleteInstanceZts(
+                provider,
+                domainName,
+                service,
+                instanceId,
+                auditRef,
+                req
+            )
+                .then(() => {
+                    deleteInstanceUms(
+                        domainName,
+                        service,
+                        instanceId,
+                        auditRef,
+                        req
+                    )
+                        .then(() => {
+                            deleteDynamicInstanceMsd(
+                                domainName,
+                                service,
+                                instanceId,
+                                auditRef,
+                                req
+                            )
+                                .then(() => {
+                                    callback(null, []);
+                                })
+                                .catch((err) => {
+                                    callback(err);
+                                });
+                        })
+                        .catch((err) => {
+                            callback(err);
+                        });
+                })
+                .catch((err) => {
+                    callback(err);
+                });
+        }
+    },
+});
+
+Fetchr.registerService({
+    name: 'graph-layout',
+    update(req, resource, params, body, config, callback) {
+        cytoscape.use(dagre);
+        const cy = cytoscape({
+            container: null,
+            elements: params.elements,
+            headless: true,
+            styleEnabled: true,
+            animate: null,
+            style: params.style,
+        });
+
+        const layout = cy.layout({
+            name: 'dagre',
+            animate: null,
+            rankDir: 'LR',
+        });
+
+        layout.pon('layoutstop').then(() => {
+            let result = {};
+            cy.nodes().map((node) => {
+                result[node.id()] = node.position();
+            });
+            return callback(null, result);
+        });
+
+        layout.run();
     },
 });
 
@@ -2357,10 +3126,133 @@ Fetchr.registerService({
     },
 });
 
+Fetchr.registerService({
+    name: 'transport-rule',
+    delete(req, resource, params, config, callback) {
+        deleteAssertion(
+            params.domainName,
+            params.policyName,
+            params.assertionId,
+            params.auditRef,
+            req
+        )
+            .then(() => {
+                deleteRole(
+                    params.domainName,
+                    params.roleName,
+                    params.auditRef,
+                    req
+                )
+                    .then(() => {
+                        callback(null, []);
+                    })
+                    .catch((err) => {
+                        callback(errorHandler.fetcherError(err));
+                    });
+            })
+            .catch((err) => {
+                callback(errorHandler.fetcherError(err));
+            });
+    },
+});
+
+Fetchr.registerService({
+    name: 'resource-access',
+    read(req, resource, params, config, callback) {
+        req.clients.zms.getResourceAccessList(
+            {
+                action: params.action,
+                principal: `${appConfig.userDomain}.${req.session.shortId}`,
+            },
+            (err, list) => {
+                if (err) {
+                    debug(
+                        `principal: ${req.session.shortId} rid: ${
+                            req.headers.rid
+                        } Error from ZMS while calling getResourceAccessList API: ${JSON.stringify(
+                            errorHandler.fetcherError(err)
+                        )}`
+                    );
+                    callback(errorHandler.fetcherError(err));
+                } else {
+                    if (!list || !list.resources) {
+                        callback(null, []);
+                    } else {
+                        callback(null, list);
+                    }
+                }
+            }
+        );
+    },
+});
+
+Fetchr.registerService({
+    name: 'roles-review',
+    read(req, resource, params, config, callback) {
+        let principal = `${appConfig.userDomain}.${req.session.shortId}`;
+        if (req.session.shortId.indexOf('.') !== -1) {
+            principal = req.session.shortId;
+        }
+        req.clients.zms.getRolesForReview(
+            { principal: principal },
+            (err, data) => {
+                if (err) {
+                    debug(
+                        `principal: ${req.session.shortId} rid: ${
+                            req.headers.rid
+                        } Error from ZMS while calling getRolesForReview API: ${JSON.stringify(
+                            errorHandler.fetcherError(err)
+                        )}`
+                    );
+                    callback(errorHandler.fetcherError(err));
+                } else {
+                    if (!data || !data.list) {
+                        callback(null, []);
+                    } else {
+                        callback(null, data.list);
+                    }
+                }
+            }
+        );
+    },
+});
+
+Fetchr.registerService({
+    name: 'groups-review',
+    read(req, resource, params, config, callback) {
+        let principal = `${appConfig.userDomain}.${req.session.shortId}`;
+        if (req.session.shortId.indexOf('.') !== -1) {
+            principal = req.session.shortId;
+        }
+        req.clients.zms.getGroupsForReview(
+            { principal: principal },
+            (err, data) => {
+                if (err) {
+                    debug(
+                        `principal: ${req.session.shortId} rid: ${
+                            req.headers.rid
+                        } Error from ZMS while calling getGroupsForReview API: ${JSON.stringify(
+                            errorHandler.fetcherError(err)
+                        )}`
+                    );
+                    callback(errorHandler.fetcherError(err));
+                } else {
+                    if (!data || !data.list) {
+                        callback(null, []);
+                    } else {
+                        callback(null, data.list);
+                    }
+                }
+            }
+        );
+    },
+});
+
 module.exports.load = function (config, secrets) {
     appConfig = {
         zms: config.zms,
         athenzDomainService: config.athenzDomainService,
+        userDomain: config.userDomain,
         userData: config.userData,
         headerLinks: config.headerLinks,
         allProviders: config.allProviders,
@@ -2369,9 +3261,12 @@ module.exports.load = function (config, secrets) {
         productMasterLink: config.productMasterLink,
         allPrefixes: config.allPrefixes,
         zmsLoginUrl: config.zmsLoginUrl,
+        timeZone: config.timeZone,
         featureFlag: config.featureFlag,
+        pageFeatureFlag: config.pageFeatureFlag,
         serviceHeaderLinks: config.serviceHeaderLinks,
         templates: config.templates,
+        numberOfRetry: config.numberOfRetry,
     };
     return CLIENTS.load(config, secrets);
 };

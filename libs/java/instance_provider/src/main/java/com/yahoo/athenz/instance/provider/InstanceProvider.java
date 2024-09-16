@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Yahoo Holdings, Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,11 @@
  */
 package com.yahoo.athenz.instance.provider;
 
+import com.yahoo.athenz.auth.Authorizer;
 import com.yahoo.athenz.auth.KeyStore;
+import com.yahoo.athenz.common.server.db.RolesProvider;
 import com.yahoo.athenz.common.server.dns.HostnameResolver;
+import com.yahoo.athenz.common.server.key.PubKeysProvider;
 import com.yahoo.athenz.zts.InstanceRegisterToken;
 import io.jsonwebtoken.SignatureAlgorithm;
 
@@ -30,18 +33,20 @@ public interface InstanceProvider {
      * in the instance confirmation object and optionally return
      * back to the ZTS Server
      */
-    String ZTS_CERT_USAGE        = "certUsage";
-    String ZTS_CERT_EXPIRY_TIME  = "certExpiryTime";
-    String ZTS_CERT_REFRESH      = "certRefresh";
-    String ZTS_CERT_SUBJECT_OU   = "certSubjectOU";
-    String ZTS_CERT_SSH          = "certSSH";
+    String ZTS_CERT_USAGE                           = "certUsage";
+    String ZTS_CERT_EXPIRY_TIME                     = "certExpiryTime";
+    String ZTS_CERT_REFRESH                         = "certRefresh";
+    String ZTS_CERT_SUBJECT_OU                      = "certSubjectOU";
+    String ZTS_CERT_SSH                             = "certSSH";
 
     /**
      * If the attribute name is the certUsage then the
      * specified value can be either client or server
      */
-    String ZTS_CERT_USAGE_CLIENT = "client";
-    String ZTS_CERT_USAGE_SERVER = "server";
+    String ZTS_CERT_USAGE_CLIENT                    = "client";
+    String ZTS_CERT_USAGE_SERVER                    = "server";
+    String ZTS_CERT_USAGE_CODE_SIGNING              = "codeSigning";
+    String ZTS_CERT_USAGE_TIMESTAMPING              = "timestamping";
 
     /**
      * Instance specific attribute names. The san entries
@@ -49,19 +54,32 @@ public interface InstanceProvider {
      * by the client. Check the Copper Argos developer guide
      * for description of each attribute
      */
-    String ZTS_INSTANCE_SAN_DNS            = "sanDNS";
-    String ZTS_INSTANCE_SAN_IP             = "sanIP";
-    String ZTS_INSTANCE_SAN_URI            = "sanURI";
-    String ZTS_INSTANCE_CLIENT_IP          = "clientIP";
-    String ZTS_INSTANCE_CLOUD_ACCOUNT      = "cloudAccount";
-    String ZTS_INSTANCE_ID                 = "instanceId";
-    String ZTS_INSTANCE_CSR_PUBLIC_KEY     = "csrPublicKey";
-    String ZTS_INSTANCE_HOSTNAME           = "hostname";
-    String ZTS_REQUEST_PRINCIPAL           = "principal";
-    String ZTS_INSTANCE_PRIVATE_IP         = "instancePrivateIp";
-    String ZTS_INSTANCE_AWS_ACCOUNT        = "awsAccount";
-    String ZTS_INSTANCE_AZURE_SUBSCRIPTION = "azureSubscription";
-    String ZTS_INSTANCE_CERT_HOSTNAME      = "certHostname";
+    String ZTS_INSTANCE_SAN_DNS                     = "sanDNS";
+    String ZTS_INSTANCE_SAN_IP                      = "sanIP";
+    String ZTS_INSTANCE_SAN_URI                     = "sanURI";
+    String ZTS_INSTANCE_CLIENT_IP                   = "clientIP";
+    String ZTS_INSTANCE_ID                          = "instanceId";
+    String ZTS_INSTANCE_CSR_PUBLIC_KEY              = "csrPublicKey";
+    String ZTS_INSTANCE_HOSTNAME                    = "hostname";
+    String ZTS_REQUEST_PRINCIPAL                    = "principal";
+    String ZTS_INSTANCE_PRIVATE_IP                  = "instancePrivateIp";
+    String ZTS_INSTANCE_AWS_ACCOUNT                 = "awsAccount";
+    String ZTS_INSTANCE_AZURE_SUBSCRIPTION          = "azureSubscription";
+    String ZTS_INSTANCE_AZURE_TENANT                = "azureTenant";
+    String ZTS_INSTANCE_AZURE_CLIENT                = "azureClient";
+    String ZTS_INSTANCE_GCP_PROJECT                 = "gcpProject";
+    String ZTS_INSTANCE_CERT_HOSTNAME               = "certHostname";
+    String ZTS_INSTANCE_CERT_RSA_MOD_HASH           = "certRsaModHash";
+    String ZTS_INSTANCE_CERT_SUBJECT_DN             = "certSubjectDn";
+    String ZTS_INSTANCE_CERT_ISSUER_DN              = "certIssuerDn";
+    String ZTS_INSTANCE_CLOUD                       = "instanceCloud";
+    String ZTS_INSTANCE_UNATTESTED_ISSUER           = "unattestedIssuer";
+    String ZTS_INSTANCE_ISSUER_AWS_ACCOUNT          = "issuerAwsAccount";
+    String ZTS_INSTANCE_ISSUER_GCP_PROJECT          = "issuerGcpProject";
+    /**
+     * Host cert specific attribute names
+     */
+    String ZTS_ATTESTED_SSH_CERT_PRINCIPALS         = "attestedSshCertPrincipals";
 
     enum Scheme {
         HTTP,
@@ -104,6 +122,39 @@ public interface InstanceProvider {
      * @param hostnameResolver the resolver object
      */
     default void setHostnameResolver(HostnameResolver hostnameResolver) {
+    }
+
+    /**
+     * Set roles provider for all the provider in case the provider
+     * needs to look up role membership for a given principal in some domain
+     * @param rolesProvider the roles provider object
+     */
+    default void setRolesProvider(RolesProvider rolesProvider) {
+    }
+
+    /**
+     * sets PubKeysProvider allowing provider to look up public keys of the provider service
+     * @param pubKeyProvider the service pub keys provider
+     */
+
+    default void setPubKeysProvider(PubKeysProvider pubKeyProvider) {
+    }
+
+    /**
+     * Set the external credentials provider for the provider in case
+     * the provider needs to access a given external service to validate
+     * the request
+     * @param credsProvider the external credentials provider object
+     */
+    default void setExternalCredentialsProvider(ExternalCredentialsProvider credsProvider) {
+    }
+
+    /**
+     * Set the authorizer object for the provider in case the provider
+     * needs to carry out an authorization check to validate the request
+     * @param authorizer authorizer object
+     */
+    default void setAuthorizer(Authorizer authorizer) {
     }
 
     /**

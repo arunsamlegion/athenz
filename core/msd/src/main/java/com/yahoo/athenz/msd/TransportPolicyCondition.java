@@ -18,6 +18,12 @@ public class TransportPolicyCondition {
     @RdlOptional
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public List<String> instances;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public List<TransportPolicyScope> scope;
+    @RdlOptional
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public List<TransportPolicySubjectSelectorRequirement> additionalConditions;
 
     public TransportPolicyCondition setEnforcementState(TransportPolicyEnforcementState enforcementState) {
         this.enforcementState = enforcementState;
@@ -33,6 +39,20 @@ public class TransportPolicyCondition {
     public List<String> getInstances() {
         return instances;
     }
+    public TransportPolicyCondition setScope(List<TransportPolicyScope> scope) {
+        this.scope = scope;
+        return this;
+    }
+    public List<TransportPolicyScope> getScope() {
+        return scope;
+    }
+    public TransportPolicyCondition setAdditionalConditions(List<TransportPolicySubjectSelectorRequirement> additionalConditions) {
+        this.additionalConditions = additionalConditions;
+        return this;
+    }
+    public List<TransportPolicySubjectSelectorRequirement> getAdditionalConditions() {
+        return additionalConditions;
+    }
 
     @Override
     public boolean equals(Object another) {
@@ -45,6 +65,12 @@ public class TransportPolicyCondition {
                 return false;
             }
             if (instances == null ? a.instances != null : !instances.equals(a.instances)) {
+                return false;
+            }
+            if (scope == null ? a.scope != null : !scope.equals(a.scope)) {
+                return false;
+            }
+            if (additionalConditions == null ? a.additionalConditions != null : !additionalConditions.equals(a.additionalConditions)) {
                 return false;
             }
         }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,13 +39,13 @@ public class PendingGroupMembershipApprovalNotificationTask implements Notificat
     private final PendingGroupMembershipApprovalNotificationToEmailConverter pendingMembershipApprovalNotificationToEmailConverter;
     private final PendingGroupMembershipApprovalNotificationToMetricConverter pendingGroupMembershipApprovalNotificationToMetricConverter;
 
-    public PendingGroupMembershipApprovalNotificationTask(DBService dbService, int pendingGroupMemberLifespan, String monitorIdentity, String userDomainPrefix) {
+    public PendingGroupMembershipApprovalNotificationTask(DBService dbService, int pendingGroupMemberLifespan, String monitorIdentity, String userDomainPrefix, NotificationToEmailConverterCommon notificationToEmailConverterCommon) {
         this.dbService = dbService;
         this.pendingGroupMemberLifespan = pendingGroupMemberLifespan;
         this.monitorIdentity = monitorIdentity;
         DomainRoleMembersFetcher domainRoleMembersFetcher = new DomainRoleMembersFetcher(dbService, USER_DOMAIN_PREFIX);
         this.notificationCommon = new NotificationCommon(domainRoleMembersFetcher, userDomainPrefix);
-        this.pendingMembershipApprovalNotificationToEmailConverter = new PendingGroupMembershipApprovalNotificationToEmailConverter();
+        this.pendingMembershipApprovalNotificationToEmailConverter = new PendingGroupMembershipApprovalNotificationToEmailConverter(notificationToEmailConverterCommon);
         this.pendingGroupMembershipApprovalNotificationToMetricConverter = new PendingGroupMembershipApprovalNotificationToMetricConverter();
     }
 
@@ -54,6 +54,7 @@ public class PendingGroupMembershipApprovalNotificationTask implements Notificat
         dbService.processExpiredPendingGroupMembers(pendingGroupMemberLifespan, monitorIdentity);
         Set<String> recipients = dbService.getPendingGroupMembershipApproverRoles(1);
         return Collections.singletonList(notificationCommon.createNotification(
+                Notification.Type.PENDING_GROUP_APPROVAL,
                 recipients,
                 null,
                 pendingMembershipApprovalNotificationToEmailConverter,
@@ -72,8 +73,8 @@ public class PendingGroupMembershipApprovalNotificationTask implements Notificat
         private final NotificationToEmailConverterCommon notificationToEmailConverterCommon;
         private final String emailMembershipApprovalReminderBody;
 
-        public PendingGroupMembershipApprovalNotificationToEmailConverter() {
-            notificationToEmailConverterCommon = new NotificationToEmailConverterCommon();
+        public PendingGroupMembershipApprovalNotificationToEmailConverter(NotificationToEmailConverterCommon notificationToEmailConverterCommon) {
+            this.notificationToEmailConverterCommon = notificationToEmailConverterCommon;
             emailMembershipApprovalReminderBody = notificationToEmailConverterCommon.readContentFromFile(getClass().getClassLoader(), EMAIL_TEMPLATE_NOTIFICATION_APPROVAL_REMINDER);
         }
 

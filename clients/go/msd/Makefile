@@ -8,11 +8,10 @@
 #
 
 RDL_FILE=../../../core/msd/src/main/rdl/MSD.rdl
-RDL_LIB=github.com/ardielle/ardielle-go/rdl
 
 # check to see if go utility is installed
 GO := $(shell command -v go 2> /dev/null)
-export GOPATH=$(PWD)
+export GOPATH ?= /tmp/go
 
 # we're not going to generate our code during our automated builds since
 # builds must be done based on files already checked-in into git
@@ -46,11 +45,8 @@ endif
 
 endif
 
-build: src/$(RDL_LIB)
-
-src/$(RDL_LIB):
-	go get $(RDL_LIB)
-	go get github.com/ardielle/ardielle-tools/...
+build:
+	go install github.com/ardielle/ardielle-tools/rdl@latest
 
 model.go: $(RDL_FILE)
 	$(GOPATH)/bin/rdl -ps generate -t -o $@ athenz-go-model $(RDL_FILE)

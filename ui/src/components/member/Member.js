@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,8 @@ import DateUtils from '../utils/DateUtils';
 import Menu from '../denali/Menu/Menu';
 import Icon from '../denali/icons/Icon';
 import { colors } from '../denali/styles';
+import { selectTimeZone } from '../../redux/selectors/domains';
+import { connect } from 'react-redux';
 
 const StyledTag = styled(Tag)`
     background: rgba(53, 112, 244, 0.08);
@@ -51,7 +53,7 @@ const StyledAnchor = styled.a`
 const StyledAnchorActiveInline = { color: colors.linkActive };
 const StyledTagFullNameExpiryActiveInline = { color: colors.black };
 
-export default class Member extends React.Component {
+class Member extends React.Component {
     constructor(props) {
         super(props);
         this.onClickRemove = this.onClickRemove.bind(this);
@@ -71,20 +73,23 @@ export default class Member extends React.Component {
     render() {
         let exp = this.props.item.expiration;
         if (exp) {
-            exp = this.localDate.getLocalDate(exp, 'UTC', 'UTC');
+            exp = this.localDate.getLocalDate(
+                exp,
+                this.props.timeZone,
+                this.props.timeZone
+            );
         }
         let review = this.props.item.reviewReminder;
         if (review) {
-            review = this.localDate.getLocalDate(review, 'UTC', 'UTC');
+            review = this.localDate.getLocalDate(
+                review,
+                this.props.timeZone,
+                this.props.timeZone
+            );
         }
 
         let fullName = '';
-        let shortId = this.props.item.memberName.startsWith('user.')
-            ? this.props.item.memberName.substr(
-                  5,
-                  this.props.item.memberName.length
-              )
-            : this.props.item.memberName;
+
         if (this.props.item.memberFullName) {
             fullName = (
                 <StyledTagFullNameExpiry
@@ -224,3 +229,12 @@ export default class Member extends React.Component {
         }
     }
 }
+
+const mapStateToProps = (state, props) => {
+    return {
+        ...props,
+        timeZone: selectTimeZone(state),
+    };
+};
+
+export default connect(mapStateToProps, null)(Member);

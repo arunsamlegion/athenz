@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,29 +15,38 @@
  */
 package com.yahoo.athenz.zms;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.ServletContext;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 import com.yahoo.athenz.auth.Authority;
 import com.yahoo.athenz.auth.Authorizer;
 import com.yahoo.athenz.auth.Principal;
 import com.yahoo.athenz.common.ServerCommonConsts;
+import com.yahoo.athenz.common.messaging.DomainChangeMessage;
 import com.yahoo.athenz.common.server.rest.Http;
+
+import java.security.cert.X509Certificate;
+import java.util.ArrayList;
+import java.util.List;
 
 public class RsrcCtxWrapper implements ResourceContext {
 
     private final com.yahoo.athenz.common.server.rest.ResourceContext ctx;
-    private Object timerMetric;
-    private boolean optionalAuth;
-    private String apiName;
-
-    RsrcCtxWrapper(HttpServletRequest request, HttpServletResponse response,
-                   Http.AuthorityList authList, boolean optionalAuth,
-                   Authorizer authorizer, Object timerMetric, String apiName) {
+    private final Object timerMetric;
+    private final boolean optionalAuth;
+    private final String apiName;
+    private final boolean eventPublishersEnabled;
+    private List<DomainChangeMessage> domainChangeMessages;
+    
+    RsrcCtxWrapper(ServletContext servletContext, HttpServletRequest request, HttpServletResponse response,
+                   Http.AuthorityList authList, boolean optionalAuth, Authorizer authorizer, Object timerMetric,
+                   final String apiName, boolean eventPublishersEnabled) {
         this.optionalAuth = optionalAuth;
         this.timerMetric = timerMetric;
         this.apiName = apiName.toLowerCase();
-        ctx = new com.yahoo.athenz.common.server.rest.ResourceContext(request,
+        this.eventPublishersEnabled = eventPublishersEnabled;
+        ctx = new com.yahoo.athenz.common.server.rest.ResourceContext(servletContext, request,
                 response, authList, authorizer);
     }
 
@@ -82,6 +91,11 @@ public class RsrcCtxWrapper implements ResourceContext {
     }
 
     @Override
+    public ServletContext servletContext() {
+        return ctx.servletContext();
+    }
+
+    @Override
     public void authenticate() {
         try {
             ctx.authenticate(optionalAuth);
@@ -95,17 +109,33 @@ public class RsrcCtxWrapper implements ResourceContext {
         try {
             ctx.authorize(action, resource, trustedDomain);
         } catch (com.yahoo.athenz.common.server.rest.ResourceException restExc) {
-            logPrincipal(ctx.principal());
+            logPrincipal();
             throwZmsException(restExc);
         }
     }
 
-    public void logPrincipal(final Principal principal) {
+    public String logPrincipal() {
+        final Principal principal = ctx.principal();
         if (principal == null) {
+            return null;
+        }
+        // we'll try our role principal name and if it's not configured
+        // we'll fall back to our service principal name
+        String principalName = principal.getRolePrincipalName();
+        if (principalName == null) {
+            principalName = principal.getFullName();
+        }
+        ctx.request().setAttribute(ServerCommonConsts.REQUEST_PRINCIPAL, principalName);
+        logAuthorityId(principal.getAuthority());
+        logCertificateSerialNumber(principal.getX509Certificate());
+        return principalName;
+    }
+
+    public void logCertificateSerialNumber(X509Certificate x509Cert) {
+        if (x509Cert == null) {
             return;
         }
-        ctx.request().setAttribute(ServerCommonConsts.REQUEST_PRINCIPAL, principal.getFullName());
-        logAuthorityId(principal.getAuthority());
+        ctx.request().setAttribute(ServerCommonConsts.REQUEST_X509_SERIAL, x509Cert.getSerialNumber().toString());
     }
 
     public void logAuthorityId(Authority authority) {
@@ -134,5 +164,36 @@ public class RsrcCtxWrapper implements ResourceContext {
         }
         throw new com.yahoo.athenz.zms.ResourceException(restExc.getCode(),
                 new ResourceError().code(restExc.getCode()).message(msg));
+    }
+
+    public void addDomainChangeMessage(DomainChangeMessage domainChangeMsg) {
+
+        // if we have no event publishers configured there is no
+        // point of creating event objects
+
+        if (!eventPublishersEnabled) {
+            return;
+        }
+
+        if (domainChangeMessages == null) {
+            domainChangeMessages = new ArrayList<>();
+        }
+        
+        if (isNewTypeMessage(domainChangeMsg)) {
+            domainChangeMessages.add(domainChangeMsg);
+        }
+    }
+
+    private boolean isNewTypeMessage(DomainChangeMessage domainChangeMsg) {
+        for (DomainChangeMessage existMsg : domainChangeMessages) {
+            if (existMsg.getDomainName().equals(domainChangeMsg.getDomainName()) && existMsg.getObjectType() == domainChangeMsg.getObjectType()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public List<DomainChangeMessage> getDomainChangeMessages() {
+        return domainChangeMessages;
     }
 }

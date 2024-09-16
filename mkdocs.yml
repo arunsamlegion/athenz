@@ -36,14 +36,10 @@ nav:
 - Getting Started:
     - About: index.md
     - Development Environment: dev_environment.md
-    - Local/Development Environment Setup:
+    - Local/Development/Production Environment Setup:
         - ZMS Server: setup_zms.md
         - ZTS Server: setup_zts.md
         - UI Server: setup_ui.md
-    - Production Environment Setup:
-        - ZMS Server: setup_zms_prod.md
-        - ZTS Server: setup_zts_prod.md
-        - UI Server: setup_ui_prod.md
     - Service Identity Registration:
         - Using X.509 Certificates: service_x509_credentials.md
         - Using Public/Private Key Pairs: reg_service_guide.md
@@ -67,6 +63,7 @@ nav:
     - Athenz Service Identity X.509 Certificate for AWS EKS pods: service_x509_credentials_aws_eks.md
     - Athenz Service Identity X.509 Certificate for AWS Lambda functions: service_x509_credentials_aws_lambda.md
     - Obtaining OAuth2 Access Tokens from ZTS: zts_access_token_guide.md
+    - Athenz OIDC Authentication Provider Support for AWS EKS: oidc_aws_eks.md
 - AWS Setup:
     - AWS Temp Credentials: aws_temp_creds.md
     - Introduction: aws_athenz_setup.md

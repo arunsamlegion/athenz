@@ -1,4 +1,4 @@
-// Copyright 2016 Yahoo Inc.
+// Copyright The Athenz Authors
 // Licensed under the terms of the Apache version 2.0 license. See LICENSE file for terms.
 
 //Policy Types
@@ -39,15 +39,32 @@ type Assertion Struct {
     AssertionConditions conditions (optional); // optional list of assertion conditions associated with given assertion
 }
 
+//The representation of the policy ownership object
+type ResourcePolicyOwnership Struct {
+    SimpleName assertionsOwner (optional); //owner of the object's assertions attribute
+    SimpleName objectOwner (optional); //owner of the object itself - checked for object deletion
+}
+
 //The representation for a Policy with set of assertions.
 type Policy Struct {
     ResourceName name; //name of the policy
     Timestamp modified (optional); //last modification timestamp of this policy
     Array<Assertion> assertions; //list of defined assertions for this policy
     Bool caseSensitive (optional); // If true, we should store action and resource in their original case
+    SimpleName version (optional); // optional version string, defaults to 0
+    Bool active (optional); // if multi-version policy then indicates active version
+    String description (optional); //a description of the policy
+    Map<TagKey,TagValueList> tags (optional); //key-value pair tags, tag might contain multiple values
+    ResourcePolicyOwnership resourceOwnership (optional); //ownership information for the policy (read-only attribute)
 }
 
 //The representation of list of policy objects
 type Policies Struct {
     Array<Policy> list; // list of policy objects
+}
+
+//Options for Policy Management Requests
+type PolicyOptions Struct {
+    SimpleName version; // policy version
+    SimpleName fromVersion (optional); // optional source version used when creating a new version, defaults to 0
 }

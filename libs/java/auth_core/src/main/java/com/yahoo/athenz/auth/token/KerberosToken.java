@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Oath Holdings, Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,7 +39,7 @@ public class KerberosToken extends Token {
     private static final String ATHENZ_PROP_KRB_USER_DOMAIN = "athenz.auth.kerberos.krb_user_domain";
     private static final String ATHENZ_PROP_KRB_USER_REALM = "athenz.auth.kerberos.krb_user_realm";
 
-    private String krbPrivActionClass = System.getProperty(KRB_PROP_TOKEN_PRIV_ACTION);
+    private final String krbPrivActionClass = System.getProperty(KRB_PROP_TOKEN_PRIV_ACTION);
     private String userName = null;
     
     public static final String USER_DOMAIN = System.getProperty(ATHENZ_PROP_USER_DOMAIN, "user");
@@ -68,17 +68,15 @@ public class KerberosToken extends Token {
         PrivilegedExceptionAction<String> privExcAction;
         try {
             byte[] kerberosTicket = Base64.decode(unsignedToken.getBytes(StandardCharsets.UTF_8));
-            if (krbPrivActionClass == null) {
-                privExcAction = new KerberosValidateAction(kerberosTicket);
-            } else {
+            if (krbPrivActionClass != null && !krbPrivActionClass.isEmpty()) {
                 Class privActionClass = Class.forName(krbPrivActionClass);
                 privExcAction = (PrivilegedExceptionAction<String>) privActionClass.getConstructor(byte[].class).newInstance((Object) kerberosTicket);
+            } else {
+                privExcAction = new KerberosValidateAction(kerberosTicket);
             }
             userName = Subject.doAs(serviceSubject, privExcAction);
             int index = userName.indexOf('@');
-            ///CLOVER:OFF
             if (index != -1) {
-                ///CLOVER:ON
                 if (userName.indexOf(KRB_USER_REALM, index) == -1) {
                     if (userName.indexOf(USER_REALM, index) != -1) {
                         domain = USER_DOMAIN;
@@ -123,11 +121,9 @@ public class KerberosToken extends Token {
         public String run() throws Exception {
             GSSContext context = GSSManager.getInstance().createContext((GSSCredential) null);
             context.acceptSecContext(kerberosTicket, 0, kerberosTicket.length);
-            ///CLOVER:OFF
             String user = context.getSrcName().toString();
             context.dispose();
             return user;
-            ///CLOVER:ON
         }
     }
 }

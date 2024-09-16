@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -119,8 +119,31 @@ public class SimplePrincipalTest {
 
         assertEquals(p.getRoles().size(), 1);
         assertTrue(p.getRoles().contains("newrole"));
+        assertNull(p.getRolePrincipalName());
     }
-    
+
+    @Test
+    public void testSimplePrincipalRolePrincipal() {
+
+        List<String> roles = new ArrayList<>();
+
+        UserAuthority userAuthority = new UserAuthority();
+        userAuthority.initialize();
+
+        assertNull(SimplePrincipal.create("user", fakeCreds, roles, "user.athenz", userAuthority));
+
+        roles.add("newrole");
+        SimplePrincipal p = (SimplePrincipal) SimplePrincipal.create("user", fakeCreds, roles, "user.athenz", userAuthority);
+        assertNotNull(p);
+
+        assertEquals(p.getRoles().size(), 1);
+        assertTrue(p.getRoles().contains("newrole"));
+        assertEquals(p.getRolePrincipalName(), "user.athenz");
+
+        p.setRolePrincipalName("home.athenz");
+        assertEquals(p.getRolePrincipalName(), "home.athenz");
+    }
+
     @Test
     public void testSimplePrincipalNullDomainAuthorityDomainNotNull() {
 
@@ -207,7 +230,7 @@ public class SimplePrincipalTest {
 
         Principal p3 = SimplePrincipal.create("user", "jdoe1", fakeCreds, 101, userAuthority);
         assertFalse(p.equals(p3));
-        assertTrue(p.hashCode() != p3.hashCode());
+        assertNotEquals(p.hashCode(), p3.hashCode());
     }
 
     @Test

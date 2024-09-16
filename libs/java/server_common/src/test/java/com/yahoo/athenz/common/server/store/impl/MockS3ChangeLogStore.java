@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Oath Holdings, Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,8 @@ package com.yahoo.athenz.common.server.store.impl;
 import static org.mockito.Mockito.mock;
 
 import com.amazonaws.services.s3.AmazonS3;
-import com.yahoo.athenz.zms.SignedDomain;
 import org.mockito.Mockito;
 
-import java.util.HashMap;
 import java.util.concurrent.ExecutorService;
 
 class MockS3ChangeLogStore extends S3ChangeLogStore {

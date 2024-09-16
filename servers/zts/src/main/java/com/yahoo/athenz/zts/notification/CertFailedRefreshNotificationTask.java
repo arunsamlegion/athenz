@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -62,7 +62,8 @@ public class CertFailedRefreshNotificationTask implements NotificationTask {
                                              HostnameResolver hostnameResolver,
                                              String userDomainPrefix,
                                              String serverName,
-                                             int httpsPort) {
+                                             int httpsPort,
+                                             NotificationToEmailConverterCommon notificationToEmailConverterCommon) {
         this.serverName = serverName;
         this.providers = getProvidersList();
         this.instanceCertManager = instanceCertManager;
@@ -71,7 +72,7 @@ public class CertFailedRefreshNotificationTask implements NotificationTask {
         this.notificationCommon = new NotificationCommon(domainRoleMembersFetcher, userDomainPrefix);
         this.hostnameResolver = hostnameResolver;
         final String apiHostName = System.getProperty(ZTSConsts.ZTS_PROP_NOTIFICATION_API_HOSTNAME, serverName);
-        this.certFailedRefreshNotificationToEmailConverter = new CertFailedRefreshNotificationToEmailConverter(apiHostName, httpsPort);
+        this.certFailedRefreshNotificationToEmailConverter = new CertFailedRefreshNotificationToEmailConverter(apiHostName, httpsPort, notificationToEmailConverterCommon);
         this.certFailedRefreshNotificationToMetricConverter = new CertFailedRefreshNotificationToMetricConverter();
         globStringsMatcher = new GlobStringsMatcher(ZTSConsts.ZTS_PROP_NOTIFICATION_CERT_FAIL_IGNORED_SERVICES_LIST);
     }
@@ -146,7 +147,7 @@ public class CertFailedRefreshNotificationTask implements NotificationTask {
         }
 
         List<String> snoozeTagValues = domainData.getTags().get(SNOOZED_DOMAIN_TAG_KEY).getList();
-        return snoozeTagValues.stream().anyMatch(value -> value.toLowerCase().equals(SNOOZED_DOMAIN_TAG_VALUE));
+        return snoozeTagValues.stream().anyMatch(value -> value.equalsIgnoreCase(SNOOZED_DOMAIN_TAG_VALUE));
     }
 
     private List<Notification> generateNotificationsForAdmins(Map<String, List<X509CertRecord>> domainToCertRecordsMap) {
@@ -154,6 +155,7 @@ public class CertFailedRefreshNotificationTask implements NotificationTask {
         domainToCertRecordsMap.forEach((domain, records) -> {
             Map<String, String> details = getNotificationDetails(domain, records);
             Notification notification = notificationCommon.createNotification(
+                    Notification.Type.CERT_FAILED_REFRESH,
                     ResourceUtils.roleResourceName(domain, ADMIN_ROLE_NAME),
                     details,
                     certFailedRefreshNotificationToEmailConverter,
@@ -169,7 +171,7 @@ public class CertFailedRefreshNotificationTask implements NotificationTask {
     private List<X509CertRecord> getRecordsWithValidHosts(List<X509CertRecord> unrefreshedCerts) {
         unrefreshedCerts.stream()
                 .filter(record -> StringUtil.isEmpty(record.getHostName()))
-                .peek(record -> LOGGER.warn("Record with empty hostName: {}", record.toString()))
+                .peek(record -> LOGGER.warn("Record with empty hostName: {}", record))
                 .collect(Collectors.toList());
 
         // Filter all records with non existing hosts or hosts not recognized by DNS
@@ -233,13 +235,13 @@ public class CertFailedRefreshNotificationTask implements NotificationTask {
         private static final String DEFAULT_ATHENZ_GUIDE = "https://athenz.github.io/athenz/";
 
         private final NotificationToEmailConverterCommon notificationToEmailConverterCommon;
-        private String emailUnrefreshedCertsBody;
+        private final String emailUnrefreshedCertsBody;
         private final String serverName;
         private final int httpsPort;
         private final String athenzGuide;
 
-        public CertFailedRefreshNotificationToEmailConverter(final String serverName, int httpsPort) {
-            notificationToEmailConverterCommon = new NotificationToEmailConverterCommon();
+        public CertFailedRefreshNotificationToEmailConverter(final String serverName, int httpsPort, NotificationToEmailConverterCommon notificationToEmailConverterCommon) {
+            this.notificationToEmailConverterCommon = notificationToEmailConverterCommon;
             emailUnrefreshedCertsBody = notificationToEmailConverterCommon.readContentFromFile(getClass().getClassLoader(), EMAIL_TEMPLATE_UNREFRESHED_CERTS);
             this.serverName = serverName;
             this.httpsPort = httpsPort;
@@ -257,7 +259,7 @@ public class CertFailedRefreshNotificationTask implements NotificationTask {
                     bodyWithDeleteEndpoint,
                     NOTIFICATION_DETAILS_DOMAIN,
                     NOTIFICATION_DETAILS_UNREFRESHED_CERTS,
-                    6);
+                    6, null);
         }
 
         private String addInstanceDeleteEndpointDetails(Map<String, String> metaDetails, String messageWithoutZtsDeleteEndpoint) {

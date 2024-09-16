@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,10 +55,10 @@ const StyleDiv = styled.table`
 
 const TableHeadStyled = styled.th`
     text-align: ${(props) => props.align};
+    width: ${(props) => `${props.width}%`};
     border-bottom: 2px solid #d5d5d5;
     color: #9a9a9a;
     font-weight: 600;
-    font-size: 0.8rem;
     padding-bottom: 5px;
     vertical-align: top;
     text-transform: uppercase;
@@ -68,10 +68,10 @@ const TableHeadStyled = styled.th`
 
 const TableHeadStyledRoleName = styled.th`
     text-align: ${(props) => props.align};
+    width: ${(props) => `${props.width}%`};
     border-bottom: 2px solid #d5d5d5;
     color: #9a9a9a;
     font-weight: 600;
-    font-size: 0.8rem;
     padding-bottom: 5px;
     vertical-align: top;
     text-transform: uppercase;
@@ -79,15 +79,28 @@ const TableHeadStyledRoleName = styled.th`
     word-break: break-all;
 `;
 
-const TableCaptionStyled = styled.caption`
+const TableThStyled = styled.th`
     height: 25px;
     margin-left: 10px;
     margin-top: 10px;
     text-align: left;
     padding: 5px 0 5px 15px;
     vertical-align: middle;
+    font-weight: lighter;
     word-break: break-all;
     display: block;
+`;
+
+const TableThStyledExpand = styled.th` 
+    height: 25px;
+    margin-left: 10px;
+    margin-top: 10px;
+    text-align: left;
+    padding: 5px 0 5px 15px;
+    vertical-align: middle;
+    font-weight: lighter;
+    word-break: break-all;
+    display: table-cell;
 `;
 
 const LeftMarginSpan = styled.span`
@@ -98,7 +111,6 @@ const LeftMarginSpan = styled.span`
 export default class MemberTable extends React.Component {
     constructor(props) {
         super(props);
-        this.api = props.api;
 
         this.state = {
             expanded: true,
@@ -120,7 +132,10 @@ export default class MemberTable extends React.Component {
         let expandMembers = this.expandMembers.bind(this);
         let rows = [];
         let length = this.props.members ? this.props.members.length : 0;
-
+        let columnWidthPercentages = this.props.category === 'role' ? 18.5 : 25;
+        let pendingStateColumnWidthPercentages = 14;
+        let deleteColumnWidthPercentages = 8;
+        let warningColumnWidthPercentages = 1;
         if (this.props.members && this.props.members.length > 0) {
             rows = this.props.members
                 .sort((a, b) => {
@@ -140,14 +155,13 @@ export default class MemberTable extends React.Component {
                             details={item}
                             idx={i}
                             color={color}
-                            api={this.api}
                             key={item.memberName}
                             onUpdateSuccess={this.props.onSubmit}
+                            timeZone={this.props.timeZone}
                             _csrf={this.props._csrf}
                             justificationRequired={
                                 this.props.justificationRequired
                             }
-                            userProfileLink={this.props.userProfileLink}
                             newMember={this.props.newMember}
                         />
                     );
@@ -157,8 +171,36 @@ export default class MemberTable extends React.Component {
         if (!this.state.expanded) {
             return (
                 <StyleTable data-testid='member-table'>
-                    <thead>
-                        <TableCaptionStyled>
+                    <tbody>
+                        <tr>
+                            <TableThStyled>
+                                <LeftMarginSpan>
+                                    <Icon
+                                        icon={
+                                            this.state.expanded
+                                                ? arrowup
+                                                : arrowdown
+                                        }
+                                        onClick={expandMembers}
+                                        color={colors.icons}
+                                        isLink
+                                        size={'1.25em'}
+                                        verticalAlign={'text-bottom'}
+                                    />
+                                </LeftMarginSpan>
+                                {`${caption} (${length})`}
+                            </TableThStyled>
+                        </tr>
+                    </tbody>
+                </StyleTable>
+            );
+        }
+
+        return (
+            <StyleTable data-testid='member-table'>
+                <thead>
+                    <tr>
+                        <TableThStyledExpand colSpan="3">
                             <LeftMarginSpan>
                                 <Icon
                                     icon={
@@ -174,45 +216,65 @@ export default class MemberTable extends React.Component {
                                 />
                             </LeftMarginSpan>
                             {`${caption} (${length})`}
-                        </TableCaptionStyled>
-                    </thead>
-                </StyleTable>
-            );
-        }
-
-        return (
-            <StyleTable data-testid='member-table'>
-                <thead>
-                    <TableCaptionStyled>
-                        <LeftMarginSpan>
-                            <Icon
-                                icon={this.state.expanded ? arrowup : arrowdown}
-                                onClick={expandMembers}
-                                color={colors.icons}
-                                isLink
-                                size={'1.25em'}
-                                verticalAlign={'text-bottom'}
-                            />
-                        </LeftMarginSpan>
-                        {`${caption} (${length})`}
-                    </TableCaptionStyled>
+                        </TableThStyledExpand>
+                    </tr>
                     <tr>
-                        <TableHeadStyledRoleName align={left}>
+                        <TableHeadStyled
+                            width={warningColumnWidthPercentages}
+                            align={center}
+                        >
+                        </TableHeadStyled>
+                        <TableHeadStyledRoleName
+                            width={columnWidthPercentages}
+                            align={left}
+                        >
                             User Name
                         </TableHeadStyledRoleName>
-                        <TableHeadStyled align={left}>
+                        <TableHeadStyled
+                            width={columnWidthPercentages}
+                            align={left}
+                        >
                             Name of User
                         </TableHeadStyled>
-
-                        <TableHeadStyled align={left}>
+                        <TableHeadStyled
+                            width={
+                                this.props.category === 'group' &&
+                                !this.props.pending
+                                    ? columnWidthPercentages +
+                                      pendingStateColumnWidthPercentages
+                                    : columnWidthPercentages
+                            }
+                            align={left}
+                        >
                             Expiration Date
                         </TableHeadStyled>
                         {this.props.category !== 'group' && (
-                            <TableHeadStyled align={left}>
+                            <TableHeadStyled
+                                width={
+                                    this.props.pending
+                                        ? columnWidthPercentages
+                                        : columnWidthPercentages +
+                                          pendingStateColumnWidthPercentages
+                                }
+                                align={left}
+                            >
                                 Review Reminder Date
                             </TableHeadStyled>
                         )}
-                        <TableHeadStyled align={center}>Delete</TableHeadStyled>
+                        {this.props.pending && (
+                            <TableHeadStyled
+                                width={pendingStateColumnWidthPercentages}
+                                align={left}
+                            >
+                                Pending State
+                            </TableHeadStyled>
+                        )}
+                        <TableHeadStyled
+                            width={deleteColumnWidthPercentages}
+                            align={center}
+                        >
+                            Delete
+                        </TableHeadStyled>
                     </tr>
                 </thead>
                 <tbody>{rows}</tbody>

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,32 +15,32 @@
  */
 package com.yahoo.athenz.zts.store;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
+import com.yahoo.athenz.auth.AuthorityConsts;
 import com.yahoo.athenz.auth.util.StringUtils;
 import com.yahoo.athenz.common.metrics.Metric;
 import com.yahoo.athenz.common.server.db.RolesProvider;
+import com.yahoo.athenz.common.server.key.PubKeysProvider;
 import com.yahoo.athenz.common.server.store.ChangeLogStore;
 import com.yahoo.athenz.common.server.util.ConfigProperties;
 import com.yahoo.athenz.common.server.util.AuthzHelper;
-import com.yahoo.athenz.zms.DomainData;
-import com.yahoo.athenz.zms.Group;
-import com.yahoo.athenz.zms.GroupMember;
-import com.yahoo.athenz.zms.Role;
-import com.yahoo.athenz.zms.SignedDomain;
-import com.yahoo.athenz.zms.SignedDomains;
+import com.yahoo.athenz.common.utils.SignUtils;
+import com.yahoo.athenz.zms.*;
+import com.yahoo.athenz.zms.PublicKeyEntry;
+import com.yahoo.athenz.zms.ServiceIdentity;
 import com.yahoo.athenz.zts.*;
 import com.yahoo.athenz.zts.ResourceException;
 import com.yahoo.rdl.*;
 import com.yahoo.athenz.auth.util.Crypto;
 import com.yahoo.athenz.common.config.AthenzConfig;
-import com.yahoo.athenz.common.utils.SignUtils;
 import com.yahoo.athenz.zts.cache.DataCache;
 import com.yahoo.athenz.zts.cache.DataCacheProvider;
 import com.yahoo.athenz.zts.cache.MemberRole;
 
 import java.io.IOException;
-import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -54,6 +54,8 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.bouncycastle.asn1.x9.ECNamedCurveTable;
 import org.bouncycastle.asn1.x9.X9ECParameters;
@@ -63,52 +65,64 @@ import org.slf4j.LoggerFactory;
 
 import static com.yahoo.athenz.common.ServerCommonConsts.ATHENZ_SYS_DOMAIN;
 import static com.yahoo.athenz.common.ServerCommonConsts.PROP_ATHENZ_CONF;
+import static com.yahoo.athenz.zts.ZTSConsts.ZTS_ISSUE_ROLE_CERT_TAG;
 
-public class DataStore implements DataCacheProvider, RolesProvider {
+public class DataStore implements DataCacheProvider, RolesProvider, PubKeysProvider {
 
     ChangeLogStore changeLogStore;
     private CloudStore cloudStore;
-    private final Metric metric;
+    protected final Metric metric;
     private final Cache<String, DataCache> cacheStore;
     final Cache<String, PublicKey> zmsPublicKeyCache;
     final Cache<String, List<GroupMember>> groupMemberCache;
     final Cache<String, List<GroupMember>> principalGroupCache;
+    final RequireRoleCertCache requireRoleCertCache;
     final Map<String, List<String>> hostCache;
     final Map<String, String> publicKeyCache;
+    final JWKList zmsJWKList;
+    final JWKList zmsJWKListStrictRFC;
     final JWKList ztsJWKList;
     final JWKList ztsJWKListStrictRFC;
+    private final ObjectMapper jsonMapper;
+    private final Base64.Decoder base64Decoder;
 
     long updDomainRefreshTime;
     long delDomainRefreshTime;
     long checkDomainRefreshTime;
     long lastDeleteRunTime;
     long lastCheckRunTime;
+    long domainFetchRefreshTime;
+    int domainFetchCount;
+    boolean jwsDomainSupport;
 
     private static final String ROLE_POSTFIX = ":role.";
 
     private final ReentrantReadWriteLock hostRWLock = new ReentrantReadWriteLock();
     private final Lock hostRLock = hostRWLock.readLock();
     private final Lock hostWLock = hostRWLock.writeLock();
-    
+
     private final ReentrantReadWriteLock pkeyRWLock = new ReentrantReadWriteLock();
     private final Lock pkeyRLock = pkeyRWLock.readLock();
     private final Lock pkeyWLock = pkeyRWLock.writeLock();
-    
+
     private static final String ZTS_PROP_DOMAIN_UPDATE_TIMEOUT = "athenz.zts.zms_domain_update_timeout";
     private static final String ZTS_PROP_DOMAIN_DELETE_TIMEOUT = "athenz.zts.zms_domain_delete_timeout";
-    private static final String ZTS_PROP_DOMAIN_CHECK_TIMEOUT = "athenz.zts.zms_domain_check_timeout";
+    private static final String ZTS_PROP_DOMAIN_CHECK_TIMEOUT  = "athenz.zts.zms_domain_check_timeout";
+    private static final String ZTS_PROP_DOMAIN_JWS_SUPPORT    = "athenz.zts.zms_domain_jws_support";
+    private static final String ZTS_PROP_DOMAIN_FETCH_TIMEOUT  = "athenz.zts.zms_domain_fetch_timeout";
+    private static final String ZTS_PROP_DOMAIN_FETCH_COUNT    = "athenz.zts.zms_domain_fetch_count";
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DataStore.class);
-    
+
     public DataStore(ChangeLogStore clogStore, CloudStore cloudStore, Metric metric) {
 
-        /* save our store objects */
+        // save our store objects
 
         this.changeLogStore = clogStore;
         this.setCloudStore(cloudStore);
         this.metric = metric;
-        
-        /* generate our cache stores */
+
+        // generate our cache stores
 
         cacheStore = CacheBuilder.newBuilder().concurrencyLevel(25).build();
         zmsPublicKeyCache = CacheBuilder.newBuilder().concurrencyLevel(25).build();
@@ -116,23 +130,27 @@ public class DataStore implements DataCacheProvider, RolesProvider {
         groupMemberCache = CacheBuilder.newBuilder().concurrencyLevel(25).build();
         principalGroupCache = CacheBuilder.newBuilder().concurrencyLevel(25).build();
 
+        requireRoleCertCache = new RequireRoleCertCache();
+
+        zmsJWKList = new JWKList();
+        zmsJWKListStrictRFC = new JWKList();
         ztsJWKList = new JWKList();
         ztsJWKListStrictRFC = new JWKList();
 
         hostCache = new HashMap<>();
         publicKeyCache = new HashMap<>();
 
-        /* our configured values are going to be in seconds so we need
-         * to convert our input in seconds to milliseconds */
-        
+        // our configured values are going to be in seconds, so we need
+        // to convert our input in seconds to milliseconds
+
         updDomainRefreshTime = ConfigProperties.retrieveConfigSetting(ZTS_PROP_DOMAIN_UPDATE_TIMEOUT, 60);
         delDomainRefreshTime = ConfigProperties.retrieveConfigSetting(ZTS_PROP_DOMAIN_DELETE_TIMEOUT, 3600);
         checkDomainRefreshTime = ConfigProperties.retrieveConfigSetting(ZTS_PROP_DOMAIN_CHECK_TIMEOUT, 600);
 
-        /* we will not let our domain delete/check update time be shorter
-         * than the domain update time so if that's the case we'll
-         * set both to be the same value */
-        
+        // we will not let our domain delete/check update time be shorter
+        // than the domain update time so if that's the case we'll
+        // set both to be the same value
+
         if (delDomainRefreshTime < updDomainRefreshTime) {
             delDomainRefreshTime = updDomainRefreshTime;
         }
@@ -144,19 +162,436 @@ public class DataStore implements DataCacheProvider, RolesProvider {
         lastDeleteRunTime = System.currentTimeMillis();
         lastCheckRunTime = System.currentTimeMillis();
 
+        // configure how fresh our domain files must be. if the last fetch
+        // time is before configured number of seconds, we'll fetch a new
+        // version of the domain data from ZMS. We also have a limit on how
+        // many domains to update during each run
+
+        domainFetchRefreshTime = ConfigProperties.retrieveConfigSetting(ZTS_PROP_DOMAIN_FETCH_TIMEOUT, 2592000);
+        domainFetchCount = ConfigProperties.retrieveConfigSetting(ZTS_PROP_DOMAIN_FETCH_COUNT, 10);
+
         /* load the zms public key from configuration files */
-        
+
         if (!loadAthenzPublicKeys()) {
             throw new IllegalArgumentException("Unable to initialize public keys");
         }
+
+        // check if we're configured to enable jws domain support
+        // instead of signed domains and update changelog store
+
+        jwsDomainSupport = Boolean.parseBoolean(System.getProperty(ZTS_PROP_DOMAIN_JWS_SUPPORT, "false"));
+        clogStore.setJWSDomainSupport(jwsDomainSupport);
+
+        // initialize our jackson object mapper
+
+        jsonMapper = new ObjectMapper();
+        jsonMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+
+        base64Decoder = Base64.getUrlDecoder();
     }
-    
+
+    boolean processLocalSignedDomain(String domainName) {
+
+        boolean result = false;
+        try {
+            result = processSignedDomain(changeLogStore.getLocalSignedDomain(domainName), false);
+        } catch (Exception ex) {
+             LOGGER.error("Unable to process local domain {}", domainName, ex);
+        }
+
+        if (!result) {
+            LOGGER.error("Invalid local domain: {}. Refresh from ZMS required", domainName);
+        }
+
+        return result;
+    }
+
+    boolean validateSignedDomain(SignedDomain signedDomain) {
+
+        DomainData domainData = signedDomain.getDomain();
+        String keyId = signedDomain.getKeyId();
+        String signature = signedDomain.getSignature();
+
+        PublicKey zmsKey = zmsPublicKeyCache.getIfPresent(keyId == null ? "0" : keyId);
+        if (zmsKey == null) {
+            metric.increment("domain_validation_failure", domainData.getName());
+            LOGGER.error("validateSignedDomain: ZMS Public Key id={} not available", keyId);
+            return false;
+        }
+
+        boolean result = false;
+        try {
+            result = Crypto.verify(SignUtils.asCanonicalString(domainData), zmsKey, signature);
+        } catch (Exception ex) {
+            LOGGER.error("validateSignedDomain: Domain={} signature validation exception",
+                    domainData.getName(), ex);
+        }
+
+        if (!result) {
+            metric.increment("domain_validation_failure", domainData.getName());
+            LOGGER.error("validateSignedDomain: Domain={} signature validation failed", domainData.getName());
+            LOGGER.error("validateSignedDomain: Signed Domain Data: {}", SignUtils.asCanonicalString(domainData));
+        }
+
+        return result;
+    }
+
+    public boolean processSignedDomain(SignedDomain signedDomain, boolean saveInStore) {
+
+        DomainData domainData = signedDomain.getDomain();
+        final String domainName = domainData.getName();
+
+        LOGGER.info("Processing domain: {}", domainName);
+
+        try {
+            // before doing anything else let's validate our domain
+
+            if (!validateSignedDomain(signedDomain)) {
+                return false;
+            }
+
+            // if the domain is disabled we're going to skip
+            // processing this domain. however, we must invalidate
+            // our cache and save the updated data with disabled
+            // flag before assuming success
+
+            if (domainData.getEnabled() == Boolean.FALSE) {
+                LOGGER.info("Skipping disabled domain: {}", domainName);
+                deleteDomainFromCache(domainName);
+                if (saveInStore) {
+                    changeLogStore.saveLocalDomain(domainName, signedDomain);
+                }
+                return true;
+            }
+
+            processDomainData(domainData);
+
+            if (saveInStore) {
+                changeLogStore.saveLocalDomain(domainName, signedDomain);
+            }
+
+            return true;
+
+        } catch (Exception ex) {
+            LOGGER.error("unable to process signed domain: {}", domainName, ex);
+            return false;
+        }
+    }
+
+    public void processSignedDomainChecks() {
+
+        // retrieve the list of domains from ZMS
+
+        SignedDomains signedDomains = changeLogStore.getServerDomainModifiedList();
+        if (signedDomains == null) {
+            return;
+        }
+
+        // go through each domain in the list. if it doesn't exist
+        // in the local list we need to update it. if it exists
+        // but with an older last modified time, then we need
+        // to update it unless the domain is disabled
+
+        for (SignedDomain zmsDomain : signedDomains.getDomains()) {
+
+            final DomainData domainData = zmsDomain.getDomain();
+            if (processDomainCheck(getDomainData(domainData.getName()), domainData)) {
+
+                SignedDomain signedDomain = changeLogStore.getServerSignedDomain(domainData.getName());
+
+                if (signedDomain == null) {
+                    continue;
+                }
+
+                processSignedDomain(signedDomain, true);
+            }
+        }
+
+        // get the list of all local domains that need to be refreshed
+        // based on their last fetch time and process them
+
+        List<String> refreshDomainList = getDomainRefreshList();
+        LOGGER.info("refreshing {} domain(s)...", refreshDomainList.size());
+
+        for (String domainName : refreshDomainList) {
+            SignedDomain signedDomain = changeLogStore.getServerSignedDomain(domainName);
+            if (signedDomain == null) {
+                continue;
+            }
+            processSignedDomain(signedDomain, true);
+        }
+    }
+
+    List<String> getDomainRefreshList() {
+
+        Map<String, DomainAttributes> domainMap = changeLogStore.getLocalDomainAttributeList();
+        if (domainMap == null) {
+            return Collections.emptyList();
+        }
+
+        int fetchCount = 0;
+        List<String> domainRefreshList = new ArrayList<>();
+        long now = System.currentTimeMillis() / 1000;
+        for (Map.Entry<String, DomainAttributes> entry : domainMap.entrySet()) {
+            if (now - entry.getValue().getFetchTime() > domainFetchRefreshTime) {
+                domainRefreshList.add(entry.getKey());
+                fetchCount++;
+            }
+
+            // if we have reached our limit, we need to break out of the loop
+            // and process the rest of the domains later.
+
+            if (fetchCount >= domainFetchCount) {
+                break;
+            }
+        }
+
+        return domainRefreshList;
+    }
+
+    // Internal
+    boolean processSignedDomains(SignedDomains signedDomains) {
+
+        /* if we have received no data from ZMS server then we're not
+         * going to update our last modification time and instead we'll
+         * just continue using the old one until we get some updates
+         * from ZMS Server */
+
+        if (signedDomains == null) {
+            LOGGER.info("No updates received from ZMS Server");
+            return true;
+        }
+
+        /* now process all of our domains */
+
+        List<SignedDomain> domains = signedDomains.getDomains();
+        if (domains == null || domains.isEmpty()) {
+            LOGGER.info("No updates received from ZMS Server");
+            return true;
+        }
+
+        // we're going to return success as long as one of the
+        // domains was successfully processed, otherwise there is
+        // no point of retrying all domains over and over again
+
+        boolean result = false;
+        for (SignedDomain domain : domains) {
+            if (processSignedDomain(domain, true)) {
+                result = true;
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Poll for new domains and updated domains from the ChangeLogStore (ZMS).
+     * Called by {@code DataUpdater.run()} thread. Deletes are handled separately in {@code processDomainDeletes()}
+     * @return true if we have updates, false otherwise
+     */
+    public boolean processSignedDomainUpdates() {
+
+        StringBuilder lastModTimestamp = new StringBuilder(128);
+        SignedDomains signedDomains = changeLogStore.getUpdatedSignedDomains(lastModTimestamp);
+
+        /* if our data back was null and the last mod timestamp
+         * is also empty then we had a failure */
+
+        if (signedDomains == null && lastModTimestamp.length() == 0) {
+            return false;
+        }
+
+        /* process all of our received updated domains */
+
+        boolean result = processSignedDomains(signedDomains);
+        if (result) {
+            changeLogStore.setLastModificationTimestamp(lastModTimestamp.toString());
+        }
+
+        return result;
+    }
+
+    boolean processLocalJWSDomain(String domainName) {
+
+        boolean result = false;
+        try {
+            result = processJWSDomain(changeLogStore.getLocalJWSDomain(domainName), false);
+        } catch (Exception ex) {
+            LOGGER.error("Unable to process local domain {}", domainName, ex);
+        }
+
+        if (!result) {
+            LOGGER.error("Invalid local domain: {}. Refresh from ZMS required", domainName);
+        }
+
+        return result;
+    }
+
+    boolean validateJWSDomain(final String domainName, JWSDomain jwsDomain) {
+
+        Function<String, PublicKey> keyGetter = zmsPublicKeyCache::getIfPresent;
+        boolean result = Crypto.validateJWSDocument(jwsDomain.getProtectedHeader(), jwsDomain.getPayload(),
+                jwsDomain.getSignature(), keyGetter);
+
+        if (!result) {
+            metric.increment("domain_validation_failure", domainName);
+            LOGGER.error("validateJWSDomain: Domain={} signature validation failed", domainName);
+        }
+
+        return result;
+    }
+
+    public boolean processJWSDomain(JWSDomain jwsDomain, boolean saveInStore) {
+
+        DomainData domainData;
+        try {
+            byte[] payload = base64Decoder.decode(jwsDomain.getPayload());
+            domainData = jsonMapper.readValue(payload, DomainData.class);
+        } catch (Exception ex) {
+            LOGGER.error("Unable to parse jws domain", ex);
+            return false;
+        }
+
+        final String domainName = domainData.getName();
+        LOGGER.info("Processing domain: {}", domainName);
+
+        try {
+            // before doing anything else let's validate our domain
+
+            if (!validateJWSDomain(domainName, jwsDomain)) {
+                return false;
+            }
+
+            // if the domain is disabled we're going to skip
+            // processing this domain. however, we must invalidate
+            // our cache and save the updated data with disabled
+            // flag before assuming success
+
+            if (domainData.getEnabled() == Boolean.FALSE) {
+                LOGGER.info("Skipping disabled domain: {}", domainName);
+                deleteDomainFromCache(domainName);
+                if (saveInStore) {
+                    changeLogStore.saveLocalDomain(domainName, jwsDomain);
+                }
+                return true;
+            }
+
+            processDomainData(domainData);
+
+            if (saveInStore) {
+                changeLogStore.saveLocalDomain(domainName, jwsDomain);
+            }
+
+            return true;
+
+        } catch (Exception ex) {
+            LOGGER.error("unable to process jws domain: {}", domainName, ex);
+            return false;
+        }
+    }
+
+    public void processJWSDomainChecks() {
+
+        // retrieve the list of domains from ZMS
+
+        SignedDomains signedDomains = changeLogStore.getServerDomainModifiedList();
+        if (signedDomains == null) {
+            return;
+        }
+
+        // go through each domain in the list. if it doesn't exist
+        // in the local list we need to update it. if it exists
+        // but with an older last modified time, then we need
+        // to update it unless the domain is disabled
+
+        for (SignedDomain zmsDomain : signedDomains.getDomains()) {
+
+            final DomainData domainData = zmsDomain.getDomain();
+            if (processDomainCheck(getDomainData(domainData.getName()), domainData)) {
+
+                JWSDomain jwsDomain = changeLogStore.getServerJWSDomain(domainData.getName());
+                if (jwsDomain == null) {
+                    continue;
+                }
+
+                processJWSDomain(jwsDomain, true);
+            }
+        }
+
+        // get the list of all local domains that need to be refreshed
+        // based on their last fetch time and process them
+
+        List<String> refreshDomainList = getDomainRefreshList();
+        LOGGER.info("refreshing {} domain(s)...", refreshDomainList.size());
+
+        for (String domainName : refreshDomainList) {
+            JWSDomain jwsDomain = changeLogStore.getServerJWSDomain(domainName);
+            if (jwsDomain == null) {
+                continue;
+            }
+            processJWSDomain(jwsDomain, true);
+        }
+    }
+
+    // Internal
+    boolean processJWSDomains(List<JWSDomain> jwsDomains) {
+
+        // if we have received no data from ZMS server then we're not
+        // going to update our last modification time, and instead we'll
+        // just continue using the old one until we get some updates
+        // from ZMS Server
+
+        if (jwsDomains == null || jwsDomains.isEmpty()) {
+            LOGGER.info("No updates received from ZMS Server");
+            return true;
+        }
+
+        // we're going to return success as long as one of the
+        // domains was successfully processed, otherwise there is
+        // no point of retrying all domains over and over again
+
+        boolean result = false;
+        for (JWSDomain jwsDomain : jwsDomains) {
+            if (processJWSDomain(jwsDomain, true)) {
+                result = true;
+            }
+        }
+
+        return result;
+    }
+
+    public boolean processJWSDomainUpdates() {
+
+        StringBuilder lastModTimestamp = new StringBuilder(128);
+        List<JWSDomain> jwsDomains = changeLogStore.getUpdatedJWSDomains(lastModTimestamp);
+
+        // if our data back was null and the last mod timestamp
+        // is also empty then we had a failure
+
+        if (jwsDomains == null && lastModTimestamp.length() == 0) {
+            return false;
+        }
+
+        // process all of our received updated domains
+
+        boolean result = processJWSDomains(jwsDomains);
+        if (result) {
+            changeLogStore.setLastModificationTimestamp(lastModTimestamp.toString());
+        }
+
+        return result;
+    }
+
     String generateServiceKeyName(String domain, String service, String keyId) {
         return domain + "." + service + "_" + keyId;
     }
 
     public JWKList getZtsJWKList(Boolean rfc) {
         return rfc == Boolean.TRUE ? ztsJWKListStrictRFC : ztsJWKList;
+    }
+
+    public JWKList getZmsJWKList(Boolean rfc) {
+        return rfc == Boolean.TRUE ? zmsJWKListStrictRFC : zmsJWKList;
     }
 
     boolean loadAthenzPublicKeys() {
@@ -186,41 +621,58 @@ public class DataStore implements DataCacheProvider, RolesProvider {
                 LOGGER.error("No valid public ZMS keys in conf file: {}", confFileName);
                 return false;
             }
+            loadZmsJwk(zmsPublicKeys);
+
             final ArrayList<com.yahoo.athenz.zms.PublicKeyEntry> ztsPublicKeys = conf.getZtsPublicKeys();
             if (ztsPublicKeys == null) {
                 LOGGER.error("Conf file {} has no ZTS Public keys", confFileName);
                 return false;
             }
-            final List<JWK> jwkList = new ArrayList<>();
-            final List<JWK> jwkListStrictRFC = new ArrayList<>();
-            for (com.yahoo.athenz.zms.PublicKeyEntry publicKey : ztsPublicKeys) {
-                final String id = publicKey.getId();
-                final String key = publicKey.getKey();
-                if (key == null || id == null) {
-                    LOGGER.error("Missing required zts public key attributes: {}/{}", id, key);
-                    continue;
-                }
-                final JWK jwk = getJWK(key, id, false);
-                if (jwk != null) {
-                    jwkList.add(jwk);
-                }
-                final JWK jwkRfc = getJWK(key, id, true);
-                if (jwkRfc != null) {
-                    jwkListStrictRFC.add(jwkRfc);
-                }
-            }
-            if (jwkList.isEmpty() || jwkListStrictRFC.isEmpty()) {
+            if (!loadZtsJwk(ztsPublicKeys)) {
                 LOGGER.error("No valid public ZTS keys in conf file: {}", confFileName);
                 return false;
             }
-            ztsJWKList.setKeys(jwkList);
-            ztsJWKListStrictRFC.setKeys(jwkListStrictRFC);
         } catch (IOException ex) {
             LOGGER.error("Unable to parse conf file {}, error: {}", confFileName, ex.getMessage());
             return false;
         }
         return true;
     }
+
+boolean loadJwk(ArrayList<com.yahoo.athenz.zms.PublicKeyEntry> keys, JWKList jwkList, JWKList jwkListStrictRFC) {
+    final List<JWK> tmpJwkList = new ArrayList<>();
+    final List<JWK> tmpJwkListStrictRFC = new ArrayList<>();
+    for (com.yahoo.athenz.zms.PublicKeyEntry publicKey : keys) {
+        final String id = publicKey.getId();
+        final String key = publicKey.getKey();
+        if (key == null || id == null) {
+            LOGGER.error("Missing required public key attributes: {}/{}", id, key);
+            continue;
+        }
+        final JWK jwk = getJWK(key, id, false);
+        if (jwk != null) {
+            tmpJwkList.add(jwk);
+        }
+        final JWK jwkRfc = getJWK(key, id, true);
+        if (jwkRfc != null) {
+            tmpJwkListStrictRFC.add(jwkRfc);
+        }
+    }
+    if (tmpJwkList.isEmpty() || tmpJwkListStrictRFC.isEmpty()) {
+        return false;
+    }
+    jwkList.setKeys(tmpJwkList);
+    jwkListStrictRFC.setKeys(tmpJwkListStrictRFC);
+    return true;
+}
+
+boolean loadZmsJwk(ArrayList<com.yahoo.athenz.zms.PublicKeyEntry> keys) {
+    return loadJwk(keys, zmsJWKList, zmsJWKListStrictRFC);
+}
+
+boolean loadZtsJwk(ArrayList<com.yahoo.athenz.zms.PublicKeyEntry> keys) {
+    return loadJwk(keys, ztsJWKList, ztsJWKListStrictRFC);
+}
 
     @SuppressWarnings("rawtypes")
     String getCurveName(org.bouncycastle.jce.spec.ECParameterSpec ecParameterSpec, boolean rfc) {
@@ -243,7 +695,7 @@ public class DataStore implements DataCacheProvider, RolesProvider {
         return rfc ? rfcEllipticCurveName(curveName) : curveName;
     }
 
-    JWK getJWK(final String pemKey, final String keyId, boolean rfc) {
+    public JWK getJWK(final String pemKey, final String keyId, boolean rfc) {
 
         PublicKey publicKey;
 
@@ -265,8 +717,8 @@ public class DataStore implements DataCacheProvider, RolesProvider {
                 jwk.setKty("RSA");
                 jwk.setAlg("RS256");
                 final RSAPublicKey rsaPublicKey = (RSAPublicKey) publicKey;
-                jwk.setN(new String(encoder.encode(toIntegerBytes(rsaPublicKey.getModulus(), rfc))));
-                jwk.setE(new String(encoder.encode(toIntegerBytes(rsaPublicKey.getPublicExponent(), rfc))));
+                jwk.setN(new String(encoder.encode(Crypto.toIntegerBytes(rsaPublicKey.getModulus(), rfc))));
+                jwk.setE(new String(encoder.encode(Crypto.toIntegerBytes(rsaPublicKey.getPublicExponent(), rfc))));
                 break;
             case ZTSConsts.ECDSA:
                 jwk = new JWK();
@@ -276,60 +728,13 @@ public class DataStore implements DataCacheProvider, RolesProvider {
                 jwk.setAlg("ES256");
                 final ECPublicKey ecPublicKey = (ECPublicKey) publicKey;
                 final ECPoint ecPoint = ecPublicKey.getW();
-                jwk.setX(new String(encoder.encode(toIntegerBytes(ecPoint.getAffineX(), rfc))));
-                jwk.setY(new String(encoder.encode(toIntegerBytes(ecPoint.getAffineY(), rfc))));
+                jwk.setX(new String(encoder.encode(Crypto.toIntegerBytes(ecPoint.getAffineX(), rfc))));
+                jwk.setY(new String(encoder.encode(Crypto.toIntegerBytes(ecPoint.getAffineY(), rfc))));
                 jwk.setCrv(getCurveName(EC5Util.convertSpec(ecPublicKey.getParams()), rfc));
                 break;
         }
 
         return jwk;
-    }
-
-    /**
-     * https://github.com/apache/commons-codec/blob/master/src/main/java/org/apache/commons/codec/binary/Base64.java
-     * Licensed Under Apache 2.0 https://github.com/apache/commons-codec/blob/master/LICENSE.txt
-     *
-     * In apache.commons.code this is a private static function and the wrapper
-     * does not generate base64 encoded data that is url safe which is required
-     * per jwk spec. So we'll copy the function as is for our use.
-     *
-     * Returns a byte-array representation of a {@code BigInteger} without sign bit.
-     *
-     * @param bigInt {@code BigInteger} to be converted
-     * @return a byte array representation of the BigInteger parameter
-     */
-
-    byte[] toIntegerBytes(final BigInteger bigInt, boolean rfc) {
-
-        // this will be removed once all properties update
-        // their code to handle the sign bit correctly
-        if (!rfc) {
-            return bigInt.toByteArray();
-        }
-
-        int bitlen = bigInt.bitLength();
-        // round bitlen
-        bitlen = ((bitlen + 7) >> 3) << 3;
-        final byte[] bigBytes = bigInt.toByteArray();
-
-        if (((bigInt.bitLength() % 8) != 0) && (((bigInt.bitLength() / 8) + 1) == (bitlen / 8))) {
-            return bigBytes;
-        }
-        // set up params for copying everything but sign bit
-        int startSrc = 0;
-        int len = bigBytes.length;
-
-        ///CLOVER:OFF
-        // if bigInt is exactly byte-aligned, just skip signbit in copy
-        if ((bigInt.bitLength() % 8) == 0) {
-            startSrc = 1;
-            len--;
-        }
-        ///CLOVER:ON
-        final int startDst = bitlen / 8 - len; // to pad w/ nulls as per spec
-        final byte[] resizedBytes = new byte[bitlen / 8];
-        System.arraycopy(bigBytes, startSrc, resizedBytes, startDst, len);
-        return resizedBytes;
     }
 
     /**
@@ -385,39 +790,39 @@ public class DataStore implements DataCacheProvider, RolesProvider {
 
         /* we can't have a lastModTime set if we have no local
          * domains - in this case we're going to reset */
-        
+
         if (localDomainList.isEmpty()) {
             return -1;
         }
-        
+
         /* first we need to retrieve the list of domains from ZMS so we
          * know what domains have been deleted already (if any).
          * If we get no response from ZMS, we're not going to stop
          * ZTS from coming up with its local files */
-        
+
         Set<String> zmsDomainList = changeLogStore.getServerDomainList();
 
         int badDomains = 0;
         for (String domainName : localDomainList) {
-            
+
             /* make sure this domain is still active in ZMS otherwise
              * we'll just remove our local copy. if we were not able
              * to fetch the domain list from ZMS at this time, we'll
              * just defer the cleanup at the next check */
 
             if (zmsDomainList != null && !zmsDomainList.contains(domainName)) {
-                
+
                 if (LOGGER.isDebugEnabled()) {
                     LOGGER.debug("Removing local domain: {}. Domain not in ZMS anymore.", domainName);
                 }
-                
+
                 deleteDomain(domainName);
                 continue;
             }
-            
+
             /* if we get a failure when processing a local domain then it
              * indicates that we had an invalid domain file (possibly
-             * corrupted or hacked. In this case we're going to drop
+             * corrupted or hacked). In this case we're going to drop
              * everything and request a full refresh from ZMS only if the
              * change log store supports that functionality. Otherwise,
              * we're going to just skip the domain and continue. */
@@ -441,9 +846,13 @@ public class DataStore implements DataCacheProvider, RolesProvider {
 
         return badDomains;
     }
-    
+
+    boolean processLocalDomain(String domainName) {
+        return jwsDomainSupport ? processLocalJWSDomain(domainName) : processLocalSignedDomain(domainName);
+    }
+
     public void init() {
-        
+
         /* now let's retrieve the list of locally saved domains */
 
         List<String> localDomainList = changeLogStore.getLocalDomainList();
@@ -454,9 +863,9 @@ public class DataStore implements DataCacheProvider, RolesProvider {
 
         int badDomains = processLocalDomains(localDomainList);
         if (badDomains == -1) {
-            
+
             changeLogStore.setLastModificationTimestamp(null);
-            
+
             /* if we have decided that we need to a full refresh
              * we need to clean up and remove any cached domains */
 
@@ -464,7 +873,7 @@ public class DataStore implements DataCacheProvider, RolesProvider {
                 deleteDomain(domainName);
             }
         }
-        
+
         /* after our local files have been processed now we need to
          * retrieve the domains that were modified since the last
          * modification time */
@@ -489,64 +898,65 @@ public class DataStore implements DataCacheProvider, RolesProvider {
                 updDomainRefreshTime, TimeUnit.SECONDS);
     }
 
-    boolean processLocalDomain(String domainName) {
+    void processDomainChecks() {
+        if (jwsDomainSupport) {
+            processJWSDomainChecks();
+        } else {
+            processSignedDomainChecks();
+        }
+    }
 
-        boolean result = false;
-        try {
-            result = processDomain(changeLogStore.getLocalSignedDomain(domainName), false);
-        } catch (Exception ex) {
-            if (LOGGER.isDebugEnabled()) {
-                LOGGER.debug("Unable to process local domain {}:{}", domainName, ex.getMessage());
+    boolean processDomainUpdates() {
+        return jwsDomainSupport ? processJWSDomainUpdates() : processSignedDomainUpdates();
+    }
+
+    void processDomainRoles(DomainData domainData, DataCache domainCache) {
+
+        List<Role> roles = domainData.getRoles();
+        if (roles != null) {
+            for (Role role : roles) {
+                domainCache.processRole(role);
+                if (isRoleCertRequired(role)) {
+                    requireRoleCertCache.processRoleCache(role);
+                } else {
+                    requireRoleCertCache.processRoleCacheDelete(role);
+                }
             }
         }
-        
-        if (!result) {
-            LOGGER.error("Invalid local domain: {}. Refresh from ZMS required.", domainName);
-        }
-        
-        return result;
-    }
-    
-    boolean validateSignedDomain(SignedDomain signedDomain) {
-        
-        DomainData domainData = signedDomain.getDomain();
-        String keyId = signedDomain.getKeyId();
-        String signature = signedDomain.getSignature();
-        
-        PublicKey zmsKey = zmsPublicKeyCache.getIfPresent(keyId == null ? "0" : keyId);
-        if (zmsKey == null) {
-            metric.increment("domain_validation_failure", domainData.getName());
-            LOGGER.error("validateSignedDomain: ZMS Public Key id={} not available", keyId);
-            return false;
-        }
 
-        boolean result = false;
-        try {
-            result = Crypto.verify(SignUtils.asCanonicalString(domainData), zmsKey, signature);
-        } catch (Exception ex) {
-            LOGGER.error("validateSignedDomain: Domain={} signature validation exception",
-                    domainData.getName(), ex);
+        // Determine which roles have been deleted and should be removed from cache
+        // first we're going to extract our original roles. if we don't have
+        // any, then there is nothing to process, so we can return away
+
+        DataCache dataCache = getCacheStore().getIfPresent(domainData.getName());
+        if (dataCache == null) {
+            return;
         }
-        
-        if (!result) {
-            metric.increment("domain_validation_failure", domainData.getName());
-            LOGGER.error("validateSignedDomain: Domain={} signature validation failed", domainData.getName());
-            LOGGER.error("validateSignedDomain: Signed Domain Data: {}", SignUtils.asCanonicalString(domainData));
-        }
-        
-        return result;
-    }
-    
-    void processDomainRoles(DomainData domainData, DataCache domainCache) {
-        
-        List<Role> roles = domainData.getRoles();
-        if (roles == null) {
+        List<Role> originalRoles = dataCache.getDomainData().getRoles();
+        if (originalRoles == null || originalRoles.isEmpty()) {
             return;
         }
 
-        for (Role role : roles) {
-            domainCache.processRole(role);
+        // get the set of role names in the original and updated domains to
+        // compare and see which ones have been deleted
+
+        final Set<String> newRoleNames = (roles != null) ?
+                roles.stream().map(Role::getName).collect(Collectors.toSet()) : new HashSet<>();
+
+        for (Role originalRole : originalRoles) {
+            if (!newRoleNames.contains(originalRole.getName())) {
+                requireRoleCertCache.processRoleCacheDelete(originalRole);
+            }
         }
+    }
+
+    private boolean isRoleCertRequired(Role role) {
+        if (role == null || role.getTags() == null || role.getRoleMembers() == null) {
+            return false;
+        }
+        TagValueList tagValueList = role.getTags().get(ZTS_ISSUE_ROLE_CERT_TAG);
+        return (tagValueList != null && tagValueList.getList() != null &&
+                tagValueList.getList().contains("true"));
     }
 
     void processDomainGroups(DomainData domainData) {
@@ -588,6 +998,10 @@ public class DataStore implements DataCacheProvider, RolesProvider {
 
     void processGroup(Group group) {
 
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("Processing group: {}", group.getName());
+        }
+
         // if the group has null members we'll replace it with an empty set
 
         if (group.getGroupMembers() == null) {
@@ -605,17 +1019,17 @@ public class DataStore implements DataCacheProvider, RolesProvider {
 
         // remove current members from new members
 
-        AuthzHelper.removeGroupMembers(newMembers, curMembers);
+        AuthzHelper.removeGroupMembers(newMembers, curMembers, true);
 
         // remove new members from current members
         // which leaves the deleted members.
 
-        AuthzHelper.removeGroupMembers(delMembers, group.getGroupMembers());
+        AuthzHelper.removeGroupMembers(delMembers, group.getGroupMembers(), true);
 
         // now let's remove our new members from the member list to
         // get the possible list of users that need to be updated
 
-        AuthzHelper.removeGroupMembers(updMembers, newMembers);
+        AuthzHelper.removeGroupMembers(updMembers, newMembers, true);
 
         // update the group member cache with the new members
 
@@ -638,11 +1052,23 @@ public class DataStore implements DataCacheProvider, RolesProvider {
                     continue;
                 }
 
-                // otherwise we'll add this member to our new list
+                // we'll add this member to our new list
 
                 groupMembers = new ArrayList<>();
                 groupMembers.add(member);
                 principalGroupCache.put(member.getMemberName(), groupMembers);
+
+            } else if (groupMembers.isEmpty()) {
+
+                // make sure we want to process this user
+
+                if (AuthzHelper.shouldSkipGroupMember(member, currentTime)) {
+                    continue;
+                }
+
+                // we'll add this member to our existing list
+
+                groupMembers.add(member);
 
             } else {
 
@@ -652,16 +1078,22 @@ public class DataStore implements DataCacheProvider, RolesProvider {
                 if (AuthzHelper.shouldSkipGroupMember(member, currentTime)) {
                     groupMembers.removeIf(item -> item.getGroupName().equalsIgnoreCase(group.getName()));
                 } else {
-                    // we need to find our entry and update details
+                    // we need to find our entry and update details. if we don't
+                    // find our member in the list, then we need to add it
 
+                    boolean memberNotFound = true;
                     for (GroupMember mbr : groupMembers) {
                         if (mbr.getGroupName().equalsIgnoreCase(group.getName())) {
                             mbr.setExpiration(member.getExpiration());
                             mbr.setSystemDisabled(member.getSystemDisabled());
                             mbr.setActive(member.getActive());
                             mbr.setApproved(member.getApproved());
+                            memberNotFound = false;
                             break;
                         }
+                    }
+                    if (memberNotFound) {
+                        groupMembers.add(member);
                     }
                 }
             }
@@ -719,39 +1151,46 @@ public class DataStore implements DataCacheProvider, RolesProvider {
     }
 
     void processDomainPolicies(DomainData domainData, DataCache domainCache) {
-        
+
         com.yahoo.athenz.zms.SignedPolicies signedPolicies = domainData.getPolicies();
         if (signedPolicies == null) {
             return;
         }
-        
+
         com.yahoo.athenz.zms.DomainPolicies domainPolicies = signedPolicies.getContents();
         if (domainPolicies == null) {
             return;
         }
-        
+
         List<com.yahoo.athenz.zms.Policy> policies = domainPolicies.getPolicies();
         if (policies == null) {
             return;
         }
-        
+
         List<Role> roles = domainData.getRoles();
         HashMap<String, Role> roleMap  = new HashMap<>();
         for (Role role : roles) {
             roleMap.put(role.getName(), role);
         }
         for (com.yahoo.athenz.zms.Policy policy : policies) {
+
+            // ignore any inactive/multi-version policies
+
+            if (policy.getActive() == Boolean.FALSE) {
+                continue;
+            }
+
             domainCache.processPolicy(domainData.getName(), policy, roleMap);
         }
     }
-    
+
     void processDomainServiceIdentities(DomainData domainData, DataCache domainCache) {
-        
+
         List<com.yahoo.athenz.zms.ServiceIdentity> services = domainData.getServices();
         if (services == null) {
             return;
         }
-        
+
         for (com.yahoo.athenz.zms.ServiceIdentity service : services) {
             domainCache.processServiceIdentity(service);
         }
@@ -769,58 +1208,29 @@ public class DataStore implements DataCacheProvider, RolesProvider {
         }
     }
 
-    public boolean processDomain(SignedDomain signedDomain, boolean saveInStore) {
+    public void processDomainData(DomainData domainData) {
 
-        DomainData domainData = signedDomain.getDomain();
-        String domainName = domainData.getName();
-        
-        if (LOGGER.isInfoEnabled()) {
-            LOGGER.info("Processing domain: {}", domainName);
-        }
-        
-        // if the domain is disabled we're going to skip
-        // processing this domain. however, we must invalidate
-        // our cache and save the updated data with disabled
-        // flag before assuming success
-        
-        if (domainData.getEnabled() == Boolean.FALSE) {
-            if (LOGGER.isInfoEnabled()) {
-                LOGGER.info("Skipping disabled domain: {}", domainName);
-            }
-            deleteDomainFromCache(domainName);
-            if (saveInStore) {
-                changeLogStore.saveLocalDomain(domainName, signedDomain);
-            }
-            return true;
-        }
-        
-        /* before doing anything else let's validate our domain */
-        
-        if (!validateSignedDomain(signedDomain)) {
-            return false;
-        }
-
-        /* generate our cache object */
+        // generate our cache object */
 
         DataCache domainCache = new DataCache();
-        
-        /* process the roles for this domain */
+
+        // process the roles for this domain */
 
         processDomainRoles(domainData, domainCache);
 
-        /* process the groups for this domain */
+        // process the groups for this domain */
 
         processDomainGroups(domainData);
 
-        /* process the policies for this domain */
-        
+        // process the policies for this domain */
+
         processDomainPolicies(domainData, domainCache);
 
         // next process the service identities
-        
+
         processDomainServiceIdentities(domainData, domainCache);
 
-        // finally process entities
+        // process entities
 
         processDomainEntities(domainData, domainCache);
 
@@ -828,21 +1238,15 @@ public class DataStore implements DataCacheProvider, RolesProvider {
 
         processSystemBehaviorRoles(domainData, domainCache);
 
-        /* save the full domain object with the cache entry itself
-         * since we need to that information to handle
-         * getServiceIdentity and getServiceIdentityList requests */
+        // save the full domain object with the cache entry itself
+        // since we need to that information to handle
+        //getServiceIdentity and getServiceIdentityList requests
 
         domainCache.setDomainData(domainData);
-        
-        /* add the entry to the cache and struct store */
-        
-        addDomainToCache(domainName, domainCache);
-        
-        if (saveInStore) {
-            changeLogStore.saveLocalDomain(domainName, signedDomain);
-        }
-        
-        return true;
+
+        // add the entry to the cache and struct store
+
+        addDomainToCache(domainData.getName(), domainCache);
     }
 
     private void processSystemBehaviorRoles(DomainData domainData, DataCache domainCache) {
@@ -850,19 +1254,19 @@ public class DataStore implements DataCacheProvider, RolesProvider {
     }
 
     boolean validDomainListResponse(Set<String> zmsDomainList) {
-        
+
         /* we're doing some basic validation to make sure our
          * retrieved zms domain list is correct. At minimum our
          * list must not be empty and include our sys.auth
          * domain */
-        
+
         if (zmsDomainList.isEmpty()) {
             return false;
         }
 
         return zmsDomainList.contains(ATHENZ_SYS_DOMAIN);
     }
-    
+
     // API
     public boolean processDomainDeletes() {
 
@@ -873,28 +1277,28 @@ public class DataStore implements DataCacheProvider, RolesProvider {
         if (localDomainList.isEmpty()) {
             return true;
         }
-        
+
         /* now retrieve the list of domains from ZMS */
-        
+
         Set<String> zmsDomainList = changeLogStore.getServerDomainList();
         if (zmsDomainList == null) {
             return false;
         }
-        
+
         /* make sure we don't have an empty list response
          * from ZMS that would cause all of our domains
          * to be deleted */
-        
+
         if (!validDomainListResponse(zmsDomainList)) {
             return false;
         }
-        
+
         /* go through each local domain and if it doesn't
          * exist in the list returned from ZMS we're going to
          * delete that domain from our cache and change log store */
-        
+
         for (String domainName : localDomainList) {
-            
+
             if (!zmsDomainList.contains(domainName)) {
                 if (LOGGER.isDebugEnabled()) {
                     LOGGER.debug("Removing local domain: {}. Domain not in ZMS anymore.", domainName);
@@ -902,38 +1306,8 @@ public class DataStore implements DataCacheProvider, RolesProvider {
                 deleteDomain(domainName);
             }
         }
-        
+
         return true;
-    }
-
-    public void processDomainChecks() {
-
-        /* retrieve the list of domains from ZMS */
-
-        SignedDomains signedDomains = changeLogStore.getServerDomainModifiedList();
-        if (signedDomains == null) {
-            return;
-        }
-
-        // go through each domain in the list. if it doesn't exist
-        // in the local list we need to update it. if it exists
-        // but with an older last modified time, then we need
-        // to update it unless the domain is disabled
-
-        for (SignedDomain zmsDomain : signedDomains.getDomains()) {
-
-            final DomainData domainData = zmsDomain.getDomain();
-            if (processDomainCheck(getDomainData(domainData.getName()), domainData)) {
-
-                SignedDomain signedDomain = changeLogStore.getServerSignedDomain(domainData.getName());
-
-                if (signedDomain == null) {
-                    continue;
-                }
-
-                processDomain(signedDomain, true);
-            }
-        }
     }
 
     boolean processDomainCheck(final DomainData localDomainData, final DomainData zmsDomainData) {
@@ -960,6 +1334,10 @@ public class DataStore implements DataCacheProvider, RolesProvider {
 
         processDeleteDomainGroups(domainName);
 
+        /* delete requireRoleCertCache associations */
+
+        cleanRequireRoleCertCache(domainName);
+
         /* first delete our data from the cache */
 
         deleteDomainFromCache(domainName);
@@ -967,6 +1345,25 @@ public class DataStore implements DataCacheProvider, RolesProvider {
         /* then delete it from the struct store */
 
         changeLogStore.removeLocalDomain(domainName);
+    }
+
+    void cleanRequireRoleCertCache(final String domainName) {
+
+        // get the current list of roles so we can determine
+        // which roles have been deleted
+
+        DataCache dataCache = getCacheStore().getIfPresent(domainName);
+        if (dataCache == null) {
+            return;
+        }
+
+        List<Role> deletedRoles = dataCache.getDomainData().getRoles();
+        if (deletedRoles == null) {
+            return;
+        }
+        for (Role role : deletedRoles) {
+            requireRoleCertCache.processRoleCacheDelete(role);
+        }
     }
 
     void processDeleteDomainGroups(final String domainName) {
@@ -989,75 +1386,9 @@ public class DataStore implements DataCacheProvider, RolesProvider {
         }
     }
 
-    // Internal
-    boolean processSignedDomains(SignedDomains signedDomains) {
-        
-        /* if we have received no data from ZMS server then we're not
-         * going to update our last modification time and instead we'll
-         * just continue using the old one until we get some updates
-         * from ZMS Server */
-        
-        if (signedDomains == null) {
-            if (LOGGER.isInfoEnabled()) {
-                LOGGER.info("No updates received from ZMS Server");
-            }
-            return true;
-        }
-        
-        /* now process all of our domains */
-        
-        List<SignedDomain> domains = signedDomains.getDomains();
-        if (domains == null || domains.isEmpty()) {
-            if (LOGGER.isInfoEnabled()) {
-                LOGGER.info("No updates received from ZMS Server");
-            }
-            return true;
-        }
-        
-        // we're going to return success as long as one of the
-        // domains was successfully processed, otherwise there is
-        // no point of retrying all domains over and over again
-        
-        boolean result = false;
-        for (SignedDomain domain : domains) {
-            if (processDomain(domain, true)) {
-                result = true;
-            }
-        }
-        
-        return result;
-    }
-    
-    /**
-     * Poll for new domains and updated domains from the ChangeLogStore (ZMS). 
-     * Called by {@code DataUpdater.run()} thread. Deletes are handled separately in {@code processDomainDeletes()}
-     * @return true if we have updates, false otherwise
-     */
-    public boolean processDomainUpdates() {
-
-        StringBuilder lastModTimestamp = new StringBuilder(128);
-        SignedDomains signedDomains = changeLogStore.getUpdatedSignedDomains(lastModTimestamp);
-        
-        /* if our data back was null and the last mod timestamp
-         * is also empty then we had a failure */
-        
-        if (signedDomains == null && lastModTimestamp.length() == 0) {
-            return false;
-        }
-        
-        /* process all of our received updated domains */
-        
-        boolean result = processSignedDomains(signedDomains);
-        if (result) {
-            changeLogStore.setLastModificationTimestamp(lastModTimestamp.toString());
-        }
-        
-        return result;
-    }
-
     // API
     public DomainData getDomainData(String name) {
-        
+
         DataCache data = getCacheStore().getIfPresent(name);
         if (data == null) {
             return null;
@@ -1071,20 +1402,20 @@ public class DataStore implements DataCacheProvider, RolesProvider {
         if (hostMap == null || hostMap.isEmpty()) {
             return;
         }
-        
+
         for (Map.Entry<String, Set<String>> entry : hostMap.entrySet()) {
             List<String> services = hostCache.computeIfAbsent(entry.getKey(), k -> new ArrayList<>());
             services.addAll(entry.getValue());
         }
     }
-    
+
     // Internal
     void removeHostEntries(Map<String, Set<String>> hostMap) {
 
         if (hostMap == null || hostMap.isEmpty()) {
             return;
         }
-        
+
         for (Map.Entry<String, Set<String>> entry : hostMap.entrySet()) {
             List<String> services = hostCache.get(entry.getKey());
             if (services != null) {
@@ -1092,39 +1423,37 @@ public class DataStore implements DataCacheProvider, RolesProvider {
             }
         }
     }
-    
+
     // Internal
     void addPublicKeys(Map<String, String> publicKeyMap) {
-        
+
         if (publicKeyMap == null || publicKeyMap.isEmpty()) {
             return;
         }
-        
-        for (Map.Entry<String, String> entry : publicKeyMap.entrySet()) {
-            publicKeyCache.put(entry.getKey(), entry.getValue());
-        }
+
+        publicKeyCache.putAll(publicKeyMap);
     }
-    
+
     // Internal
     void removePublicKeys(Map<String, String> publicKeyMap) {
-        
+
         if (publicKeyMap == null || publicKeyMap.isEmpty()) {
             return;
         }
-        
+
         for (Map.Entry<String, String> entry : publicKeyMap.entrySet()) {
             publicKeyCache.remove(entry.getKey());
         }
     }
-    
+
     // Internal
     public void addDomainToCache(String name, DataCache dataCache) {
-        
+
         /* before update the cache store with our updated data
          * we need to remove the old data host and public key sets */
-        
+
         DataCache oldDataCache = getCacheStore().getIfPresent(name);
-        
+
         try {
             hostWLock.lock();
             if (oldDataCache != null) {
@@ -1134,7 +1463,7 @@ public class DataStore implements DataCacheProvider, RolesProvider {
         } finally {
             hostWLock.unlock();
         }
-        
+
         try {
             pkeyWLock.lock();
             if (oldDataCache != null) {
@@ -1144,62 +1473,63 @@ public class DataStore implements DataCacheProvider, RolesProvider {
         } finally {
             pkeyWLock.unlock();
         }
-        
+
         /* now let's see if we have a cloud account defined
          * and update accordingly */
-        
+
         if (getCloudStore() != null) {
             getCloudStore().updateAwsAccount(name, dataCache.getDomainData().getAccount());
-            getCloudStore().updateAzureSubscription(name, dataCache.getDomainData().getAzureSubscription());
+            getCloudStore().updateAzureSubscription(name, dataCache.getDomainData().getAzureSubscription(), dataCache.getDomainData().getAzureTenant(), dataCache.getDomainData().getAzureClient());
+            getCloudStore().updateGCPProject(name, dataCache.getDomainData().getGcpProject(), dataCache.getDomainData().getGcpProjectNumber());
         }
-        
+
         /* update the cache for the given domain */
-        
+
         getCacheStore().put(name, dataCache);
     }
 
     // Internal
     void deleteDomainFromCache(String name) {
-        
+
         /* before we delete the domain from our cache, we need to
          * remove the old data host and public key sets */
-        
+
         DataCache data = getCacheStore().getIfPresent(name);
         if (data == null) {
             return;
         }
-        
+
         try {
             hostWLock.lock();
             removeHostEntries(data.getHostMap());
         } finally {
             hostWLock.unlock();
         }
-        
+
         try {
             pkeyWLock.lock();
             removePublicKeys(data.getPublicKeyMap());
         } finally {
             pkeyWLock.unlock();
         }
-        
+
         getCacheStore().invalidate(name);
     }
-    
+
     // Internal
     void processStandardMembership(Set<MemberRole> memberRoles, String rolePrefix, String[] requestedRoleList,
-            Set<String> accessibleRoles, boolean keepFullName) {
-        
+            boolean fullNameMatch, Set<String> accessibleRoles, boolean keepFullName) {
+
         /* if we have no member roles, then we haven't added anything
          * to our return result list */
 
         if (memberRoles == null) {
             return;
         }
-        
+
         long currentTime = System.currentTimeMillis();
         for (MemberRole memberRole : memberRoles) {
-            
+
             // before adding to the list make sure the user
             // hasn't expired
 
@@ -1208,7 +1538,7 @@ public class DataStore implements DataCacheProvider, RolesProvider {
                 continue;
             }
 
-            addRoleToList(memberRole.getRole(), rolePrefix, requestedRoleList,
+            addRoleToList(memberRole.getRole(), rolePrefix, requestedRoleList, fullNameMatch,
                     accessibleRoles, keepFullName);
         }
     }
@@ -1224,8 +1554,8 @@ public class DataStore implements DataCacheProvider, RolesProvider {
             return;
         }
 
-        // go through the group list and see if the any of the groups
-        // the user is included in the given domain role
+        // go through the group list and see if any of the groups
+        // the user is included in applies to the given domain role
 
         long currentTime = System.currentTimeMillis();
         for (GroupMember member : groupMembers) {
@@ -1247,7 +1577,7 @@ public class DataStore implements DataCacheProvider, RolesProvider {
 
             if (trustedResources == null) {
                 processStandardMembership(groupMemberRoleSet, rolePrefix, requestedRoleList,
-                        accessibleRoles, keepFullName);
+                        false, accessibleRoles, keepFullName);
             } else {
                 for (String resource : trustedResources) {
 
@@ -1260,10 +1590,56 @@ public class DataStore implements DataCacheProvider, RolesProvider {
         }
     }
 
+    // API
+    public List<String> getPrincipalGroups(final String identity, final String domainName, final Set<String> requestedGroups) {
+
+        // get the list of groups that a given identity is part of
+
+        List<GroupMember> groupMembers = principalGroupCache.getIfPresent(identity);
+        if (groupMembers == null || groupMembers.isEmpty()) {
+            return null;
+        }
+
+        // extract and only keep active group names from the specified domain
+
+        List<String> groups = new ArrayList<>();
+        long currentTime = System.currentTimeMillis();
+        final String domainNamePrefix = domainName + AuthorityConsts.GROUP_SEP;
+
+        for (GroupMember member : groupMembers) {
+
+            final String groupFullName = member.getGroupName();
+
+            // skip any members that have already expired
+
+            if (AuthzHelper.isMemberExpired(member.getExpiration(), currentTime)) {
+                continue;
+            }
+
+            // skip any members from a different domain
+
+            if (!groupFullName.startsWith(domainNamePrefix)) {
+                continue;
+            }
+
+            final String groupName = groupFullName.substring(domainNamePrefix.length());
+
+            // skip if the given group is not in our requested set
+
+            if (requestedGroups != null && !requestedGroups.contains(groupName)) {
+                continue;
+            }
+
+            groups.add(groupName);
+        }
+
+        return groups.isEmpty() ? null : groups;
+    }
+
     // Internal
     void processTrustMembership(DataCache data, String identity, String rolePrefix,
             String[] requestedRoleList, Set<String> accessibleRoles, boolean keepFullName) {
-        
+
         Map<String, Set<String>> trustedRolesMap = data.getTrustMap();
 
         /* iterate through all trusted domains */
@@ -1275,7 +1651,7 @@ public class DataStore implements DataCacheProvider, RolesProvider {
                     accessibleRoles, keepFullName);
         }
     }
-    
+
     // API
     @Override
     public DataCache getDataCache(String domainName) {
@@ -1286,39 +1662,53 @@ public class DataStore implements DataCacheProvider, RolesProvider {
         return groupMemberCache.getIfPresent(groupName);
     }
 
+    public Set<String> getRolesForPrincipal(String domainName, String principal) {
+
+        DataCache data = getDataCache(domainName);
+        if (data == null) {
+            return Collections.emptySet();
+        }
+
+        // process our request and retrieve the roles for the principal
+
+        Set<String> roles = new HashSet<>();
+        getAccessibleRoles(data, domainName, principal, null, false, roles, false);
+        return roles;
+    }
+
     // API
     public void getAccessibleRoles(DataCache data, String domainName, String identity,
-            String[] requestedRoleList, Set<String> accessibleRoles, boolean keepFullName) {
+            String[] requestedRoleList, boolean fullNameMatch, Set<String> accessibleRoles, boolean keepFullName) {
 
         /* if the domain hasn't been processed then we don't have anything to do */
-        
+
         if (data == null) {
             return;
         }
-        
+
         final String rolePrefix = domainName + ROLE_POSTFIX;
 
         /* first look through the members to see if the given identity is
          * included in the list explicitly */
 
         processStandardMembership(data.getMemberRoleSet(identity),
-                rolePrefix, requestedRoleList, accessibleRoles, keepFullName);
-        
+                rolePrefix, requestedRoleList, fullNameMatch, accessibleRoles, keepFullName);
+
         /* next look at all * wildcard roles that are configured
          * for all members to access */
 
         processStandardMembership(data.getAllMemberRoleSet(),
-                rolePrefix, requestedRoleList, accessibleRoles, keepFullName);
-        
+                rolePrefix, requestedRoleList, fullNameMatch, accessibleRoles, keepFullName);
+
         /* then look at the prefix wildcard roles. in this map
          * we only process those where the key in the map is
          * a prefix of our identity */
-        
+
         Map<String, Set<MemberRole>> roleSetMap = data.getPrefixMemberRoleSetMap();
         for (String identityPrefix : roleSetMap.keySet()) {
             if (identity.startsWith(identityPrefix)) {
                 processStandardMembership(roleSetMap.get(identityPrefix),
-                        rolePrefix, requestedRoleList, accessibleRoles, keepFullName);
+                        rolePrefix, requestedRoleList, fullNameMatch, accessibleRoles, keepFullName);
             }
         }
 
@@ -1334,31 +1724,41 @@ public class DataStore implements DataCacheProvider, RolesProvider {
 
     // Internal
     boolean checkRoleSet(String role, Set<String> checkSet) {
-        
+
         if (checkSet == null) {
             return true;
         }
-        
+
         return checkSet.contains(role);
     }
 
     // Internal
     void addRoleToList(String role, String rolePrefix, String[] requestedRoleList,
-            Set<String> accessibleRoles, boolean keepFullName) {
+            boolean fullNameMatch, Set<String> accessibleRoles, boolean keepFullName) {
 
-        /* any roles we return must start with the domain role prefix */
+        // any roles we return must start with the domain role prefix
 
         if (!role.startsWith(rolePrefix)) {
             return;
         }
 
-        /* and it must end with the suffix if requested */
-        
+        // and it must end with the suffix if requested unless we've been
+        // asked to carry out a full name match
+
         if (requestedRoleList != null) {
             boolean matchFound = false;
             for (String requestedRole : requestedRoleList) {
-                if (role.endsWith(requestedRole)) {
-                    matchFound = true;
+
+                // if we're asked for a full role name match then our requested role
+                // only includes the role name, so we need to match against the role
+                // name component only
+
+                matchFound = fullNameMatch ? requestedRole.equals(role.substring(rolePrefix.length())) :
+                        role.endsWith(requestedRole);
+
+                // as soon as we find a match we should stop looking
+
+                if (matchFound) {
                     break;
                 }
             }
@@ -1367,7 +1767,7 @@ public class DataStore implements DataCacheProvider, RolesProvider {
             }
         }
 
-        /* when returning the value we're going to skip the prefix */
+        // when returning the value we're going to skip the prefix
 
         if (keepFullName) {
             accessibleRoles.add(role);
@@ -1375,25 +1775,25 @@ public class DataStore implements DataCacheProvider, RolesProvider {
             accessibleRoles.add(role.substring(rolePrefix.length()));
         }
     }
-    
+
     // Internal
     boolean roleMatchInSet(String role, Set<MemberRole> memberRoles) {
 
         String rolePattern;
         long currentTime = System.currentTimeMillis();
         for (MemberRole memberRole : memberRoles) {
-            
+
             // before processing make sure the member hasn't
             // expired for this role
-            
+
             long expiration = memberRole.getExpiration();
             if (expiration != 0 && expiration < currentTime) {
                 continue;
             }
-            
+
             // if the role does not contain any of our pattern
             // characters then we can just a regular compare
-            
+
             final String roleName = memberRole.getRole();
             if (StringUtils.containsMatchCharacter(roleName)) {
                 rolePattern = StringUtils.patternFromGlob(roleName);
@@ -1406,80 +1806,80 @@ public class DataStore implements DataCacheProvider, RolesProvider {
                 }
             }
         }
-        
+
         return false;
     }
 
     // Internal
     void processSingleTrustedDomainRole(String roleName, String rolePrefix, String[] requestedRoleList,
             Set<MemberRole> memberRoles, Set<String> accessibleRoles, boolean keepFullName) {
-        
+
         /* since our member role set can include wildcard domains we
-         * need to match the role as oppose to a direct check if the
+         * need to match the role as opposed to a direct check if the
          * set contains the name */
 
         if (!roleMatchInSet(roleName, memberRoles)) {
             return;
         }
-        
+
         /* now check if the role is in the resource list as well */
 
-        addRoleToList(roleName, rolePrefix, requestedRoleList, accessibleRoles, keepFullName);
+        addRoleToList(roleName, rolePrefix, requestedRoleList, false, accessibleRoles, keepFullName);
     }
-    
+
     // Internal
     void processTrustedDomain(DataCache trustData, String identity, String rolePrefix,
             String[] requestedRoleList, Set<String> trustedResources, Set<String> accessibleRoles,
             boolean keepFullName) {
 
         /* verify that our data cache and list of trusted resources are valid */
-        
+
         if (trustData == null || trustedResources == null) {
             return;
         }
-        
+
         /* first we need to process our regular roles that include
          * our identity */
 
         Set<MemberRole> memberRoles = trustData.getMemberRoleSet(identity);
         if (memberRoles != null) {
-        
+
             for (String resource : trustedResources) {
-                
+
                 /* in this case our resource is the role name */
-                    
+
                 processSingleTrustedDomainRole(resource, rolePrefix, requestedRoleList,
                         memberRoles, accessibleRoles, keepFullName);
             }
         }
-        
+
         /* next we should process all the * wildcard roles */
-        
+
         memberRoles = trustData.getAllMemberRoleSet();
         if (memberRoles != null && !memberRoles.isEmpty()) {
-        
+
             for (String resource : trustedResources) {
-                
+
                 /* in this case our resource is the role name */
-                    
+
                 processSingleTrustedDomainRole(resource, rolePrefix, requestedRoleList,
                         memberRoles, accessibleRoles, keepFullName);
             }
         }
-        
+
         /* finally we're going to process the wildcard roles
          * but we need to first confirm that our identity
          * matches to member before processing it */
-        
+
         Map<String, Set<MemberRole>> roleSetMap = trustData.getPrefixMemberRoleSetMap();
         for (String identityPrefix : roleSetMap.keySet()) {
             if (identity.startsWith(identityPrefix)) {
-                
+
                 memberRoles = roleSetMap.get(identityPrefix);
                 for (String resource : trustedResources) {
-                    
+
                     /* in this case our resource is the role name */
-                        
+
                     processSingleTrustedDomainRole(resource, rolePrefix, requestedRoleList,
                             memberRoles, accessibleRoles, keepFullName);
                 }
@@ -1497,7 +1897,7 @@ public class DataStore implements DataCacheProvider, RolesProvider {
 
         String publicKeyName = generateServiceKeyName(domain, service, keyId);
         String publicKey;
-        
+
         try {
             pkeyRLock.lock();
             publicKey = publicKeyCache.get(publicKeyName);
@@ -1505,27 +1905,25 @@ public class DataStore implements DataCacheProvider, RolesProvider {
             pkeyRLock.unlock();
         }
 
-        ///CLOVER:OFF
         if (publicKey == null && LOGGER.isDebugEnabled()) {
             LOGGER.debug("Public key: {} not available", publicKeyName);
         }
-        ///CLOVER:ON
-        
+
         return publicKey;
     }
 
     // API
     public HostServices getHostServices(String host) {
-        
+
         HostServices result = new HostServices().setHost(host);
-        
+
         try {
             hostRLock.lock();
-            
-            /* we need to make a copy of our list as oppose to just returning
+
+            /* we need to make a copy of our list as opposed to just returning
              * a reference since once we release the host read lock that list
              * can be modified by the updater thread */
-            
+
             List<String> services = hostCache.get(host);
             if (services != null) {
                 result.setNames(new ArrayList<>(services));
@@ -1533,10 +1931,10 @@ public class DataStore implements DataCacheProvider, RolesProvider {
         } finally {
             hostRLock.unlock();
         }
-        
+
         return result;
     }
-    
+
     public CloudStore getCloudStore() {
         return cloudStore;
     }
@@ -1566,8 +1964,33 @@ public class DataStore implements DataCacheProvider, RolesProvider {
         return domainData.getRoles();
     }
 
+    @Override
+    public List<PublicKeyEntry> getPubKeysByService(String domain, String service) {
+        DomainData domainData = getDomainData(domain);
+        if (domainData == null) {
+            LOGGER.error("domainData can not be null, domain: {}, service: {}", domain, service);
+            return new ArrayList<>();
+        }
+
+        String serviceFqn = domain + "." + service;
+
+        for (ServiceIdentity serviceIdentity: domainData.getServices()) {
+            if (serviceIdentity.getName().equalsIgnoreCase(serviceFqn)) {
+                return serviceIdentity.getPublicKeys();
+            }
+        }
+
+        LOGGER.error("pub keys not found for domain: {}, service: {}", domain, service);
+        return new ArrayList<>();
+    }
+
+    public List<String> getRolesRequireRoleCert(String principal) {
+        return requireRoleCertCache.getRolesRequireRoleCert(principal);
+    }
+
+
     class DataUpdater implements Runnable {
-        
+
         @Override
         public void run() {
 
@@ -1584,13 +2007,13 @@ public class DataStore implements DataCacheProvider, RolesProvider {
             try {
                 // check to see if we need to handle our delete domain list -
                 // make sure refresh time is converted to millis
-                
+
                 if (System.currentTimeMillis() - lastDeleteRunTime > delDomainRefreshTime * 1000) {
-                    
+
                     if (LOGGER.isDebugEnabled()) {
                         LOGGER.debug("DataUpdater: Processing domain delete checks...");
                     }
-                    
+
                     processDomainDeletes();
                     lastDeleteRunTime = System.currentTimeMillis();
                 }
@@ -1600,7 +2023,7 @@ public class DataStore implements DataCacheProvider, RolesProvider {
 
             try {
                 // check to see if we need to handle our check our domain list -
-                //make sure refresh time is converted to millis
+                // make sure refresh time is converted to millis
 
                 if (System.currentTimeMillis() - lastCheckRunTime > checkDomainRefreshTime * 1000) {
 

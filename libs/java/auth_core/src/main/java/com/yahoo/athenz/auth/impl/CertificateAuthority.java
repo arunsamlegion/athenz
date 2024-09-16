@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Yahoo Inc.
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,21 +40,21 @@ public class CertificateAuthority implements Authority {
     private static final String ATHENZ_AUTH_CHALLENGE = "AthenzX509Certificate realm=\"athenz\"";
 
     private CertificateIdentityParser certificateIdentityParser = null;
-    private GlobStringsMatcher globStringsMatcher = new GlobStringsMatcher(ATHENZ_PROP_RESTRICTED_OU);
+    private final GlobStringsMatcher globStringsMatcher = new GlobStringsMatcher(ATHENZ_PROP_RESTRICTED_OU);
 
     @Override
     public void initialize() {
         Set<String> excludedPrincipalSet = null;
-        boolean excludeRoleCertificates;
 
         final String exPrincipals = System.getProperty(ATHENZ_PROP_EXCLUDED_PRINCIPALS);
         if (exPrincipals != null && !exPrincipals.isEmpty()) {
             excludedPrincipalSet = new HashSet<>(Arrays.asList(exPrincipals.split(",")));
         }
 
-        excludeRoleCertificates = Boolean.parseBoolean(System.getProperty(ATHENZ_PROP_EXCLUDE_ROLE_CERTIFICATES, "false"));
+        boolean excludeRoleCertificates = Boolean.parseBoolean(System.getProperty(ATHENZ_PROP_EXCLUDE_ROLE_CERTIFICATES, "false"));
 
-        this.certificateIdentityParser = new CertificateIdentityParser(excludedPrincipalSet, excludeRoleCertificates);
+        this.certificateIdentityParser = new CertificateIdentityParser(excludedPrincipalSet, excludeRoleCertificates,
+                new CertificateAuthorityValidator());
     }
 
     @Override
@@ -87,43 +87,49 @@ public class CertificateAuthority implements Authority {
         return CredSource.CERTIFICATE;
     }
 
-    void reportError(final String message, StringBuilder errMsg) {
+    void reportError(final String message, boolean reportError, StringBuilder errMsg) {
         if (LOG.isDebugEnabled()) {
             LOG.debug(message);
         }
-        if (errMsg != null) {
+        if (reportError && errMsg != null) {
             errMsg.append(message);
         }
     }
 
     @Override
     public Principal authenticate(X509Certificate[] certs, StringBuilder errMsg) {
-        if (LOG.isDebugEnabled()) {
+
+        if (LOG.isTraceEnabled()) {
             if (certs != null) {
                 for (X509Certificate cert : certs) {
-                    LOG.debug("CertificateAuthority: TLS Certificate: {}", cert);
+                    LOG.trace("CertificateAuthority: TLS Certificate: {}", cert);
                 }
             }
         }
 
         // parse certificate
-        CertificateIdentity certId = null;
+        CertificateIdentity certId;
         try {
             certId = this.certificateIdentityParser.parse(certs);
-        } catch (CertificateIdentityException e) {
-            this.reportError("CertificateAuthority: " + e.getMessage(), errMsg);
+        } catch (CertificateIdentityException ex) {
+            this.reportError("CertificateAuthority: " + ex.getMessage(), ex.isReportError(), errMsg);
             return null;
         }
 
         // create principal
+
         X509Certificate x509Cert = certId.getX509Certificate();
-        SimplePrincipal principal = (SimplePrincipal) SimplePrincipal.create(certId.getDomain(), certId.getService(), x509Cert.toString(), this);
+
+        SimplePrincipal principal = (SimplePrincipal) SimplePrincipal.create(certId.getDomain(),
+                certId.getService(), x509Cert.toString(), this);
         principal.setUnsignedCreds(x509Cert.getSubjectX500Principal().toString());
         principal.setX509Certificate(x509Cert);
-        principal.setRoles(certId.getRoles());
+        if (certId.getRoles() != null) {
+            principal.setRoles(certId.getRoles());
+            principal.setRolePrincipalName(certId.getRolePrincipalName());
+        }
         principal.setMtlsRestricted(Crypto.isRestrictedCertificate(x509Cert, globStringsMatcher));
 
         return principal;
     }
-
 }

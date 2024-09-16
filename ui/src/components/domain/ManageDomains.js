@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,14 @@ import DateUtils from '../utils/DateUtils';
 import RequestUtils from '../utils/RequestUtils';
 import BusinessServiceModal from '../modal/BusinessServiceModal';
 import { css, keyframes } from '@emotion/react';
+import { deleteSubDomain } from '../../redux/thunks/domains';
+import { connect } from 'react-redux';
+import { withRouter } from 'next/router';
+import { selectBusinessServices } from '../../redux/selectors/domainData';
+import {
+    selectBusinessServicesAll,
+    selectTimeZone,
+} from '../../redux/selectors/domains';
 
 const ManageDomainSectionDiv = styled.div`
     margin: 20px;
@@ -46,7 +54,6 @@ const TableHeadStyled = styled.th`
     border-bottom: 2px solid #d5d5d5;
     color: #9a9a9a;
     font-weight: 600;
-    font-size: 0.8rem;
     padding-bottom: 5px;
     vertical-align: top;
     text-transform: uppercase;
@@ -99,7 +106,7 @@ const colorTransition = keyframes`
         }
 `;
 
-export default class ManageDomains extends React.Component {
+class ManageDomains extends React.Component {
     constructor(props) {
         super(props);
         this.api = props.api;
@@ -205,7 +212,7 @@ export default class ManageDomains extends React.Component {
         const splittedDomain = domainName.split('.');
         const domain = splittedDomain.pop();
         const parent = splittedDomain.join('.');
-        this.api
+        this.props
             .deleteSubDomain(
                 parent,
                 domain,
@@ -352,12 +359,14 @@ export default class ManageDomains extends React.Component {
                           <TDStyled color={color} align={left}>
                               {this.dateUtils.getLocalDate(
                                   item.domain.modified,
-                                  'UTC',
-                                  'UTC'
+                                  this.props.timeZone,
+                                  this.props.timeZone
                               )}
                           </TDStyled>
                           <TDStyled color={color} align={center}>
-                              {item.domain.ypmId ? item.domain.ypmId : ''}
+                              {item.domain.productId
+                                  ? item.domain.productId
+                                  : ''}
                           </TDStyled>
                           <TDStyled color={color} align={center}>
                               <Switch
@@ -370,9 +379,12 @@ export default class ManageDomains extends React.Component {
                           <TDStyled color={color} align={center}>
                               {item.domain.account ? item.domain.account : ''}
                           </TDStyled>
+                          <TDStyled color={color} align={center}>
+                              {item.domain.gcpProject}
+                          </TDStyled>
                           <TDStyledBusinessService
                               color={color}
-                              align={left}
+                              align={center}
                               title={title}
                           >
                               <StyledAnchor onClick={businessServiceItem}>
@@ -388,6 +400,7 @@ export default class ManageDomains extends React.Component {
                                       isLink
                                       size={'1.25em'}
                                       verticalAlign={'text-bottom'}
+                                      id={item.domain.name + '-delete-button'}
                                   />
                               ) : null}
                           </TDStyled>
@@ -466,7 +479,10 @@ export default class ManageDomains extends React.Component {
                             <TableHeadStyled align={center}>
                                 AWS Account #
                             </TableHeadStyled>
-                            <TableHeadStyled align={left}>
+                            <TableHeadStyled align={center}>
+                                GCP Project ID
+                            </TableHeadStyled>
+                            <TableHeadStyled align={center}>
                                 Business Service
                             </TableHeadStyled>
                             <TableHeadStyled align={center}>
@@ -480,3 +496,22 @@ export default class ManageDomains extends React.Component {
         );
     }
 }
+
+const mapStateToProps = (state, props) => {
+    return {
+        ...props,
+        validBusinessServices: selectBusinessServices(state),
+        validBusinessServicesAll: selectBusinessServicesAll(state),
+        timeZone: selectTimeZone(state),
+    };
+};
+
+const mapDispatchToProps = (dispatch) => ({
+    deleteSubDomain: (parentDomain, domain, auditRef, _csrf) =>
+        dispatch(deleteSubDomain(parentDomain, domain, auditRef, _csrf)),
+});
+
+export default connect(
+    mapStateToProps,
+    mapDispatchToProps
+)(withRouter(ManageDomains));

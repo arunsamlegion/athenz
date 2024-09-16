@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,12 +20,16 @@ import { colors } from '../denali/styles';
 import Input from '../denali/Input';
 import InputLabel from '../denali/InputLabel';
 import styled from '@emotion/styled';
-import Checkbox from '../denali/CheckBox';
 import DateUtils from '../utils/DateUtils';
-import NameUtils from '../utils/NameUtils';
 import RequestUtils from '../utils/RequestUtils';
+import { GROUP_MEMBER_NAME_REGEX, USER_DOMAIN } from '../constants/constants';
+import RegexUtils from '../utils/RegexUtils';
+import { connect } from 'react-redux';
+import { addMember } from '../../redux/thunks/collections';
+import InputDropdown from '../denali/InputDropdown';
 import MemberUtils from '../utils/MemberUtils';
-import { GROUP_MEMBER_NAME_REGEX } from '../constants/constants';
+import { selectAllUsers } from '../../redux/selectors/user';
+import Downshift from 'downshift';
 
 const SectionsDiv = styled.div`
     width: 760px;
@@ -52,7 +56,7 @@ const StyledInputLabel = styled(InputLabel)`
     line-height: 36px;
 `;
 
-const StyledInput = styled(Input)`
+const StyledInput = styled(InputDropdown)`
     max-width: 800px;
     margin-right: 10px;
     width: ${(props) => (props.category === 'group' ? '500px' : '580px')};
@@ -68,7 +72,6 @@ const FlatPickrInputDiv = styled.div`
         background-color: rgba(53, 112, 244, 0.05);
         box-shadow: none;
         color: rgb(48, 48, 48);
-        height: 16px;
         min-width: 50px;
         text-align: left;
         border-width: 2px;
@@ -91,31 +94,35 @@ const StyledJustification = styled(Input)`
     width: 300px;
 `;
 
-export default class AddMember extends React.Component {
+class AddMember extends React.Component {
     constructor(props) {
         super(props);
-        this.api = this.props.api;
         this.onSubmit = this.onSubmit.bind(this);
+        this.userSearch = this.userSearch.bind(this);
+
         this.state = {
             showModal: !!this.props.showAddMember,
         };
         this.dateUtils = new DateUtils();
     }
 
+    clearStateIfInputDoesntMatchIt(inputVal) {
+        if (this.state.memberName && this.state.memberName !== inputVal) {
+            this.setState({['memberName']:''});
+        }
+    }
+
     onSubmit() {
         if (!this.state.memberName || this.state.memberName.trim() === '') {
             this.setState({
-                errorMessage: 'Member name is required.',
+                errorMessage: 'Member must be selected in the dropdown.',
             });
             return;
         }
 
         if (
             this.props.category === 'group' &&
-            !MemberUtils.matchRegexName(
-                this.state.memberName,
-                GROUP_MEMBER_NAME_REGEX
-            )
+            !RegexUtils.validate(this.state.memberName, GROUP_MEMBER_NAME_REGEX)
         ) {
             this.setState({
                 errorMessage:
@@ -152,18 +159,19 @@ export default class AddMember extends React.Component {
                       )
                     : '',
         };
-        // send api call and then reload existing members component
-        this.api
+
+        // change the props names to group and not groupName
+        this.props
             .addMember(
-                this.props.domain,
+                this.props.domainName,
                 this.props.collection,
-                this.state.memberName,
+                this.props.category,
                 member,
                 this.state.justification
                     ? this.state.justification
                     : 'added using Athenz UI',
-                this.props.category,
-                this.props._csrf
+                this.props._csrf,
+                true
             )
             .then(() => {
                 this.setState({
@@ -171,7 +179,7 @@ export default class AddMember extends React.Component {
                     justification: '',
                 });
                 this.props.onSubmit(
-                    `${this.state.memberName}-${this.props.category}-${this.props.domain}-${this.props.collection}`,
+                    `${this.state.memberName}-${this.props.category}-${this.props.domainName}-${this.props.collection}`,
                     false
                 );
             })
@@ -186,6 +194,10 @@ export default class AddMember extends React.Component {
         this.setState({ [key]: evt.target.value });
     }
 
+    userSearch(part) {
+        return MemberUtils.userSearch(part, this.props.userList);
+    }
+
     render() {
         let sections = (
             <SectionsDiv autoComplete={'off'} data-testid='add-member-form'>
@@ -195,18 +207,36 @@ export default class AddMember extends React.Component {
                     </StyledInputLabel>
                     <ContentDiv>
                         <StyledInput
+                            selectedDropdownValue={this.state.memberName} // marks value in dropdown selected
+                            defaultHighlightedIndex={0} // highlights first value in dropdown
+                            stateReducer={(state, changes) => {
+                                // keep input changes when user clicks outside input
+                                if (changes.type && (changes.type === Downshift.stateChangeTypes.mouseUp
+                                    || changes.type === Downshift.stateChangeTypes.blurInput)) {
+                                    changes.inputValue = state.inputValue;
+                                }
+                                return changes;
+                            }}
                             category={this.props.category}
+                            fluid={true}
                             id='member-name'
                             name='member-name'
-                            value={this.state.memberName}
-                            onChange={this.inputChanged.bind(
-                                this,
-                                'memberName'
-                            )}
+                            itemToString={(i) => (i === null ? '' : i.value)}
+                            asyncSearchFunc={this.userSearch}
+                            onChange={(evt) =>
+                                this.setState({
+                                    ['memberName']: evt ? evt.value : '',
+                                })
+                            }
+                            onInputValueChange={(inputVal) => {
+                                // remove value from state if input changed
+                                this.clearStateIfInputDoesntMatchIt(inputVal);
+                            }}
                             placeholder={
-                                this.props.category === 'role'
-                                    ? 'user.<shortid> or <domain>.<service> or unix.<group> or <domain>:group.<group>'
-                                    : 'user.<shortid> or <domain>.<service> or unix.<group>'
+                                this.props.category === 'role' &&
+                                this.props.collection !== 'admin'
+                                    ? `${USER_DOMAIN}.<shortid> or <domain>.<service> or unix.<group> or <domain>:group.<group>`
+                                    : `${USER_DOMAIN}.<shortid> or <domain>.<service> or unix.<group>`
                             }
                         />
                     </ContentDiv>
@@ -278,3 +308,35 @@ export default class AddMember extends React.Component {
         );
     }
 }
+
+const mapStateToProps = (state, props) => {
+    return {
+        ...props,
+        userList: selectAllUsers(state),
+    };
+};
+
+const mapDispatchToProps = (dispatch) => ({
+    addMember: (
+        domainName,
+        collection,
+        category,
+        member,
+        auditRef,
+        _csrf,
+        overrideIfExists
+    ) =>
+        dispatch(
+            addMember(
+                domainName,
+                collection,
+                category,
+                member,
+                auditRef,
+                _csrf,
+                overrideIfExists
+            )
+        ),
+});
+
+export default connect(mapStateToProps, mapDispatchToProps)(AddMember);

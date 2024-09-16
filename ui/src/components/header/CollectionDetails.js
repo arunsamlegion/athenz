@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Verizon Media
+ * Copyright The Athenz Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 import styled from '@emotion/styled';
 import DateUtils from '../utils/DateUtils';
 import React from 'react';
+import { connect } from 'react-redux';
+import { selectTimeZone } from '../../redux/selectors/domains';
 
 const DomainSectionDiv = styled.div`
     margin: 20px 0;
@@ -40,24 +42,23 @@ const LabelDiv = styled.div`
     text-transform: uppercase;
 `;
 
-export default class CollectionDetails extends React.Component {
+class CollectionDetails extends React.Component {
     constructor(props) {
         super(props);
-        this.api = props.api;
     }
 
     render() {
         let localDate = new DateUtils();
         let modifiedDate = localDate.getLocalDate(
             this.props.collectionDetails.modified,
-            'UTC',
-            'UTC'
+            this.props.timeZone,
+            this.props.timeZone
         );
         let lastReviewedDate = this.props.collectionDetails.lastReviewedDate
             ? localDate.getLocalDate(
                   this.props.collectionDetails.lastReviewedDate,
-                  'UTC',
-                  'UTC'
+                  this.props.timeZone,
+                  this.props.timeZone
               )
             : 'N/A';
         return (
@@ -67,12 +68,40 @@ export default class CollectionDetails extends React.Component {
                         <ValueDiv>{modifiedDate}</ValueDiv>
                         <LabelDiv>MODIFIED DATE</LabelDiv>
                     </SectionDiv>
-                    <SectionDiv>
-                        <ValueDiv>{lastReviewedDate}</ValueDiv>
-                        <LabelDiv>REVIEWED DATE</LabelDiv>
-                    </SectionDiv>
+                    {this.props.categroy !== 'policy' &&
+                    this.props.categroy !== 'service' ? (
+                        <SectionDiv>
+                            <ValueDiv>{lastReviewedDate}</ValueDiv>
+                            <LabelDiv>REVIEWED DATE</LabelDiv>
+                        </SectionDiv>
+                    ) : null}
+                    {this.props.collectionDetails.description ? (
+                        <SectionDiv>
+                            <ValueDiv>
+                                {this.props.collectionDetails.description}
+                            </ValueDiv>
+                            <LabelDiv>Description</LabelDiv>
+                        </SectionDiv>
+                    ) : null}
                 </DetailsDiv>
+                {this.props.category === 'policy' ? (
+                    <SectionDiv>
+                        <ValueDiv>
+                            {this.props.collectionDetails.version}
+                        </ValueDiv>
+                        <LabelDiv>POLICY VERSION</LabelDiv>
+                    </SectionDiv>
+                ) : null}
             </DomainSectionDiv>
         );
     }
 }
+
+const mapStateToProps = (state, props) => {
+    return {
+        ...props,
+        timeZone: selectTimeZone(state),
+    };
+};
+
+export default connect(mapStateToProps, null)(CollectionDetails);
